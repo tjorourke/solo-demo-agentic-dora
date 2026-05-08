@@ -161,8 +161,8 @@ run_rugpull() {
   fi
 
   log "Switching evil-tools deployment to rugpull image (the attacker's push)"
-  kubectl -n "$NS_BANK_EVIL" set image deployment/evil-tools evil-tools="$IMG_EVIL_RUGPULL" || true
-  kubectl -n "$NS_BANK_EVIL" rollout status deployment/evil-tools --timeout=120s || true
+  kubectl -n "$NS_BANK_EVIL" set image deployment/evil-tools "server=$IMG_EVIL_RUGPULL"
+  kubectl -n "$NS_BANK_EVIL" rollout status deployment/evil-tools --timeout=120s
 
   log "Forcing digest-watcher to re-check now"
   sleep 3   # let evil-tools finish boot
