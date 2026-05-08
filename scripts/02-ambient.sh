@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Phase 1 — Istio Ambient mesh: ztunnel, waypoints, AuthorizationPolicies.
+
+set -Eeuo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+export REPO_ROOT
+source "$SCRIPT_DIR/lib/config.sh"
+source "$SCRIPT_DIR/lib/common.sh"
+trap on_error ERR
+
+require_cmd istioctl
+
+log_step "1.1 — istioctl install (profile=ambient)"
+# Idempotent — istioctl install will reconcile to the requested state
+istioctl install --set profile=ambient -y
+
+log_step "1.2 — verify ztunnel DaemonSet"
+kubectl -n istio-system rollout status ds/ztunnel --timeout=180s
+
+log_step "1.3 — waypoint in $NS_BANK_MCP"
+istioctl waypoint apply -n "$NS_BANK_MCP" --enroll-namespace --wait
+
+log_step "1.4 — waypoint in $NS_BANK_AGENTS"
+istioctl waypoint apply -n "$NS_BANK_AGENTS" --enroll-namespace --wait
+
+log_step "1.5 — default deny AuthorizationPolicy"
+kubectl_apply "$MANIFESTS_DIR/phase01-ambient/deny-all-cross-ns.yaml"
+
+log_step "1.6 — allow agents → mcp"
+kubectl_apply "$MANIFESTS_DIR/phase01-ambient/allow-agents-to-mcp.yaml"
+
+log_step "1.7 — HBONE check (best effort)"
+SNIFFER_NS="$NS_BANK_AGENTS"
+if ! kubectl -n "$SNIFFER_NS" get pod hbone-sniffer >/dev/null 2>&1; then
+  kubectl -n "$SNIFFER_NS" run hbone-sniffer --image=nicolaka/netshoot --restart=Never --command -- sleep 3600 || true
+fi
+log "deploy a sniffer pod and tcpdump for port 15008 to verify HBONE — see plan §1.7"
+
+log_step "1.8 — evidence capture (DORA Art. 9(2))"
+P1=$(evidence_dir 1)
+kubectl -n istio-system logs ds/ztunnel --tail=200 > "$P1/ztunnel-startup.log" || true
+kubectl get authorizationpolicy -A -o yaml > "$P1/authorization-policies.yaml" || true
+log_ok "evidence saved to $P1"
+
+log_ok "Phase 1 (Ambient) complete"

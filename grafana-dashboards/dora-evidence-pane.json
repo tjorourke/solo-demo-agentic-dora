@@ -1,0 +1,71 @@
+{
+  "title": "TrustUsBank — DORA Evidence Pane",
+  "tags": ["trustusbank", "dora", "audit", "compliance"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "type": "text",
+      "title": "DORA / NIS2 Evidence — auditor view",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**This dashboard is the auditor's view.** Each panel maps to a specific DORA article. Hand this URL to the regulator together with the evidence pack PDF."
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Art. 9(2) — % traffic with mTLS",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
+      "targets": [{ "expr": "100 * sum(rate(istio_requests_total{security_policy=\"mutual_tls\"}[5m])) / clamp_min(sum(rate(istio_requests_total[5m])),0.001)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "red", "value": 0 }, { "color": "yellow", "value": 99 }, { "color": "green", "value": 100 }] } } }
+    },
+    {
+      "type": "stat",
+      "title": "Art. 9(4)(c) — JWT-authed requests",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 4 },
+      "targets": [{ "expr": "sum(increase(agentgateway_jwt_validation_total{result=\"ok\"}[24h]))", "refId": "A" }]
+    },
+    {
+      "type": "stat",
+      "title": "Art. 10 — anomalies detected",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 4 },
+      "targets": [{ "expr": "sum(increase(agentgateway_prompt_guard_denies_total[24h])) + sum(increase(agentregistry_digest_mismatch_total[24h]))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] } } }
+    },
+    {
+      "type": "stat",
+      "title": "Art. 17 — incidents opened (24h)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 4 },
+      "targets": [{ "expr": "sum(increase(ticket_mcp_tickets_total[24h]))", "refId": "A" }]
+    },
+    {
+      "type": "table",
+      "title": "Art. 28 — Sub-outsourcing register (every registered MCP artefact)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "agentregistry_artifact_info", "refId": "A", "format": "table", "instant": true }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Art. 10 — prompt-guard denies + registry mismatches over time",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "sum by (reason) (rate(agentgateway_prompt_guard_denies_total[5m]))", "refId": "A", "legendFormat": "prompt-guard {{reason}}" },
+        { "expr": "sum(rate(agentregistry_digest_mismatch_total[5m]))", "refId": "B", "legendFormat": "registry digest mismatch" }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Art. 9 — agentgateway access log (Loki)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "expr": "{namespace=\"trustusbank-platform\", app=\"agentgateway\"} | json", "refId": "A" }
+      ]
+    }
+  ]
+}

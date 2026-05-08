@@ -1,0 +1,36 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: trustusbank
+  region: eu-west-2     # London — GDPR/DORA optics
+  version: "1.31"
+  tags:
+    project: trustusbank-demo
+    purpose: solo-agentic-dora-demo
+
+managedNodeGroups:
+  - name: workers
+    instanceType: m6i.xlarge
+    desiredCapacity: 3
+    minSize: 3
+    maxSize: 5
+    volumeSize: 80
+    volumeType: gp3
+    labels:
+      role: worker
+    iam:
+      withAddonPolicies:
+        ebs: true
+        cloudWatch: true
+        externalDNS: false
+        certManager: false
+
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver
+
+iam:
+  withOIDC: true

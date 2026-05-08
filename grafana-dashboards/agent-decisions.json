@@ -1,0 +1,58 @@
+{
+  "title": "TrustUsBank — Agent Decisions & Tool Calls",
+  "tags": ["trustusbank", "dora", "agents"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Active agents",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "count(kube_pod_status_ready{namespace=\"trustusbank-bank-agents\",condition=\"true\"})", "refId": "A" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Tool calls / min",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(agentgateway_tool_calls_total[5m])) * 60", "refId": "A" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "A2A invocations / min",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(agentgateway_a2a_calls_total[5m])) * 60", "refId": "A" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Denied tool calls (last 1h)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        { "expr": "sum(increase(agentgateway_tool_calls_total{result=\"deny\"}[1h]))", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Tool calls by agent (allow vs deny)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "sum by (agent, result) (rate(agentgateway_tool_calls_total[1m]))", "refId": "A", "legendFormat": "{{agent}} {{result}}" }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Recent agent decisions (Tempo)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [{ "queryType": "search", "tags": "agent.name=*" }]
+    }
+  ]
+}

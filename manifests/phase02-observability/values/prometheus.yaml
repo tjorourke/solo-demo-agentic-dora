@@ -1,0 +1,32 @@
+grafana:
+  enabled: true
+  adminPassword: "trustusbank-demo"
+  service:
+    type: ClusterIP
+  defaultDashboardsEnabled: true
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+    datasources:
+      enabled: true
+  additionalDataSources:
+    - name: Tempo
+      type: tempo
+      url: http://tempo.trustusbank-observability.svc.cluster.local:3100
+      access: proxy
+    - name: Loki
+      type: loki
+      url: http://loki.trustusbank-observability.svc.cluster.local:3100
+      access: proxy
+
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    retention: 30d
+
+alertmanager:
+  enabled: true

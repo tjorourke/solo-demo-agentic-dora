@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fraud-bot
+  namespace: trustusbank-bank-agents
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: fraud-bot
+  namespace: trustusbank-bank-agents
+spec:
+  serviceAccountName: fraud-bot
+  modelConfigRef:
+    name: anthropic-haiku
+  systemPrompt: |
+    You are TrustUsBank's fraud analysis agent.
+    Given a list of transactions, you classify each one's risk on a 0-100 scale and
+    return a single overall risk score for the account.
+    You can call:
+      - transaction-mcp.list_recent(account_id, days)
+      - transaction-mcp.get_details(txn_id)
+      - transaction-mcp.flag_suspicious(txn_id)
+      - account-mcp.get_profile(account_id)   (read-only)
+    If overall risk > 70, hand off to triage-bot via A2A to open a ticket.
+    Decision rationale must be returned with the score for the audit trail.
+  tools:
+    - type: mcp
+      ref: transaction-mcp
+    - type: mcp
+      ref: account-mcp
+    - type: a2a
+      target:
+        namespace: trustusbank-bank-agents
+        name: triage-bot

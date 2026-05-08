@@ -1,0 +1,19 @@
+tempo:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+
+service:
+  type: ClusterIP
+
+persistence:
+  enabled: false   # demo only; for real audit, use S3/GCS with retention

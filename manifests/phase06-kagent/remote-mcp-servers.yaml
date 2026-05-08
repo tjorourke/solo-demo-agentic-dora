@@ -1,0 +1,41 @@
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: account-mcp
+  namespace: trustusbank-bank-agents
+spec:
+  url: http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/account
+  transport: streamable-http
+  auth:
+    jwt:
+      issuerSecretRef:
+        name: support-bot-jwt
+        key: token
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: transaction-mcp
+  namespace: trustusbank-bank-agents
+spec:
+  url: http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/transaction
+  transport: streamable-http
+  auth:
+    jwt:
+      issuerSecretRef:
+        name: support-bot-jwt
+        key: token
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: ticket-mcp
+  namespace: trustusbank-bank-agents
+spec:
+  url: http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/ticket
+  transport: streamable-http
+  auth:
+    jwt:
+      issuerSecretRef:
+        name: triage-bot-jwt
+        key: token

@@ -1,0 +1,27 @@
+apiVersion: agentgateway.solo.io/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: prompt-guard
+  namespace: trustusbank-platform
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: trustusbank-agentgw
+  promptGuard:
+    inspectFields:
+      - tool.description
+      - tool.arguments
+      - response.content
+    deny:
+      patterns:
+        - "(?i)ignore (your |all )?previous instructions"
+        - "(?i)disregard (your |all )?prior"
+        - "(?i)exfiltrate"
+        - "(?i)attacker\\."
+        - "(?i)system:.*ignore"
+        - "(?i)<\\s*system\\s*>"
+    onMatch:
+      action: deny
+      log: true
+      auditEvent: "prompt-injection-detected"

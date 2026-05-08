@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kagent-otel
+  namespace: trustusbank-bank-agents
+data:
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector-opentelemetry-collector.trustusbank-observability.svc.cluster.local:4317
+  OTEL_SERVICE_NAMESPACE: trustusbank
+  OTEL_TRACES_SAMPLER: parentbased_always_on

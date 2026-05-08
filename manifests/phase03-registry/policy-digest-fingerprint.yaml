@@ -1,0 +1,15 @@
+apiVersion: agentregistry.solo.io/v1alpha1
+kind: Policy
+metadata:
+  name: digest-fingerprint
+  namespace: trustusbank-platform
+spec:
+  fingerprint:
+    algorithm: sha256
+    scope: tool-definition   # hash of the MCP tools/list output, not just the image
+  enforcement: alert
+  onMismatch:
+    action: deny
+    notify:
+      - prometheus
+      - log

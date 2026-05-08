@@ -1,0 +1,38 @@
+# Pinned helm chart versions for reproducibility.
+# Update with care — bumping any of these may require manifest changes.
+dependencies:
+  - name: kube-prometheus-stack
+    repository: https://prometheus-community.github.io/helm-charts
+    version: "65.5.0"
+  - name: tempo
+    repository: https://grafana.github.io/helm-charts
+    version: "1.14.0"
+  - name: loki
+    repository: https://grafana.github.io/helm-charts
+    version: "6.18.0"
+  - name: opentelemetry-collector
+    repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+    version: "0.108.0"
+  - name: keycloak
+    repository: https://charts.bitnami.com/bitnami
+    version: "24.4.4"
+  - name: agentregistry
+    repository: https://solo-io.github.io/agentregistry
+    version: "latest"
+  - name: agentgateway-crds
+    repository: https://solo-io.github.io/agentgateway
+    version: "v1.1.0"
+  - name: agentgateway
+    repository: https://solo-io.github.io/agentgateway
+    version: "v1.1.0"
+  - name: kagent-crds
+    repository: https://kagent-dev.github.io/kagent
+    version: "v0.9.0"
+  - name: kagent
+    repository: https://kagent-dev.github.io/kagent
+    version: "v0.9.0"
+gatewayApi:
+  version: "v1.5.0"
+istio:
+  profile: ambient
+  version: "stable"

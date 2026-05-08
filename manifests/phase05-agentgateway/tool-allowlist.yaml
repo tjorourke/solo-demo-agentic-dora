@@ -1,0 +1,58 @@
+apiVersion: agentgateway.solo.io/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: support-bot-allowlist
+  namespace: trustusbank-platform
+spec:
+  targetRefs:
+    - group: agentgateway.solo.io
+      kind: AgentgatewayBackend
+      name: account-mcp
+    - group: agentgateway.solo.io
+      kind: AgentgatewayBackend
+      name: transaction-mcp
+  toolAllowlist:
+    matchPrincipal: "support-bot"
+    allow:
+      - account-mcp.get_balance
+      - account-mcp.get_profile
+      - transaction-mcp.list_recent
+    deny:
+      - "*.flag_suspicious"
+---
+apiVersion: agentgateway.solo.io/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: fraud-bot-allowlist
+  namespace: trustusbank-platform
+spec:
+  targetRefs:
+    - group: agentgateway.solo.io
+      kind: AgentgatewayBackend
+      name: account-mcp
+    - group: agentgateway.solo.io
+      kind: AgentgatewayBackend
+      name: transaction-mcp
+  toolAllowlist:
+    matchPrincipal: "fraud-bot"
+    allow:
+      - transaction-mcp.list_recent
+      - transaction-mcp.get_details
+      - transaction-mcp.flag_suspicious
+      - account-mcp.get_profile
+---
+apiVersion: agentgateway.solo.io/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: triage-bot-allowlist
+  namespace: trustusbank-platform
+spec:
+  targetRefs:
+    - group: agentgateway.solo.io
+      kind: AgentgatewayBackend
+      name: ticket-mcp
+  toolAllowlist:
+    matchPrincipal: "triage-bot"
+    allow:
+      - ticket-mcp.create_ticket
+      - ticket-mcp.notify_human

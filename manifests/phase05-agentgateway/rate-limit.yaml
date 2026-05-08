@@ -1,0 +1,16 @@
+apiVersion: agentgateway.solo.io/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: per-agent-rate-limit
+  namespace: trustusbank-platform
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: trustusbank-agentgw
+  rateLimit:
+    descriptors:
+      - key: jwt.sub
+        rateLimit:
+          requestsPerUnit: 100
+          unit: minute

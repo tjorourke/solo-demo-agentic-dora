@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: account-mcp
+  namespace: trustusbank-bank-mcp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: account-mcp
+  namespace: trustusbank-bank-mcp
+  labels:
+    app: account-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: account-mcp
+  template:
+    metadata:
+      labels:
+        app: account-mcp
+    spec:
+      serviceAccountName: account-mcp
+      containers:
+        - name: server
+          image: localhost:5001/trustusbank/account-mcp:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector-opentelemetry-collector.trustusbank-observability.svc.cluster.local:4317
+            - name: OTEL_SERVICE_NAME
+              value: account-mcp
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 2
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: account-mcp
+  namespace: trustusbank-bank-mcp
+spec:
+  selector:
+    app: account-mcp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

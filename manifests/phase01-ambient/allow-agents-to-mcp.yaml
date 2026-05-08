@@ -1,0 +1,30 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-agents-to-mcp
+  namespace: trustusbank-bank-mcp
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/trustusbank-bank-agents/sa/support-bot"
+              - "cluster.local/ns/trustusbank-bank-agents/sa/fraud-bot"
+              - "cluster.local/ns/trustusbank-bank-agents/sa/triage-bot"
+              - "cluster.local/ns/trustusbank-platform/sa/agentgateway"
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-platform-to-agents
+  namespace: trustusbank-bank-agents
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/trustusbank-platform/sa/agentgateway"
+              - "cluster.local/ns/trustusbank-platform/sa/kagent"
+              - "cluster.local/ns/trustusbank-bank-frontend/sa/chatbot"

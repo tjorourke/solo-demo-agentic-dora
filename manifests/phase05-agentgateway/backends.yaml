@@ -1,0 +1,39 @@
+apiVersion: agentgateway.solo.io/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: account-mcp
+  namespace: trustusbank-platform
+spec:
+  protocol: mcp
+  transport: streamable-http
+  endpoint: http://account-mcp.trustusbank-bank-mcp.svc.cluster.local:8080/mcp
+---
+apiVersion: agentgateway.solo.io/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: transaction-mcp
+  namespace: trustusbank-platform
+spec:
+  protocol: mcp
+  transport: streamable-http
+  endpoint: http://transaction-mcp.trustusbank-bank-mcp.svc.cluster.local:8080/mcp
+---
+apiVersion: agentgateway.solo.io/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: ticket-mcp
+  namespace: trustusbank-platform
+spec:
+  protocol: mcp
+  transport: streamable-http
+  endpoint: http://ticket-mcp.trustusbank-bank-mcp.svc.cluster.local:8080/mcp
+---
+apiVersion: agentgateway.solo.io/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: evil-tools
+  namespace: trustusbank-platform
+spec:
+  protocol: mcp
+  transport: streamable-http
+  endpoint: http://evil-tools.trustusbank-bank-evil.svc.cluster.local:8080/mcp

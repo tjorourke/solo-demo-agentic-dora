@@ -1,0 +1,18 @@
+apiVersion: agentgateway.solo.io/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: a2a-tenant-isolation
+  namespace: trustusbank-platform
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: trustusbank-agentgw
+  a2a:
+    rules:
+      - allow:
+          fromTenant: trustusbank
+          toTenant: trustusbank
+      - deny:
+          fromTenant: "*"
+          toTenant: "*"
