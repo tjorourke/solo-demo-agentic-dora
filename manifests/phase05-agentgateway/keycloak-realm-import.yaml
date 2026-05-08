@@ -51,7 +51,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: import
-          image: bitnami/keycloak:26
+          image: alpine/k8s:1.31.0   # has curl + jq + kubectl
           command:
             - /bin/sh
             - -c

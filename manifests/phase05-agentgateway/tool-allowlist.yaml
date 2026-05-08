@@ -1,5 +1,5 @@
-# Tool allowlists are encoded in spec.traffic.authorization with CEL.
-# Variables available: jwt.* (claims), mcp.tool.name, mcp.method.
+# spec.traffic policies must target Gateway / ListenerSet / GRPCRoute / HTTPRoute.
+# We attach one allowlist policy per HTTPRoute.
 
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
@@ -8,9 +8,9 @@ metadata:
   namespace: trustusbank-platform
 spec:
   targetRefs:
-    - group: agentgateway.dev
-      kind: AgentgatewayBackend
-      name: account-mcp
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: account-mcp-route
   traffic:
     authorization:
       action: Allow
@@ -26,9 +26,9 @@ metadata:
   namespace: trustusbank-platform
 spec:
   targetRefs:
-    - group: agentgateway.dev
-      kind: AgentgatewayBackend
-      name: transaction-mcp
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: transaction-mcp-route
   traffic:
     authorization:
       action: Allow
@@ -44,9 +44,9 @@ metadata:
   namespace: trustusbank-platform
 spec:
   targetRefs:
-    - group: agentgateway.dev
-      kind: AgentgatewayBackend
-      name: ticket-mcp
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: ticket-mcp-route
   traffic:
     authorization:
       action: Allow

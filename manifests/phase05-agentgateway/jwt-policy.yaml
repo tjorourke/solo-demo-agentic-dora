@@ -21,11 +21,16 @@ spec:
     jwtAuthentication:
       mode: Strict
       providers:
-        - issuer: http://keycloak.trustusbank-platform.svc.cluster.local/realms/trustusbank
+        - issuer: http://keycloak.trustusbank-platform.svc.cluster.local:8080/realms/trustusbank
           audiences:
             - support-bot
             - fraud-bot
             - triage-bot
           jwks:
             remote:
-              url: http://keycloak.trustusbank-platform.svc.cluster.local/realms/trustusbank/protocol/openid-connect/certs
+              backendRef:
+                kind: Service
+                name: keycloak
+                port: 8080
+              jwksPath: /realms/trustusbank/protocol/openid-connect/certs
+              cacheDuration: 5m
