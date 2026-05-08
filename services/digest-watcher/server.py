@@ -331,7 +331,7 @@ async def healthz(_req: web.Request) -> web.Response:
 
 
 async def metrics(_req: web.Request) -> web.Response:
-    return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST)
+    return web.Response(body=generate_latest(), headers={"Content-Type": CONTENT_TYPE_LATEST})
 
 
 async def trigger_check(req: web.Request) -> web.Response:

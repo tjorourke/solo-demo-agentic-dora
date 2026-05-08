@@ -15,7 +15,10 @@ require_cmd cosign
 
 log_step "3.1 — agentregistry Helm install"
 # Repo: https://github.com/agentregistry-dev/agentregistry
-# Release asset is named agentregistry-<semver>.tgz (no leading 'v', no '-chart' suffix).
+# Release asset is named agentregistry-<semver>.tgz (no leading 'v').
+# The chart needs:
+#   - config.jwtPrivateKey (a hex string, NOT a PEM key — yes, confusing)
+#   - bundled postgres MUST have pgvector — override default postgres:18 image
 AREG_VERSION="${AREG_VERSION:-0.3.3}"
 AREG_CHART_TGZ="/tmp/agentregistry-${AREG_VERSION}.tgz"
 if [[ ! -s "$AREG_CHART_TGZ" ]]; then
@@ -25,13 +28,22 @@ if [[ ! -s "$AREG_CHART_TGZ" ]]; then
     || log_warn "chart download failed — agentregistry will be skipped"
 fi
 
+AREG_JWT_HEX="$(openssl rand -hex 32)"
 if [[ -s "$AREG_CHART_TGZ" ]] && file "$AREG_CHART_TGZ" | grep -q gzip; then
   helm upgrade --install agentregistry "$AREG_CHART_TGZ" \
     -n "$NS_PLATFORM" --create-namespace \
-    || log_warn "agentregistry helm install failed — continuing without it; digest-watcher still provides the rug-pull canary"
+    --set "config.jwtPrivateKey=$AREG_JWT_HEX" \
+    --set "database.postgres.bundled.image.repository=pgvector" \
+    --set "database.postgres.bundled.image.name=pgvector" \
+    --set "database.postgres.bundled.image.tag=pg17" \
+    --set "database.postgres.vectorEnabled=true" \
+    --set "service.type=ClusterIP" \
+    || log_warn "agentregistry helm install failed — digest-watcher still provides the rug-pull canary"
 else
-  log_warn "skipping agentregistry — chart unavailable. The demo's rug-pull is implemented by digest-watcher (Phase 3.7 below) and does NOT require agentregistry."
+  log_warn "skipping agentregistry — chart unavailable."
 fi
+wait_for_pods_ready "$NS_PLATFORM" "app.kubernetes.io/name=agentregistry" 300s 2>/dev/null \
+  || log_warn "agentregistry not ready — will continue and try to register"
 
 # Tolerate readiness failure — the demo can run without it
 wait_for_pods_ready "$NS_PLATFORM" "app.kubernetes.io/name=agentregistry" 60s 2>/dev/null \
@@ -68,28 +80,32 @@ if docker image inspect "$IMG_EVIL_CLEAN" >/dev/null 2>&1; then
   COSIGN_PASSWORD="" cosign sign --key "$COSIGN_UNTRUSTED_KEY" --yes "$IMG_EVIL_CLEAN" || log_warn "sign evil-tools failed"
 fi
 
-log_step "3.5-3.10 — register artefacts via arctl apply"
-ARTEFACTS_DIR="$MANIFESTS_DIR/phase03-registry/artefacts"
-register_artefact() {
-  local file="$1"
-  if command -v arctl >/dev/null 2>&1; then
-    log "arctl apply -f $file"
-    arctl apply -f "$file" 2>&1 | tee -a "$(evidence_dir 3)/arctl-apply.log" || \
-      log_warn "arctl apply failed for $file"
-  else
-    log_warn "arctl missing — cannot apply $file"
-  fi
-}
-register_artefact "$ARTEFACTS_DIR/account-mcp.yaml"
-register_artefact "$ARTEFACTS_DIR/transaction-mcp.yaml"
-register_artefact "$ARTEFACTS_DIR/ticket-mcp.yaml"
-# evil-tools — should fail signature check; we apply it anyway with --allow-unsigned
-# to simulate the demo's "force-allowed" gotcha.
-log "evil-tools — expect rejection without override"
+log_step "3.5 — publish MCP artefacts to agentregistry via arctl"
+# Port-forward to the registry temporarily so arctl can reach it.
+( kubectl -n "$NS_PLATFORM" port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
+AREG_PF_PID=$!
+sleep 3
+export ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT"
+
 if command -v arctl >/dev/null 2>&1; then
-  arctl apply -f "$ARTEFACTS_DIR/evil-tools.yaml" --allow-unsigned 2>&1 \
-    | tee -a "$(evidence_dir 3)/arctl-apply.log" || true
+  for srv in account-mcp transaction-mcp ticket-mcp; do
+    arctl mcp publish "trustusbank/$srv" --version 1.0.0 --type oci \
+      --package-id "localhost:5001/trustusbank/$srv:1.0.0" \
+      --transport streamable-http \
+      --description "TrustUsBank $srv (signed)" \
+      --overwrite 2>&1 | tee -a "$(evidence_dir 3)/arctl-publish.log" | tail -3 || true
+  done
+
+  # evil-tools registered under a separate namespace + clear UNTRUSTED note in description
+  arctl mcp publish "redteam/evil-tools" --version 1.0.0 --type oci \
+    --package-id "localhost:5001/trustusbank/evil-tools:1.0.0" \
+    --transport streamable-http \
+    --description "Currency converter — UNTRUSTED signer (red team registered, force-allowed for demo)" \
+    --overwrite 2>&1 | tee -a "$(evidence_dir 3)/arctl-publish.log" | tail -3 || true
+else
+  log_warn "arctl missing — cannot publish artefacts"
 fi
+kill "$AREG_PF_PID" 2>/dev/null || true
 
 log_step "3.6 — evidence (DORA Art. 28 — sub-outsourcing register)"
 P3=$(evidence_dir 3)
