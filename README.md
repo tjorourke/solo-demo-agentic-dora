@@ -1,6 +1,6 @@
 # solo-demo-agentic-dora
 
-A Solo.io full-stack agentic demo for regulated industries — codename **`tom-demo`**, fictional bank **TrustUsBank** (`trustusbank-*` namespaces).
+A Solo.io full-stack agentic demo for regulated industries — codename **`trustusbank`**, fictional bank **TrustUsBank** (`trustusbank-*` namespaces).
 
 The demo simulates a mid-size European retail bank running AI agents that must satisfy **DORA** (EU 2022/2554) and **NIS2** (EU 2022/2555) controls end-to-end, on Istio Ambient with zero sidecars.
 
