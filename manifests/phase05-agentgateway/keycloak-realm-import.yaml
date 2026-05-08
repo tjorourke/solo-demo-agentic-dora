@@ -58,19 +58,19 @@ spec:
             - |
               set -e
               # Wait for Keycloak admin endpoint
-              until curl -fsS "http://keycloak.trustusbank-platform.svc.cluster.local/realms/master" >/dev/null; do
+              until curl -fsS "http://keycloak.trustusbank-platform.svc.cluster.local:8080/realms/master" >/dev/null; do
                 echo "waiting for keycloak..."; sleep 5
               done
               # Get admin token
-              TOKEN=$(curl -fsS -X POST "http://keycloak.trustusbank-platform.svc.cluster.local/realms/master/protocol/openid-connect/token" \
+              TOKEN=$(curl -fsS -X POST "http://keycloak.trustusbank-platform.svc.cluster.local:8080/realms/master/protocol/openid-connect/token" \
                 -d "client_id=admin-cli" \
                 -d "username=admin" \
                 -d "password=${KEYCLOAK_ADMIN_PASSWORD}" \
                 -d "grant_type=password" | jq -r .access_token)
               # Create realm if not exists
-              if ! curl -fsS -H "Authorization: Bearer $TOKEN" "http://keycloak.trustusbank-platform.svc.cluster.local/admin/realms/trustusbank" >/dev/null 2>&1; then
+              if ! curl -fsS -H "Authorization: Bearer $TOKEN" "http://keycloak.trustusbank-platform.svc.cluster.local:8080/admin/realms/trustusbank" >/dev/null 2>&1; then
                 curl -fsS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-                  "http://keycloak.trustusbank-platform.svc.cluster.local/admin/realms" \
+                  "http://keycloak.trustusbank-platform.svc.cluster.local:8080/admin/realms" \
                   --data @/realm/trustusbank-realm.json
                 echo "realm created"
               else

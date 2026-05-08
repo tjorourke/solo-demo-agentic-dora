@@ -54,7 +54,7 @@ spec:
             - -c
             - |
               set -e
-              KC=http://keycloak.trustusbank-platform.svc.cluster.local
+              KC=http://keycloak.trustusbank-platform.svc.cluster.local:8080
               # Wait for realm to exist
               until curl -fsS "${KC}/realms/trustusbank/.well-known/openid-configuration" >/dev/null; do
                 echo "waiting for trustusbank realm..."; sleep 5
