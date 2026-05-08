@@ -45,6 +45,4 @@ spec:
             - list_recent
       - type: Agent
         agent:
-          apiGroup: kagent.dev
-          kind: Agent
           name: fraud-bot

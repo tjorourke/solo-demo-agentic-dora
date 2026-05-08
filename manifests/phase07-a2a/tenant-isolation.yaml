@@ -1,18 +1,24 @@
-apiVersion: agentgateway.solo.io/v1alpha1
-kind: AgentgatewayPolicy
+# A2A tenant isolation — kagent's own A2A endpoints are namespace-scoped via
+# the kagent controller's RBAC. agentgateway's traffic policies don't include
+# a dedicated A2A primitive in v1.1.0; tenant isolation is via Istio
+# AuthorizationPolicy at the network layer (already applied in Phase 1).
+# Recording the intent here as a ConfigMap so the demo can surface it.
+
+apiVersion: v1
+kind: ConfigMap
 metadata:
   name: a2a-tenant-isolation
   namespace: trustusbank-platform
-spec:
-  targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: trustusbank-agentgw
-  a2a:
-    rules:
-      - allow:
-          fromTenant: trustusbank
-          toTenant: trustusbank
-      - deny:
-          fromTenant: "*"
-          toTenant: "*"
+data:
+  README.md: |
+    A2A tenant isolation in this demo is enforced at three layers:
+
+    1. Istio AuthorizationPolicy (Phase 1) — only the SPIFFE principals of
+       support-bot, fraud-bot, triage-bot are allowed to reach each other.
+       Cross-namespace A2A from anywhere else returns 403 at L4.
+    2. kagent controller — Agent CRDs reference each other by name within
+       a namespace; cross-tenant references would require explicit RBAC
+       on the controller's ServiceAccount.
+    3. agentgateway tool-allowlist — even if A2A routing succeeded, the
+       per-agent CEL policy on jwt.sub gates which MCP tools each agent
+       can invoke.

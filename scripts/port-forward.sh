@@ -39,12 +39,12 @@ maybe_pf() {
 # Observability
 maybe_pf "$NS_OBS"      "svc/kube-prometheus-stack-grafana"     "$PF_GRAFANA_PORT"     80   "Grafana"
 maybe_pf "$NS_OBS"      "svc/kube-prometheus-stack-prometheus"  "$PF_PROMETHEUS_PORT"  9090 "Prometheus"
-maybe_pf "$NS_OBS"      "svc/tempo"                              "$PF_TEMPO_PORT"       3100 "Tempo"
+maybe_pf "$NS_OBS"      "svc/tempo"                              "$PF_TEMPO_PORT"       3200 "Tempo"
 maybe_pf "$NS_OBS"      "svc/loki"                               "$PF_LOKI_PORT"        3100 "Loki"
 # Platform
 maybe_pf "$NS_PLATFORM" "svc/keycloak"                           "$PF_KEYCLOAK_PORT"    8080 "Keycloak"
 maybe_pf "$NS_PLATFORM" "svc/agentregistry"                      "$PF_AGENTREGISTRY_PORT" 8080 "agentregistry"
-maybe_pf "$NS_PLATFORM" "svc/kagent-ui"                          "$PF_KAGENT_PORT"      80   "kagent UI"
+maybe_pf "$NS_PLATFORM" "svc/kagent-ui"                          "$PF_KAGENT_PORT"      8080 "kagent UI"
 maybe_pf "$NS_PLATFORM" "svc/trustusbank-agentgw"                "$PF_AGENTGATEWAY_PORT" 8080 "agentgateway"
 maybe_pf "$NS_PLATFORM" "svc/digest-watcher"                     "$PF_DIGEST_WATCHER_PORT" 8080 "digest-watcher (rug-pull canary)"
 # Frontend

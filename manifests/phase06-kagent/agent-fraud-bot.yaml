@@ -45,6 +45,4 @@ spec:
             - get_profile
       - type: Agent
         agent:
-          apiGroup: kagent.dev
-          kind: Agent
           name: triage-bot
