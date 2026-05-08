@@ -34,7 +34,21 @@ helm_upgrade_install kagent-crds "$KAGENT_SRC/helm/kagent-crds" \
 helm_upgrade_install kagent "$KAGENT_SRC/helm/kagent" \
   -n "$NS_PLATFORM" \
   --set providers.default=anthropic \
-  --set providers.anthropic.apiKey="$ANTHROPIC_API_KEY"
+  --set providers.anthropic.apiKey="$ANTHROPIC_API_KEY" \
+  --set kagent-tools.enabled=false \
+  --set k8s-agent.enabled=false \
+  --set kgateway-agent.enabled=false \
+  --set istio-agent.enabled=false \
+  --set promql-agent.enabled=false \
+  --set observability-agent.enabled=false \
+  --set argo-rollouts-conversion-agent.enabled=false \
+  --set helm-agent.enabled=false \
+  --set cilium-policy-agent.enabled=false \
+  --set cilium-debug-agent.enabled=false \
+  --set cilium-manager-agent.enabled=false \
+  --set grafana-mcp.enabled=false \
+  --set querydoc.enabled=false \
+  --set oauth2-proxy.enabled=false
 wait_for_pods_ready "$NS_PLATFORM" "app.kubernetes.io/name=kagent" 300s
 
 log_step "6.3 — Anthropic API key Secret"
