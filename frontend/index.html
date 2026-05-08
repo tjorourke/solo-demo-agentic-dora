@@ -212,7 +212,9 @@
   </main>
 
   <script>
-    const KAGENT_URL = window.KAGENT_URL || 'http://localhost:18007';
+    // Same-origin: nginx in the chatbot pod proxies /api/ → kagent-ui.
+    // No CORS preflight, no localhost coupling.
+    const KAGENT_URL = window.KAGENT_URL || '';
     const AGENT_NS = 'trustusbank-bank-agents';
     const AGENT = 'support-bot';
     const A2A_PATH = `/api/a2a/${AGENT_NS}/${AGENT}/`;
