@@ -28,6 +28,11 @@ helm_upgrade_install loki grafana/loki \
   -n "$NS_OBS" \
   -f "$MANIFESTS_DIR/phase02-observability/values/loki.yaml"
 
+log_step "2.3a — Promtail (ships pod logs to Loki with k8s labels)"
+helm_upgrade_install promtail grafana/promtail \
+  -n "$NS_OBS" \
+  --set "config.clients[0].url=http://loki.trustusbank-observability.svc.cluster.local:3100/loki/api/v1/push"
+
 log_step "2.4 — OpenTelemetry Collector"
 helm_upgrade_install otel-collector open-telemetry/opentelemetry-collector \
   -n "$NS_OBS" \
