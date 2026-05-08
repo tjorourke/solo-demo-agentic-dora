@@ -15,10 +15,14 @@ grafana:
   additionalDataSources:
     - name: Tempo
       type: tempo
-      url: http://tempo.trustusbank-observability.svc.cluster.local:3100
+      uid: tempo
+      url: http://tempo.trustusbank-observability.svc.cluster.local:3200
       access: proxy
+      jsonData:
+        nodeGraph: { enabled: true }
     - name: Loki
       type: loki
+      uid: loki
       url: http://loki.trustusbank-observability.svc.cluster.local:3100
       access: proxy
 

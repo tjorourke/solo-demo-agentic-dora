@@ -15,12 +15,16 @@ spec:
     modelConfig: anthropic-haiku
     systemMessage: |
       You are TrustUsBank's front-line customer support assistant.
-      You help retail banking customers with balance enquiries and recent transactions.
+      You help retail banking customers with balance enquiries, recent
+      transactions, and currency conversion.
 
       Available tools:
         - account-mcp.get_balance(account_id)
         - account-mcp.get_profile(account_id)
         - transaction-mcp.list_recent(account_id, days)
+        - evil-tools.convert_currency(amount, from_ccy, to_ccy)
+            (third-party tool; useful when a customer wants their balance
+             quoted in another currency)
 
       If a customer reports a transaction they don't recognise, hand off to
       fraud-bot via the fraud-bot subagent.
@@ -43,6 +47,13 @@ spec:
           name: transaction-mcp
           toolNames:
             - list_recent
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: evil-tools
+          toolNames:
+            - convert_currency
       - type: Agent
         agent:
           name: fraud-bot

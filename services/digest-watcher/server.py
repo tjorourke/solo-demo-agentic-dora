@@ -276,6 +276,56 @@ class Watcher:
 
 
 # ── HTTP control plane ─────────────────────────────────────────────────────
+INDEX_HTML = """<!doctype html><html><head><meta charset=utf-8>
+<title>digest-watcher — TrustUsBank rug-pull canary</title>
+<style>
+body{font:14px -apple-system,system-ui,sans-serif;max-width:780px;margin:32px auto;padding:0 16px;color:#111;background:#f8fafc}
+h1{font-size:18px;margin:0 0 4px}
+.sub{color:#64748b;font-size:13px;margin-bottom:18px}
+section{background:#fff;border-radius:10px;padding:16px;margin:0 0 14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+h2{font-size:14px;margin:0 0 10px;color:#0a2540}
+a{color:#2563eb;text-decoration:none}a:hover{text-decoration:underline}
+code{background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td{padding:6px 8px;border-bottom:1px solid #e5e7eb}
+td.tag{color:#64748b;width:160px}
+.ok{color:#16a34a;font-weight:600}.bad{color:#dc2626;font-weight:600}
+</style></head><body>
+<h1>digest-watcher</h1>
+<div class=sub>TrustUsBank rug-pull canary &mdash; SHA-256 over MCP tool definitions, every 30s. Mismatches = anomalous tool change since baseline (DORA Art. 10).</div>
+
+<section><h2>State</h2>
+<table>
+<tr><td class=tag>baselines</td><td><a href=/baselines>/baselines</a> — current accepted digests</td></tr>
+<tr><td class=tag>mismatches</td><td><a href=/mismatches>/mismatches</a> — recorded rug-pull events</td></tr>
+<tr><td class=tag>metrics</td><td><a href=:9090/metrics>:9090/metrics</a> &mdash; Prometheus exposition</td></tr>
+<tr><td class=tag>health</td><td><a href=/healthz>/healthz</a></td></tr>
+</table>
+</section>
+
+<section><h2>Operator actions</h2>
+<table>
+<tr><td class=tag>force re-poll</td><td><code>curl -X POST localhost:18010/trigger-check</code></td></tr>
+<tr><td class=tag>reset baseline</td><td><code>curl -X POST localhost:18010/baselines/&lt;mcp-server&gt;/reset</code></td></tr>
+</table>
+</section>
+
+<section><h2>Targets being watched</h2>
+<table>
+<tr><td class=tag>account-mcp</td><td>http://account-mcp.trustusbank-bank-mcp:8080/mcp</td></tr>
+<tr><td class=tag>transaction-mcp</td><td>http://transaction-mcp.trustusbank-bank-mcp:8080/mcp</td></tr>
+<tr><td class=tag>ticket-mcp</td><td>http://ticket-mcp.trustusbank-bank-mcp:8080/mcp</td></tr>
+<tr><td class=tag>evil-tools</td><td>http://evil-tools.trustusbank-bank-evil:8080/mcp</td></tr>
+</table>
+</section>
+</body></html>
+"""
+
+
+async def index(_req: web.Request) -> web.Response:
+    return web.Response(body=INDEX_HTML, content_type="text/html")
+
+
 async def healthz(_req: web.Request) -> web.Response:
     return web.json_response({"status": "ok"})
 
@@ -314,6 +364,7 @@ async def reset_baseline(req: web.Request) -> web.Response:
 def make_app(watcher: Watcher) -> web.Application:
     app = web.Application()
     app["watcher"] = watcher
+    app.router.add_get("/", index)
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/metrics", metrics)
     app.router.add_post("/trigger-check", trigger_check)
