@@ -52,11 +52,14 @@ fi
 
 kubectl get nodes
 
-log_step "0.5 — Gateway API CRDs (standard channel) $GATEWAY_API_VERSION"
-kubectl apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/standard-install.yaml"
-
-log_step "0.6 — Gateway API CRDs (experimental channel)"
-kubectl apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/experimental-install.yaml"
+log_step "0.5/0.6 — Gateway API CRDs (experimental channel) $GATEWAY_API_VERSION"
+# Install ONLY the experimental channel — standard+experimental conflict on
+# shared CRD names with different schemas, and experimental is what
+# agentgateway requires.
+# --server-side is required because some CRDs (HTTPRoute) are too large for
+# the client-side last-applied-configuration annotation.
+kubectl apply --server-side --force-conflicts \
+  -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/experimental-install.yaml"
 
 log_step "0.7 — namespaces"
 ensure_namespace "$NS_PLATFORM"

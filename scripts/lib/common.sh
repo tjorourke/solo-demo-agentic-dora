@@ -63,14 +63,14 @@ kubectl_apply() {
 # ensure_namespace <name> [label=value ...]
 ensure_namespace() {
   local ns="$1"; shift
-  local labels=("$@")
   if ! kubectl get ns "$ns" >/dev/null 2>&1; then
     log "creating namespace $ns"
     kubectl create ns "$ns"
   fi
-  for lbl in "${labels[@]}"; do
-    log "labelling $ns with $lbl"
-    kubectl label ns "$ns" "$lbl" --overwrite
+  while (( $# > 0 )); do
+    log "labelling $ns with $1"
+    kubectl label ns "$ns" "$1" --overwrite
+    shift
   done
 }
 
