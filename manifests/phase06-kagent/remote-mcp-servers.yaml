@@ -1,6 +1,6 @@
-# RemoteMCPServer references are namespace-local. Each agent's namespace gets
-# its own set; auth is via headersFrom (Bearer JWT injected from a Secret that
-# Phase 6 creates from a Keycloak token-exchange Job).
+# RemoteMCPServer.spec.headersFrom uses a custom ValueRef shape:
+#   valueFrom: {name, key, type: Secret|ConfigMap}
+# (NOT Kubernetes-style secretKeyRef.)
 
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
@@ -14,9 +14,9 @@ spec:
   headersFrom:
     - name: Authorization
       valueFrom:
-        secretKeyRef:
-          name: support-bot-jwt
-          key: bearer
+        type: Secret
+        name: support-bot-jwt
+        key: bearer
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
@@ -30,9 +30,9 @@ spec:
   headersFrom:
     - name: Authorization
       valueFrom:
-        secretKeyRef:
-          name: support-bot-jwt
-          key: bearer
+        type: Secret
+        name: support-bot-jwt
+        key: bearer
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
@@ -46,6 +46,6 @@ spec:
   headersFrom:
     - name: Authorization
       valueFrom:
-        secretKeyRef:
-          name: triage-bot-jwt
-          key: bearer
+        type: Secret
+        name: triage-bot-jwt
+        key: bearer
