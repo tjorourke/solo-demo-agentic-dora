@@ -9,16 +9,23 @@ source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
 trap on_error ERR
 
-log_step "6.1 — kagent CRDs (OCI chart from ghcr.io)"
+log_step "6.1/6.2 — kagent (local chart from upstream repo)"
+# kagent doesn't publish a public OCI chart — install from the in-repo chart
+# path. We shallow-clone the tagged release and helm install from there.
 KAGENT_VERSION="${KAGENT_VERSION:-v0.9.2}"
-helm_upgrade_install kagent-crds \
-  oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds \
-  -n "$NS_PLATFORM" --version "$KAGENT_VERSION"
+KAGENT_SRC="/tmp/kagent-src-${KAGENT_VERSION}"
+if [[ ! -d "$KAGENT_SRC" ]]; then
+  log "cloning kagent ${KAGENT_VERSION}"
+  git clone --depth 1 -b "$KAGENT_VERSION" https://github.com/kagent-dev/kagent "$KAGENT_SRC"
+fi
 
-log_step "6.2 — kagent controller (OCI chart)"
-helm_upgrade_install kagent \
-  oci://ghcr.io/kagent-dev/kagent/helm/kagent \
-  -n "$NS_PLATFORM" --version "$KAGENT_VERSION"
+helm_upgrade_install kagent-crds "$KAGENT_SRC/helm/kagent-crds" \
+  -n "$NS_PLATFORM"
+
+helm_upgrade_install kagent "$KAGENT_SRC/helm/kagent" \
+  -n "$NS_PLATFORM" \
+  --set providers.default=anthropic \
+  --set providers.anthropic.apiKey="$ANTHROPIC_API_KEY"
 wait_for_pods_ready "$NS_PLATFORM" "app.kubernetes.io/name=kagent" 300s
 
 log_step "6.3 — Anthropic API key Secret"

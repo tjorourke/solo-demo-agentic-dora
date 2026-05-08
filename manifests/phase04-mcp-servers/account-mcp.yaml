@@ -35,10 +35,10 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: account-mcp
           readinessProbe:
-            httpGet: { path: /health, port: 8080 }
+            tcpSocket: { port: 8080 }
             initialDelaySeconds: 2
           livenessProbe:
-            httpGet: { path: /health, port: 8080 }
+            tcpSocket: { port: 8080 }
             initialDelaySeconds: 10
 ---
 apiVersion: v1
