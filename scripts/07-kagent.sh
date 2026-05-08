@@ -9,15 +9,16 @@ source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
 trap on_error ERR
 
-helm_repo_add_once kagent https://kagent-dev.github.io/kagent
+log_step "6.1 — kagent CRDs (OCI chart from ghcr.io)"
+KAGENT_VERSION="${KAGENT_VERSION:-v0.9.2}"
+helm_upgrade_install kagent-crds \
+  oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds \
+  -n "$NS_PLATFORM" --version "$KAGENT_VERSION"
 
-log_step "6.1 — kagent CRDs"
-helm_upgrade_install kagent-crds kagent/kagent-crds \
-  -n "$NS_PLATFORM"
-
-log_step "6.2 — kagent controller"
-helm_upgrade_install kagent kagent/kagent \
-  -n "$NS_PLATFORM"
+log_step "6.2 — kagent controller (OCI chart)"
+helm_upgrade_install kagent \
+  oci://ghcr.io/kagent-dev/kagent/helm/kagent \
+  -n "$NS_PLATFORM" --version "$KAGENT_VERSION"
 wait_for_pods_ready "$NS_PLATFORM" "app.kubernetes.io/name=kagent" 300s
 
 log_step "6.3 — Anthropic API key Secret"
@@ -28,6 +29,11 @@ kubectl -n "$NS_BANK_AGENTS" create secret generic kagent-anthropic \
 
 log_step "6.4 — ModelConfig"
 kubectl_apply "$MANIFESTS_DIR/phase06-kagent/modelconfig.yaml"
+
+log_step "6.4a — fetch JWTs from Keycloak (populates *-jwt Secrets)"
+kubectl_apply "$MANIFESTS_DIR/phase06-kagent/jwt-fetch-job.yaml"
+kubectl -n "$NS_BANK_AGENTS" wait --for=condition=complete job/jwt-fetcher --timeout=180s || \
+  log_warn "jwt-fetcher job did not complete — RemoteMCPServer auth may fail"
 
 log_step "6.5 — RemoteMCPServer (point at agentgateway, NOT MCP servers directly)"
 kubectl_apply "$MANIFESTS_DIR/phase06-kagent/remote-mcp-servers.yaml"

@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chatbot
+  namespace: trustusbank-bank-frontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chatbot
+  namespace: trustusbank-bank-frontend
+  labels:
+    app: chatbot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chatbot
+  template:
+    metadata:
+      labels:
+        app: chatbot
+    spec:
+      serviceAccountName: chatbot
+      containers:
+        - name: chatbot
+          image: localhost:5001/trustusbank/chatbot:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet: { path: /healthz, port: 80 }
+          livenessProbe:
+            httpGet: { path: /healthz, port: 80 }
+            initialDelaySeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chatbot
+  namespace: trustusbank-bank-frontend
+spec:
+  selector:
+    app: chatbot
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

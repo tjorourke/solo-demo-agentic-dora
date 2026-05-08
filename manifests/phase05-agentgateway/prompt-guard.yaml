@@ -1,4 +1,9 @@
-apiVersion: agentgateway.solo.io/v1alpha1
+# Prompt-guard / prompt-injection detection lives inside AgentgatewayPolicy.
+# agentgateway supports regex, OpenAI Moderation, AWS Bedrock Guardrails, Google
+# Model Armor, and custom webhooks. Here we use the regex layer — fast, no
+# external dependency, ideal for the demo.
+
+apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
   name: prompt-guard
@@ -8,20 +13,22 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: trustusbank-agentgw
-  promptGuard:
-    inspectFields:
-      - tool.description
-      - tool.arguments
-      - response.content
-    deny:
-      patterns:
-        - "(?i)ignore (your |all )?previous instructions"
-        - "(?i)disregard (your |all )?prior"
-        - "(?i)exfiltrate"
-        - "(?i)attacker\\."
-        - "(?i)system:.*ignore"
-        - "(?i)<\\s*system\\s*>"
-    onMatch:
-      action: deny
-      log: true
-      auditEvent: "prompt-injection-detected"
+  traffic:
+    promptGuard:
+      regex:
+        rules:
+          - pattern: '(?i)ignore (your |all )?previous instructions'
+            name: injection-ignore-instructions
+          - pattern: '(?i)disregard (your |all )?prior'
+            name: injection-disregard
+          - pattern: '(?i)exfiltrate'
+            name: injection-exfil
+          - pattern: '(?i)attacker\.[a-z]+'
+            name: injection-attacker-domain
+          - pattern: '(?i)<\s*system\s*>'
+            name: injection-system-tag
+        action: Deny
+        applyTo:
+          - tool.description
+          - tool.arguments
+          - response.content

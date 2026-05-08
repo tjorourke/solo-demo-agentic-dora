@@ -10,20 +10,28 @@ metadata:
   name: triage-bot
   namespace: trustusbank-bank-agents
 spec:
-  serviceAccountName: triage-bot
-  modelConfigRef:
-    name: anthropic-haiku
-  systemPrompt: |
-    You are TrustUsBank's escalation agent.
-    Given a fraud-bot report with risk > 70, you decide whether to:
-      1. Open a ticket (severity ∝ risk)
-      2. Notify a human via Slack/email
-      3. Both
-    You can call:
-      - ticket-mcp.create_ticket(customer_id, summary, severity)
-      - ticket-mcp.notify_human(ticket_id, channel)
-    Every escalation produces a DORA Art. 17 incident record. Be precise about
-    what triggered the escalation — the audit team reads these.
-  tools:
-    - type: mcp
-      ref: ticket-mcp
+  type: Declarative
+  declarative:
+    modelConfig: anthropic-haiku
+    systemMessage: |
+      You are TrustUsBank's escalation agent.
+      Given a fraud-bot report with risk > 70, you decide whether to:
+        1. Open a ticket (severity ∝ risk)
+        2. Notify a human via Slack/email
+        3. Both
+
+      Available tools:
+        - ticket-mcp.create_ticket(customer_id, summary, severity)
+        - ticket-mcp.notify_human(ticket_id, channel)
+
+      Every escalation produces a DORA Art. 17 incident record. Be precise about
+      what triggered the escalation — the audit team reads these.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: ticket-mcp
+          toolNames:
+            - create_ticket
+            - notify_human

@@ -1,16 +1,22 @@
+# RemoteMCPServer references are namespace-local. Each agent's namespace gets
+# its own set; auth is via headersFrom (Bearer JWT injected from a Secret that
+# Phase 6 creates from a Keycloak token-exchange Job).
+
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
 metadata:
   name: account-mcp
   namespace: trustusbank-bank-agents
 spec:
+  description: TrustUsBank account info via agentgateway (JWT-authed)
+  protocol: STREAMABLE_HTTP
   url: http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/account
-  transport: streamable-http
-  auth:
-    jwt:
-      issuerSecretRef:
-        name: support-bot-jwt
-        key: token
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        secretKeyRef:
+          name: support-bot-jwt
+          key: bearer
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
@@ -18,13 +24,15 @@ metadata:
   name: transaction-mcp
   namespace: trustusbank-bank-agents
 spec:
+  description: TrustUsBank transactions via agentgateway (JWT-authed)
+  protocol: STREAMABLE_HTTP
   url: http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/transaction
-  transport: streamable-http
-  auth:
-    jwt:
-      issuerSecretRef:
-        name: support-bot-jwt
-        key: token
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        secretKeyRef:
+          name: support-bot-jwt
+          key: bearer
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
@@ -32,10 +40,12 @@ metadata:
   name: ticket-mcp
   namespace: trustusbank-bank-agents
 spec:
+  description: TrustUsBank ticketing + human escalation via agentgateway
+  protocol: STREAMABLE_HTTP
   url: http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/ticket
-  transport: streamable-http
-  auth:
-    jwt:
-      issuerSecretRef:
-        name: triage-bot-jwt
-        key: token
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        secretKeyRef:
+          name: triage-bot-jwt
+          key: bearer

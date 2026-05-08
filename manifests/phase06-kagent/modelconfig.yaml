@@ -4,11 +4,10 @@ metadata:
   name: anthropic-haiku
   namespace: trustusbank-bank-agents
 spec:
-  provider: anthropic
+  provider: Anthropic
   model: claude-3-5-haiku-latest
-  apiKeySecretRef:
-    name: kagent-anthropic
-    key: ANTHROPIC_API_KEY
-  parameters:
-    temperature: 0.2
+  apiKeySecret: kagent-anthropic
+  apiKeySecretKey: ANTHROPIC_API_KEY
+  anthropic:
     maxTokens: 2048
+    temperature: 0.2

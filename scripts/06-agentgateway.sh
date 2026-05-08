@@ -9,15 +9,16 @@ source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
 trap on_error ERR
 
-helm_repo_add_once solo https://solo-io.github.io/agentgateway
 helm_repo_add_once bitnami https://charts.bitnami.com/bitnami
 
-log_step "5.1 — agentgateway CRDs"
-helm_upgrade_install agentgateway-crds solo/agentgateway-crds \
+log_step "5.1 — agentgateway CRDs (OCI chart from cr.agentgateway.dev)"
+helm_upgrade_install agentgateway-crds \
+  oci://cr.agentgateway.dev/charts/agentgateway-crds \
   -n "$NS_PLATFORM" --version "$AGENTGATEWAY_VERSION"
 
-log_step "5.2 — agentgateway control plane"
-helm_upgrade_install agentgateway solo/agentgateway \
+log_step "5.2 — agentgateway control plane (OCI chart)"
+helm_upgrade_install agentgateway \
+  oci://cr.agentgateway.dev/charts/agentgateway \
   -n "$NS_PLATFORM" --version "$AGENTGATEWAY_VERSION"
 
 wait_for_pods_ready "$NS_PLATFORM" "app.kubernetes.io/name=agentgateway" 300s

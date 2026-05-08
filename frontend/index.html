@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrustUsBank — AI Customer Support</title>
+  <style>
+    :root {
+      --tb-navy: #0a2540;
+      --tb-blue: #2563eb;
+      --tb-grey: #f3f4f6;
+      --tb-grey-2: #e5e7eb;
+      --tb-text: #111827;
+      --tb-muted: #6b7280;
+      --tb-success: #16a34a;
+      --tb-danger: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--tb-grey);
+      color: var(--tb-text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: var(--tb-navy);
+      color: white;
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header .brand { font-weight: 700; letter-spacing: 0.5px; font-size: 18px; }
+    header .pill {
+      background: rgba(255,255,255,0.1);
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: #cbd5e1;
+    }
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 24px;
+      gap: 24px;
+      overflow: hidden;
+    }
+    aside {
+      background: white;
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      overflow-y: auto;
+    }
+    aside h3 { margin-top: 0; font-size: 13px; text-transform: uppercase; color: var(--tb-muted); letter-spacing: 0.5px; }
+    aside .agent-row {
+      display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--tb-grey-2);
+      font-size: 14px;
+    }
+    aside .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tb-success); margin-right: 10px; }
+    aside .agent-name { font-weight: 600; }
+    aside .agent-role { font-size: 12px; color: var(--tb-muted); margin-top: 2px; }
+    .chat {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .chat-log {
+      flex: 1;
+      padding: 18px 24px;
+      overflow-y: auto;
+    }
+    .msg {
+      max-width: 75%;
+      padding: 10px 14px;
+      border-radius: 14px;
+      margin: 6px 0;
+      line-height: 1.45;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+    .msg.user { background: var(--tb-blue); color: white; margin-left: auto; border-bottom-right-radius: 4px; }
+    .msg.bot { background: var(--tb-grey); color: var(--tb-text); border-bottom-left-radius: 4px; }
+    .msg.system { background: #fff3cd; color: #856404; font-size: 12px; max-width: 100%; text-align: center; }
+    .agent-tag {
+      display: inline-block;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      background: rgba(0,0,0,0.05);
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-right: 6px;
+      color: var(--tb-muted);
+    }
+    .composer {
+      display: flex;
+      padding: 14px;
+      border-top: 1px solid var(--tb-grey-2);
+      gap: 8px;
+    }
+    .composer input {
+      flex: 1;
+      padding: 11px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--tb-grey-2);
+      font-size: 14px;
+      outline: none;
+    }
+    .composer input:focus { border-color: var(--tb-blue); }
+    .composer button {
+      background: var(--tb-blue);
+      color: white;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .composer button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .footer-meta {
+      padding: 8px 24px;
+      font-size: 11px;
+      color: var(--tb-muted);
+      text-align: right;
+      border-top: 1px solid var(--tb-grey-2);
+    }
+    .quick {
+      display: flex; gap: 6px; padding: 10px 24px 0; flex-wrap: wrap;
+    }
+    .quick button {
+      background: white;
+      border: 1px solid var(--tb-grey-2);
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--tb-text);
+    }
+    .quick button:hover { border-color: var(--tb-blue); color: var(--tb-blue); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">TrustUsBank — Customer Support</div>
+    <div class="pill" id="conn-pill">connecting…</div>
+  </header>
+
+  <main>
+    <aside>
+      <h3>Agents on this call</h3>
+      <div class="agent-row">
+        <div class="dot"></div>
+        <div>
+          <div class="agent-name">support-bot</div>
+          <div class="agent-role">Front-line customer support</div>
+        </div>
+      </div>
+      <div class="agent-row">
+        <div class="dot"></div>
+        <div>
+          <div class="agent-name">fraud-bot</div>
+          <div class="agent-role">Risk + anomaly classification</div>
+        </div>
+      </div>
+      <div class="agent-row">
+        <div class="dot"></div>
+        <div>
+          <div class="agent-name">triage-bot</div>
+          <div class="agent-role">Human escalation + tickets</div>
+        </div>
+      </div>
+
+      <h3 style="margin-top: 18px">Compliance posture</h3>
+      <div style="font-size: 12px; line-height: 1.6; color: var(--tb-muted)">
+        ✓ DORA Art. 9(2) — mTLS<br>
+        ✓ DORA Art. 9(4) — JWT auth<br>
+        ✓ DORA Art. 10 — anomaly detection<br>
+        ✓ DORA Art. 17 — audit trail<br>
+        ✓ DORA Art. 28 — artefact register
+      </div>
+    </aside>
+
+    <section class="chat">
+      <div class="chat-log" id="log">
+        <div class="msg system">All conversations are audited. Synthetic accounts only — do not enter real PII.</div>
+        <div class="msg bot"><span class="agent-tag">support-bot</span>Good afternoon. I'm here to help with your TrustUsBank account. How can I assist you today?</div>
+      </div>
+      <div class="quick">
+        <button onclick="quick('Hi, I am customer 12345. What is my balance?')">balance check</button>
+        <button onclick="quick('Customer 12345 here — show me my recent transactions, please.')">recent txns</button>
+        <button onclick="quick('Customer 12345 — there is a 1499 USD charge I do not recognise. Can you check it and open a ticket if it looks dodgy?')">suspicious txn</button>
+      </div>
+      <div class="composer">
+        <input id="prompt" placeholder="Type your question…" autofocus />
+        <button id="send" onclick="send()">Send</button>
+      </div>
+      <div class="footer-meta" id="meta">trace: -</div>
+    </section>
+  </main>
+
+  <script>
+    const KAGENT_URL = window.KAGENT_URL || 'http://localhost:18007';
+    const AGENT_NS = 'trustusbank-bank-agents';
+    const AGENT = 'support-bot';
+    const A2A_PATH = `/api/a2a/${AGENT_NS}/${AGENT}/`;
+
+    const log = document.getElementById('log');
+    const promptEl = document.getElementById('prompt');
+    const sendBtn = document.getElementById('send');
+    const metaEl = document.getElementById('meta');
+    const connPill = document.getElementById('conn-pill');
+
+    function add(text, who, agent) {
+      const div = document.createElement('div');
+      div.className = `msg ${who}`;
+      if (agent) {
+        const tag = document.createElement('span');
+        tag.className = 'agent-tag';
+        tag.textContent = agent;
+        div.appendChild(tag);
+      }
+      div.appendChild(document.createTextNode(text));
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function quick(text) {
+      promptEl.value = text;
+      send();
+    }
+
+    async function ping() {
+      try {
+        const r = await fetch(`${KAGENT_URL}/api/a2a/${AGENT_NS}/${AGENT}/.well-known/agent.json`);
+        connPill.textContent = r.ok ? 'connected' : 'unreachable';
+        connPill.style.color = r.ok ? '#86efac' : '#fca5a5';
+      } catch {
+        connPill.textContent = 'unreachable';
+        connPill.style.color = '#fca5a5';
+      }
+    }
+
+    async function send() {
+      const text = promptEl.value.trim();
+      if (!text) return;
+      promptEl.value = '';
+      sendBtn.disabled = true;
+      add(text, 'user');
+
+      const traceId = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+      metaEl.textContent = `trace: ${traceId}`;
+
+      try {
+        // A2A is JSON-RPC over HTTP at the base path
+        const r = await fetch(`${KAGENT_URL}${A2A_PATH}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'traceparent': `00-${traceId.padEnd(32, '0')}-${traceId}-01`,
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: traceId,
+            method: 'message/send',
+            params: { message: { role: 'user', parts: [{ kind: 'text', text }] } },
+          }),
+        });
+        const data = await r.json();
+        const result = data?.result || data;
+        const reply = result?.message?.parts?.[0]?.text
+          || result?.parts?.[0]?.text
+          || result?.text
+          || data?.error?.message
+          || JSON.stringify(data, null, 2);
+        const responder = result?.from?.name || result?.agent?.name || 'support-bot';
+        add(reply, 'bot', responder);
+      } catch (e) {
+        add(`(error talking to agent: ${e.message})`, 'bot', 'system');
+      } finally {
+        sendBtn.disabled = false;
+        promptEl.focus();
+      }
+    }
+
+    promptEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+
+    ping();
+    setInterval(ping, 15000);
+  </script>
+</body>
+</html>

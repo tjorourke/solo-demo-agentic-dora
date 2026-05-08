@@ -43,6 +43,7 @@ PHASES=(
   "06:06-agentgateway.sh:agentgateway (data plane)"
   "07:07-kagent.sh:kagent + agents (control plane)"
   "08:08-a2a.sh:A2A wiring"
+  "09:09-frontend.sh:Customer chatbot frontend"
 )
 
 log_step "deploy-all on cluster mode = ${CLUSTER_KIND}"

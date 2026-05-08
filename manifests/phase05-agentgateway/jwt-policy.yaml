@@ -1,4 +1,4 @@
-apiVersion: agentgateway.solo.io/v1alpha1
+apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
   name: jwt-validation
@@ -6,16 +6,26 @@ metadata:
 spec:
   targetRefs:
     - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: trustusbank-agentgw
-  jwt:
-    providers:
-      - name: keycloak
-        issuer: http://keycloak.trustusbank-platform.svc.cluster.local/realms/trustusbank
-        jwks:
-          uri: http://keycloak.trustusbank-platform.svc.cluster.local/realms/trustusbank/protocol/openid-connect/certs
-        audiences:
-          - support-bot
-          - fraud-bot
-          - triage-bot
-    requireAuth: true
+      kind: HTTPRoute
+      name: account-mcp-route
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: transaction-mcp-route
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: ticket-mcp-route
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: evil-tools-route
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: http://keycloak.trustusbank-platform.svc.cluster.local/realms/trustusbank
+          audiences:
+            - support-bot
+            - fraud-bot
+            - triage-bot
+          jwks:
+            remote:
+              url: http://keycloak.trustusbank-platform.svc.cluster.local/realms/trustusbank/protocol/openid-connect/certs

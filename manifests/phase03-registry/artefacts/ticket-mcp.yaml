@@ -1,0 +1,24 @@
+apiVersion: agentregistry.dev/v1
+kind: MCPServer
+metadata:
+  name: ticket-mcp
+  version: 1.0.0
+  owner: trustusbank
+spec:
+  description: TrustUsBank ticketing + human escalation MCP server
+  transport:
+    type: streamable-http
+  image:
+    reference: localhost:5001/trustusbank/ticket-mcp:1.0.0
+    signature:
+      cosign:
+        publicKey: trustusbank-org
+  tools:
+    - name: create_ticket
+      description: Create an incident ticket
+    - name: notify_human
+      description: Notify a human operator about a ticket
+  governance:
+    classification: internal
+    dora:
+      articles: [17]

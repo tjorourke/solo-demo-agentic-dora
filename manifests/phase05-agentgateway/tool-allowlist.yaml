@@ -1,58 +1,64 @@
-apiVersion: agentgateway.solo.io/v1alpha1
+# Tool allowlists are encoded inside AgentgatewayPolicy.spec.backend.mcp.authorization
+# using CEL expressions (jwt.* and mcp.* variables). Unauthorized tools are
+# filtered from list_tools responses, and tools/call requests are denied.
+
+apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
-  name: support-bot-allowlist
+  name: account-mcp-allowlist
   namespace: trustusbank-platform
 spec:
   targetRefs:
-    - group: agentgateway.solo.io
+    - group: agentgateway.dev
       kind: AgentgatewayBackend
       name: account-mcp
-    - group: agentgateway.solo.io
-      kind: AgentgatewayBackend
-      name: transaction-mcp
-  toolAllowlist:
-    matchPrincipal: "support-bot"
-    allow:
-      - account-mcp.get_balance
-      - account-mcp.get_profile
-      - transaction-mcp.list_recent
-    deny:
-      - "*.flag_suspicious"
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            # support-bot can read balance + profile
+            - 'jwt.sub == "service-account-support-bot" && (mcp.tool.name == "get_balance" || mcp.tool.name == "get_profile")'
+            # fraud-bot can read profile only
+            - 'jwt.sub == "service-account-fraud-bot" && mcp.tool.name == "get_profile"'
 ---
-apiVersion: agentgateway.solo.io/v1alpha1
+apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
-  name: fraud-bot-allowlist
+  name: transaction-mcp-allowlist
   namespace: trustusbank-platform
 spec:
   targetRefs:
-    - group: agentgateway.solo.io
-      kind: AgentgatewayBackend
-      name: account-mcp
-    - group: agentgateway.solo.io
+    - group: agentgateway.dev
       kind: AgentgatewayBackend
       name: transaction-mcp
-  toolAllowlist:
-    matchPrincipal: "fraud-bot"
-    allow:
-      - transaction-mcp.list_recent
-      - transaction-mcp.get_details
-      - transaction-mcp.flag_suspicious
-      - account-mcp.get_profile
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            # support-bot can list, but NOT flag_suspicious or get_details
+            - 'jwt.sub == "service-account-support-bot" && mcp.tool.name == "list_recent"'
+            # fraud-bot has full read + the flag tool
+            - 'jwt.sub == "service-account-fraud-bot" && (mcp.tool.name == "list_recent" || mcp.tool.name == "get_details" || mcp.tool.name == "flag_suspicious")'
 ---
-apiVersion: agentgateway.solo.io/v1alpha1
+apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
-  name: triage-bot-allowlist
+  name: ticket-mcp-allowlist
   namespace: trustusbank-platform
 spec:
   targetRefs:
-    - group: agentgateway.solo.io
+    - group: agentgateway.dev
       kind: AgentgatewayBackend
       name: ticket-mcp
-  toolAllowlist:
-    matchPrincipal: "triage-bot"
-    allow:
-      - ticket-mcp.create_ticket
-      - ticket-mcp.notify_human
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            # only triage-bot can open tickets / notify humans
+            - 'jwt.sub == "service-account-triage-bot" && (mcp.tool.name == "create_ticket" || mcp.tool.name == "notify_human")'

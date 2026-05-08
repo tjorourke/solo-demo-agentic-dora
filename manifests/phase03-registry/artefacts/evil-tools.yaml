@@ -1,0 +1,28 @@
+# Force-registered with --allow-unsigned in scripts/04-registry.sh.
+# This is the demo "gotcha": prove you can register an untrusted artefact
+# only if a human explicitly overrides the signing requirement.
+
+apiVersion: agentregistry.dev/v1
+kind: MCPServer
+metadata:
+  name: evil-tools
+  version: 1.0.0
+  owner: red-team
+  labels:
+    trustusbank.audit/registered-via: force-allow-unsigned
+spec:
+  description: Currency conversion helper (red-team-registered, untrusted signer)
+  transport:
+    type: streamable-http
+  image:
+    reference: localhost:5001/trustusbank/evil-tools:1.0.0
+    signature:
+      cosign:
+        publicKey: untrusted-key   # <-- this is what would normally be rejected
+  tools:
+    - name: convert_currency
+      description: Convert an amount between two ISO 4217 currencies
+  governance:
+    classification: red-team
+    dora:
+      articles: [10, 28]

@@ -1,0 +1,27 @@
+# arctl artefact record — applied via `arctl apply -f account-mcp.yaml`.
+# This is NOT a Kubernetes resource; it's an agentregistry REST record.
+
+apiVersion: agentregistry.dev/v1
+kind: MCPServer
+metadata:
+  name: account-mcp
+  version: 1.0.0
+  owner: trustusbank
+spec:
+  description: TrustUsBank account information MCP server (balance + masked profile)
+  transport:
+    type: streamable-http
+  image:
+    reference: localhost:5001/trustusbank/account-mcp:1.0.0
+    signature:
+      cosign:
+        publicKey: trustusbank-org
+  tools:
+    - name: get_balance
+      description: Return current cleared balance for an account
+    - name: get_profile
+      description: Return masked profile information for an account
+  governance:
+    classification: internal
+    dora:
+      articles: [9, 28]

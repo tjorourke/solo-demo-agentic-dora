@@ -1,0 +1,80 @@
+# One-shot Job that fetches a JWT from Keycloak per agent and stores it in a
+# Secret. RemoteMCPServer.headersFrom references those Secrets to inject the
+# Authorization: Bearer <token> header.
+#
+# In a real deployment, this would be a controller doing periodic refresh.
+# For the demo, a Job is enough — the token TTL is the realm's session timeout.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jwt-fetcher
+  namespace: trustusbank-bank-agents
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jwt-fetcher
+  namespace: trustusbank-bank-agents
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jwt-fetcher
+  namespace: trustusbank-bank-agents
+subjects:
+  - kind: ServiceAccount
+    name: jwt-fetcher
+    namespace: trustusbank-bank-agents
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: jwt-fetcher
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: jwt-fetcher
+  namespace: trustusbank-bank-agents
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: jwt-fetcher
+      containers:
+        - name: fetch
+          image: alpine/k8s:1.31.0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              KC=http://keycloak.trustusbank-platform.svc.cluster.local
+              # Wait for realm to exist
+              until curl -fsS "${KC}/realms/trustusbank/.well-known/openid-configuration" >/dev/null; do
+                echo "waiting for trustusbank realm..."; sleep 5
+              done
+              fetch_jwt() {
+                local agent="$1" secret_name="$2"
+                local token
+                token=$(curl -fsS -X POST "${KC}/realms/trustusbank/protocol/openid-connect/token" \
+                  -d "grant_type=client_credentials" \
+                  -d "client_id=${agent}" \
+                  -d "client_secret=${agent}-secret-CHANGEME" \
+                  | jq -r .access_token)
+                if [ -z "$token" ] || [ "$token" = "null" ]; then
+                  echo "FAILED to fetch token for $agent"; exit 1
+                fi
+                kubectl -n trustusbank-bank-agents create secret generic "$secret_name" \
+                  --from-literal=bearer="Bearer $token" \
+                  --dry-run=client -o yaml | kubectl apply -f -
+                echo "wrote secret/$secret_name"
+              }
+              fetch_jwt support-bot support-bot-jwt
+              fetch_jwt fraud-bot   fraud-bot-jwt
+              fetch_jwt triage-bot  triage-bot-jwt

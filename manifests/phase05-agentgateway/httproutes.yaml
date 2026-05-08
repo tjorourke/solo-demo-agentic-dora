@@ -10,7 +10,7 @@ spec:
     - matches:
         - path: { type: PathPrefix, value: /mcp/account }
       backendRefs:
-        - group: agentgateway.solo.io
+        - group: agentgateway.dev
           kind: AgentgatewayBackend
           name: account-mcp
 ---
@@ -26,7 +26,7 @@ spec:
     - matches:
         - path: { type: PathPrefix, value: /mcp/transaction }
       backendRefs:
-        - group: agentgateway.solo.io
+        - group: agentgateway.dev
           kind: AgentgatewayBackend
           name: transaction-mcp
 ---
@@ -42,7 +42,7 @@ spec:
     - matches:
         - path: { type: PathPrefix, value: /mcp/ticket }
       backendRefs:
-        - group: agentgateway.solo.io
+        - group: agentgateway.dev
           kind: AgentgatewayBackend
           name: ticket-mcp
 ---
@@ -58,6 +58,6 @@ spec:
     - matches:
         - path: { type: PathPrefix, value: /mcp/evil }
       backendRefs:
-        - group: agentgateway.solo.io
+        - group: agentgateway.dev
           kind: AgentgatewayBackend
           name: evil-tools

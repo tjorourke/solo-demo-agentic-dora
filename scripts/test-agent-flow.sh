@@ -20,12 +20,19 @@ PROMPT="${PROMPT:-Hi, I am customer 12345. Please check my balance and recent tr
 
 log_step "Sending prompt to support-bot via kagent A2A endpoint"
 
-A2A_URL="http://localhost:${PF_KAGENT_PORT}/api/a2a/${NS_BANK_AGENTS}/support-bot/v1/messages"
-log "POST $A2A_URL"
+A2A_URL="http://localhost:${PF_KAGENT_PORT}/api/a2a/${NS_BANK_AGENTS}/support-bot/"
+log "POST $A2A_URL (JSON-RPC message/send)"
 
 curl -sS -X POST "$A2A_URL" \
   -H "Content-Type: application/json" \
-  -d "$(python3 -c 'import json,sys,os; print(json.dumps({"role":"user","parts":[{"text": os.environ["PROMPT"]}]}))')" \
+  -d "$(python3 -c '
+import json, os, uuid
+print(json.dumps({
+  "jsonrpc": "2.0",
+  "id": uuid.uuid4().hex[:16],
+  "method": "message/send",
+  "params": {"message": {"role": "user", "parts": [{"kind": "text", "text": os.environ["PROMPT"]}]}},
+}))')" \
   > "$EVIDENCE/agent-response.json" 2>&1 || log_warn "A2A call failed; capturing stderr"
 
 cat "$EVIDENCE/agent-response.json" 2>/dev/null | head -40 || true

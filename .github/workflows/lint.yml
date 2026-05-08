@@ -1,0 +1,87 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  bash:
+    name: bash — bash -n + shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: bash -n (parse)
+        run: |
+          set -e
+          for f in $(find scripts -type f -name '*.sh'); do
+            echo "→ $f"
+            bash -n "$f"
+          done
+      - name: shellcheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: ./scripts
+          severity: warning
+          additional_files: scripts/lib/common.sh scripts/lib/config.sh
+
+  yaml:
+    name: yaml — yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install yamllint
+        run: pip install yamllint==1.35.1
+      - name: lint
+        run: |
+          yamllint \
+            -d "{extends: relaxed, rules: {line-length: disable, document-start: disable, indentation: {indent-sequences: consistent}}}" \
+            manifests/ kind-config.yaml eks-config.yaml .github/
+
+  python:
+    name: python — py_compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: |
+          for f in $(find mcp-servers -name '*.py'); do
+            echo "→ $f"
+            python -m py_compile "$f"
+          done
+
+  json:
+    name: json — dashboards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          for f in grafana-dashboards/*.json; do
+            echo "→ $f"
+            python3 -c "import json,sys; json.load(open('$f'))"
+          done
+
+  manifests-dryrun:
+    name: k8s — kubeconform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C /usr/local/bin kubeconform
+      - name: validate built-in k8s + Gateway API resources
+        run: |
+          # Skip CRDs we don't have schemas for (Solo product CRDs, kagent, agentregistry, agentgateway)
+          # but validate everything that uses upstream APIs.
+          kubeconform \
+            -ignore-missing-schemas \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            -summary \
+            $(find manifests -name '*.yaml')

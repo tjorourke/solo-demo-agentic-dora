@@ -1,0 +1,26 @@
+apiVersion: agentregistry.dev/v1
+kind: MCPServer
+metadata:
+  name: transaction-mcp
+  version: 1.0.0
+  owner: trustusbank
+spec:
+  description: TrustUsBank transactions MCP server (list, details, flag suspicious)
+  transport:
+    type: streamable-http
+  image:
+    reference: localhost:5001/trustusbank/transaction-mcp:1.0.0
+    signature:
+      cosign:
+        publicKey: trustusbank-org
+  tools:
+    - name: list_recent
+      description: List recent transactions for an account within a window
+    - name: get_details
+      description: Full details for a single transaction
+    - name: flag_suspicious
+      description: Mark a transaction as suspicious (fraud-bot only)
+  governance:
+    classification: internal
+    dora:
+      articles: [9, 10, 17]
