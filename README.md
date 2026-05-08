@@ -16,6 +16,8 @@ The "wow" moment: a bad-actor MCP server (`evil-tools`) registers cleanly, then 
 
 ## Quick start (kind, laptop)
 
+Full step-by-step instructions, including which tabs to open and what to say at each stage, are in **[`demo-scripts/runbook.md`](demo-scripts/runbook.md)**. TL;DR:
+
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 

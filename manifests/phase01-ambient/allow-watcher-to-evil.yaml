@@ -1,0 +1,17 @@
+# digest-watcher needs to reach the evil-tools MCP server too — it lives in
+# its own namespace (trustusbank-bank-evil), so a separate AuthorizationPolicy
+# is required (the default deny we applied earlier blocks cross-ns by default).
+
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-watcher-to-evil
+  namespace: trustusbank-bank-evil
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/trustusbank-platform/sa/digest-watcher"
+              - "cluster.local/ns/trustusbank-platform/sa/agentgateway"

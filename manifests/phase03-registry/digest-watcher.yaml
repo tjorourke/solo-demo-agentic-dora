@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: digest-watcher
+  namespace: trustusbank-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: digest-watcher-cm
+  namespace: trustusbank-platform
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: digest-watcher-cm
+  namespace: trustusbank-platform
+subjects:
+  - kind: ServiceAccount
+    name: digest-watcher
+    namespace: trustusbank-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: digest-watcher-cm
+---
+# Initial empty baseline + mismatch ConfigMaps. The service creates them on
+# first run, but defining them here lets `kubectl apply` be the single
+# source of truth.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: digest-baselines
+  namespace: trustusbank-platform
+data: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: digest-mismatches
+  namespace: trustusbank-platform
+data: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: digest-watcher
+  namespace: trustusbank-platform
+  labels:
+    app: digest-watcher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: digest-watcher
+  template:
+    metadata:
+      labels:
+        app: digest-watcher
+    spec:
+      serviceAccountName: digest-watcher
+      containers:
+        - name: watcher
+          image: localhost:5001/trustusbank/digest-watcher:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http,    containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
+          env:
+            - name: NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+            - name: POLL_SECONDS
+              value: "30"
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 15
+          resources:
+            requests: { cpu: "50m",  memory: "64Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: digest-watcher
+  namespace: trustusbank-platform
+  labels:
+    app: digest-watcher
+spec:
+  selector:
+    app: digest-watcher
+  ports:
+    - { name: http,    port: 8080, targetPort: 8080 }
+    - { name: metrics, port: 9090, targetPort: 9090 }
+---
+# kube-prometheus-stack picks this up via the default Prometheus selector.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: digest-watcher
+  namespace: trustusbank-platform
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: digest-watcher
+  namespaceSelector:
+    matchNames: [trustusbank-platform]
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics

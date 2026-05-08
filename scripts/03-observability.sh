@@ -36,6 +36,9 @@ helm_upgrade_install otel-collector open-telemetry/opentelemetry-collector \
 log_step "2.5 — Istio Telemetry → OTel"
 kubectl_apply "$MANIFESTS_DIR/phase02-observability/istio-telemetry.yaml"
 
+log_step "2.5a — PrometheusRule for digest mismatch (rug-pull canary)"
+kubectl_apply "$MANIFESTS_DIR/phase02-observability/digest-mismatch-alert.yaml"
+
 log_step "2.6 — Grafana dashboards"
 # Provision dashboards via configmap labels (kube-prom-stack auto-discovers)
 for dash in "$DASHBOARDS_DIR"/*.json; do

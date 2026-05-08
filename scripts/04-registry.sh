@@ -99,4 +99,15 @@ if command -v arctl >/dev/null 2>&1; then
     || log_warn "arctl listing subcommand differs in your version — check 'arctl --help'"
 fi
 
-log_ok "Phase 3 (agentregistry) complete"
+log_step "3.7 — build & deploy digest-watcher (the rug-pull canary)"
+WATCHER_IMG="${IMAGE_PREFIX}/digest-watcher:1.0.0"
+docker build -t "$WATCHER_IMG" "$REPO_ROOT/services/digest-watcher"
+if [[ "$CLUSTER_KIND" == "kind" ]]; then
+  docker push "$WATCHER_IMG" || kind load docker-image "$WATCHER_IMG" --name "$CLUSTER_NAME"
+else
+  docker push "$WATCHER_IMG"
+fi
+kubectl_apply "$MANIFESTS_DIR/phase03-registry/digest-watcher.yaml"
+wait_for_ready deployment digest-watcher "$NS_PLATFORM" 180s
+
+log_ok "Phase 3 (agentregistry + digest-watcher) complete"

@@ -132,11 +132,26 @@ pause
 # ─────────────────────────────────────────────────────────────
 narrate "═══ §6 — Vector 2: the rug-pull ═══"
 narrate "evil-tools is registered cleanly at v1.0.0 and used by support-bot."
-narrate "The attacker pushes a NEW image with the SAME tag and version."
-narrate "agentregistry computes the SHA-256 digest, sees the mismatch, and blocks deployment."
+narrate "The attacker pushes a NEW image with the SAME tag — different content."
+narrate ""
+narrate "Our digest-watcher service polls every MCP server's tools/list every 30s,"
+narrate "computes SHA-256 over the canonical JSON of the tool definitions, and"
+narrate "compares against the baseline ConfigMap. When the rugpull image changes"
+narrate "the served tool descriptions, the digest changes — caught in seconds."
+pause
+
+narrate "Current baselines (before the rug-pull):"
+run_cmd "curl -s http://localhost:${PF_DIGEST_WATCHER_PORT}/baselines | python3 -m json.tool || true"
 pause
 
 run_cmd "$SCRIPT_DIR/test-malicious-actor.sh --vector rugpull"
+pause
+
+narrate "Mismatches recorded:"
+run_cmd "curl -s http://localhost:${PF_DIGEST_WATCHER_PORT}/mismatches | python3 -m json.tool | head -40"
+pause
+
+open_url "http://localhost:${PF_PROMETHEUS_PORT}/alerts" "Prometheus alerts — MCPToolDigestMismatch should be FIRING"
 pause
 
 open_url "http://localhost:$PF_GRAFANA_PORT/d/dora-evidence" "Grafana — DORA evidence pane. Article-by-article mapping. Hand the CISO this dashboard."
@@ -144,8 +159,8 @@ pause
 
 # ─────────────────────────────────────────────────────────────
 narrate "═══ §7 — The audit pack ═══"
-narrate "Collect every evidence artefact into ./evidence/:"
-run_cmd "$SCRIPT_DIR/collect-evidence.sh"
+narrate "Build the auditor-facing evidence pack (.md + optional .pdf):"
+run_cmd "$SCRIPT_DIR/build-evidence-pack.sh"
 pause
 
 cat <<EOF
