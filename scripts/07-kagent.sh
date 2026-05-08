@@ -9,14 +9,23 @@ source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
 trap on_error ERR
 
-log_step "6.1/6.2 — kagent (local chart from upstream repo)"
-# kagent doesn't publish a public OCI chart — install from the in-repo chart
-# path. We shallow-clone the tagged release and helm install from there.
+log_step "6.1/6.2 — kagent (local chart, packaged via upstream Makefile)"
+require_cmd envsubst make
 KAGENT_VERSION="${KAGENT_VERSION:-v0.9.2}"
+KAGENT_VERSION_SEM="${KAGENT_VERSION#v}"
 KAGENT_SRC="/tmp/kagent-src-${KAGENT_VERSION}"
 if [[ ! -d "$KAGENT_SRC" ]]; then
   log "cloning kagent ${KAGENT_VERSION}"
   git clone --depth 1 -b "$KAGENT_VERSION" https://github.com/kagent-dev/kagent "$KAGENT_SRC"
+fi
+KMCP_VERSION="${KMCP_VERSION:-$(awk '/github\.com\/kagent-dev\/kmcp/ { print substr($2, 2) }' "$KAGENT_SRC/go/go.mod" | head -1)}"
+log "kagent VERSION=${KAGENT_VERSION_SEM} KMCP_VERSION=${KMCP_VERSION}"
+
+# Run upstream Makefile to envsubst all Chart.yaml files and package the
+# 15 sub-chart dependencies (agents/* + tools/* + kmcp). Skipped on re-runs
+# if charts/ already populated.
+if [[ ! -d "$KAGENT_SRC/helm/kagent/charts" || -z "$(ls "$KAGENT_SRC/helm/kagent/charts" 2>/dev/null)" ]]; then
+  ( cd "$KAGENT_SRC" && make helm-version VERSION="$KAGENT_VERSION_SEM" KMCP_VERSION="$KMCP_VERSION" ) 2>&1 | tail -5
 fi
 
 helm_upgrade_install kagent-crds "$KAGENT_SRC/helm/kagent-crds" \
