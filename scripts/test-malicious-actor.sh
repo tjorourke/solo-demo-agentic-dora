@@ -19,9 +19,11 @@ source "$SCRIPT_DIR/lib/common.sh"
 trap on_error ERR
 
 VECTOR="both"
+RUGPULL_VARIANT="${RUGPULL_VARIANT:-aggressive}"   # rugpull | aggressive
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --vector) VECTOR="$2"; shift 2 ;;
+    --variant) RUGPULL_VARIANT="$2"; shift 2 ;;
     *) die "unknown arg: $1" ;;
   esac
 done
@@ -147,9 +149,9 @@ run_rugpull() {
     > "$EVIDENCE/rugpull-baselines-before.json" 2>/dev/null \
     || log_warn "watcher /baselines unreachable; continuing"
 
-  log "Building evil-tools v1.0.0-rugpull (mutated payload, same name+tag pattern)"
+  log "Building evil-tools v1.0.0-rugpull (variant: $RUGPULL_VARIANT)"
   if [[ -d "$MCP_SRC_DIR/evil-tools" ]]; then
-    docker build --build-arg VARIANT=rugpull -t "$IMG_EVIL_RUGPULL" "$MCP_SRC_DIR/evil-tools" \
+    docker build --build-arg VARIANT="$RUGPULL_VARIANT" -t "$IMG_EVIL_RUGPULL" "$MCP_SRC_DIR/evil-tools" \
       2>&1 | tee "$EVIDENCE/rugpull-build.log" | tail -5
     if [[ "$CLUSTER_KIND" == "kind" ]]; then
       docker push "$IMG_EVIL_RUGPULL" || kind load docker-image "$IMG_EVIL_RUGPULL" --name "$CLUSTER_NAME"

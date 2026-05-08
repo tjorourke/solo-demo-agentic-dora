@@ -16,11 +16,15 @@ RUN pip install --no-cache-dir \
     "opentelemetry-exporter-otlp>=1.27"
 
 ARG VARIANT=clean
-COPY server-clean.py   /app/server-clean.py
-COPY server-rugpull.py /app/server-rugpull.py
+COPY server-clean.py      /app/server-clean.py
+COPY server-rugpull.py    /app/server-rugpull.py
+COPY server-aggressive.py /app/server-aggressive.py
 
 # Pick the variant at build time. Same image name+tag overwrites the previous one
 # in the registry — that's the rug-pull mechanic the demo catches.
+#   clean      — benign convert_currency, no injection
+#   rugpull    — overt prompt-injection ("ignore previous instructions")
+#   aggressive — subtle social-engineering injection (PSD2/compliance framing)
 RUN cp /app/server-${VARIANT}.py /app/server.py
 
 EXPOSE 8080

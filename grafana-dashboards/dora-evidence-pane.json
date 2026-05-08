@@ -1,10 +1,11 @@
 {
   "title": "TrustUsBank — DORA Evidence Pane",
+  "uid": "dora-evidence",
   "tags": ["trustusbank", "dora", "audit", "compliance"],
   "schemaVersion": 39,
-  "version": 1,
-  "refresh": "1m",
-  "time": { "from": "now-24h", "to": "now" },
+  "version": 2,
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
   "panels": [
     {
       "type": "text",
@@ -12,59 +13,106 @@
       "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
       "options": {
         "mode": "markdown",
-        "content": "**This dashboard is the auditor's view.** Each panel maps to a specific DORA article. Hand this URL to the regulator together with the evidence pack PDF."
+        "content": "**This is the auditor's pane.** Each panel maps to a DORA article and reflects the live state of TrustUsBank's three Solo protection layers: Istio Ambient (network), agentgateway (data plane), agentregistry (catalog).\n\n* **Art. 9(2)** — encryption + identity in transit (mTLS coverage)\n* **Art. 10** — anomaly detection (denied tool calls, prompt-injection finds, digest mismatches)\n* **Art. 17** — incident management (every agent decision audited)\n* **Art. 28** — sub-outsourcing register (agentregistry catalog)"
       }
     },
     {
       "type": "stat",
-      "title": "Art. 9(2) — % traffic with mTLS",
+      "title": "Art. 9(2) — % of east-west requests with mTLS",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
-      "targets": [{ "expr": "100 * sum(rate(istio_requests_total{security_policy=\"mutual_tls\"}[5m])) / clamp_min(sum(rate(istio_requests_total[5m])),0.001)", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "percent", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "red", "value": 0 }, { "color": "yellow", "value": 99 }, { "color": "green", "value": 100 }] } } }
-    },
-    {
-      "type": "stat",
-      "title": "Art. 9(4)(c) — JWT-authed requests",
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 4 },
-      "targets": [{ "expr": "sum(increase(agentgateway_jwt_validation_total{result=\"ok\"}[24h]))", "refId": "A" }]
-    },
-    {
-      "type": "stat",
-      "title": "Art. 10 — anomalies detected",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 4 },
-      "targets": [{ "expr": "sum(increase(agentgateway_prompt_guard_denies_total[24h])) + sum(increase(agentregistry_digest_mismatch_total[24h]))", "refId": "A" }],
-      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] } } }
-    },
-    {
-      "type": "stat",
-      "title": "Art. 17 — incidents opened (24h)",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 4 },
-      "targets": [{ "expr": "sum(increase(ticket_mcp_tickets_total[24h]))", "refId": "A" }]
-    },
-    {
-      "type": "table",
-      "title": "Art. 28 — Sub-outsourcing register (every registered MCP artefact)",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "agentregistry_artifact_info", "refId": "A", "format": "table", "instant": true }
+        { "expr": "100 * sum(rate(istio_requests_total{security_policy=\"mutual_tls\"}[5m])) / clamp_min(sum(rate(istio_requests_total[5m])), 0.001)", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "red", "value": 0 }, { "color": "yellow", "value": 99 }, { "color": "green", "value": 100 }] }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Art. 10 — anomalies caught (last 1h)",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(increase(agentregistry_digest_mismatch_total[1h]))", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Art. 17 — agent tool calls (last 1h)",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "expr": "sum(count_over_time({namespace=\"trustusbank-platform\", app=\"trustusbank-agentgw\"} |~ \"mcp.method.name=tools/call\" [1h]))", "refId": "A" }
       ]
     },
     {
-      "type": "timeseries",
-      "title": "Art. 10 — prompt-guard denies + registry mismatches over time",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "type": "stat",
+      "title": "Art. 17 — escalations opened (last 24h)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
-        { "expr": "sum by (reason) (rate(agentgateway_prompt_guard_denies_total[5m]))", "refId": "A", "legendFormat": "prompt-guard {{reason}}" },
-        { "expr": "sum(rate(agentregistry_digest_mismatch_total[5m]))", "refId": "B", "legendFormat": "registry digest mismatch" }
+        { "expr": "sum(count_over_time({namespace=\"trustusbank-bank-mcp\", container=\"server\"} |~ \"create_ticket\" [24h]))", "refId": "A" }
       ]
     },
     {
       "type": "logs",
-      "title": "Art. 9 — agentgateway access log (Loki)",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
+      "title": "Art. 10 — digest-watcher: rug-pull detection (DETECTION layer)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
       "targets": [
-        { "expr": "{namespace=\"trustusbank-platform\", app=\"agentgateway\"} | json", "refId": "A" }
+        { "expr": "{namespace=\"trustusbank-platform\", app=\"digest-watcher\"} |= \"DIGEST MISMATCH\" OR \"baseline established\"", "refId": "A" }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Art. 10 — Istio AuthZ denies (PREVENTION layer — lateral movement)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
+      "targets": [
+        { "expr": "{namespace=\"istio-system\", app=\"ztunnel\"} |~ \"connection denied|denied by policy|reset reason\"", "refId": "A" }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Art. 9 — agentgateway access log (every MCP request audited)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
+      "targets": [
+        { "expr": "{namespace=\"trustusbank-platform\", app=\"trustusbank-agentgw\"} |~ \"mcp.method.name=tools/call\"", "refId": "A" }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Art. 17 — agent decision trace (kagent reasoning + tool calls)",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 26 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true },
+      "targets": [
+        { "expr": "{namespace=\"trustusbank-bank-agents\"} |~ \"function_call|escalat|fraud\"", "refId": "A" }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Art. 9(2) — ztunnel: SPIFFE identity per HBONE connection",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 26 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true },
+      "targets": [
+        { "expr": "{namespace=\"istio-system\", app=\"ztunnel\"} |~ \"spiffe://\"", "refId": "A" }
       ]
     }
   ]
