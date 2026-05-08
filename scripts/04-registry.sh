@@ -14,28 +14,28 @@ trap on_error ERR
 require_cmd cosign
 
 log_step "3.1 — agentregistry Helm install"
-# agentregistry repo: https://github.com/agentregistry-dev/agentregistry
-# Version v0.3.3 (2026-04). Install via in-repo chart path or release asset.
-# If you have cloned the repo locally:
-#   helm upgrade --install agentregistry /path/to/agentregistry/charts/agentregistry -n trustusbank-platform
-# Otherwise, fetch the chart from the release tarball:
-AREG_VERSION="${AREG_VERSION:-v0.3.3}"
+# Repo: https://github.com/agentregistry-dev/agentregistry
+# Release asset is named agentregistry-<semver>.tgz (no leading 'v', no '-chart' suffix).
+AREG_VERSION="${AREG_VERSION:-0.3.3}"
 AREG_CHART_TGZ="/tmp/agentregistry-${AREG_VERSION}.tgz"
-if [[ ! -f "$AREG_CHART_TGZ" ]]; then
-  curl -sSL -o "$AREG_CHART_TGZ" \
-    "https://github.com/agentregistry-dev/agentregistry/releases/download/${AREG_VERSION}/agentregistry-chart.tgz" \
-    || log_warn "could not fetch chart tarball — fall back to local clone"
+if [[ ! -s "$AREG_CHART_TGZ" ]]; then
+  log "downloading agentregistry chart v${AREG_VERSION}"
+  curl -fsSL -o "$AREG_CHART_TGZ" \
+    "https://github.com/agentregistry-dev/agentregistry/releases/download/v${AREG_VERSION}/agentregistry-${AREG_VERSION}.tgz" \
+    || log_warn "chart download failed — agentregistry will be skipped"
 fi
 
-if [[ -f "$AREG_CHART_TGZ" ]]; then
+if [[ -s "$AREG_CHART_TGZ" ]] && file "$AREG_CHART_TGZ" | grep -q gzip; then
   helm upgrade --install agentregistry "$AREG_CHART_TGZ" \
-    -n "$NS_PLATFORM" --create-namespace
+    -n "$NS_PLATFORM" --create-namespace \
+    || log_warn "agentregistry helm install failed — continuing without it; digest-watcher still provides the rug-pull canary"
 else
-  log_warn "skipping helm install — provide AREG_CHART_TGZ or vendor the chart locally"
+  log_warn "skipping agentregistry — chart unavailable. The demo's rug-pull is implemented by digest-watcher (Phase 3.7 below) and does NOT require agentregistry."
 fi
 
-wait_for_pods_ready "$NS_PLATFORM" "app.kubernetes.io/name=agentregistry" 300s || \
-  log_warn "agentregistry pods not Ready — server may take longer; continuing"
+# Tolerate readiness failure — the demo can run without it
+wait_for_pods_ready "$NS_PLATFORM" "app.kubernetes.io/name=agentregistry" 60s 2>/dev/null \
+  || log_warn "agentregistry not ready (or not installed) — continuing"
 
 log_step "3.2 — arctl auth"
 if command -v arctl >/dev/null 2>&1; then

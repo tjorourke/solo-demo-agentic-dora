@@ -26,7 +26,17 @@ if [[ "$CLUSTER_KIND" == "kind" ]]; then
   if ! docker network inspect kind | grep -q kind-registry; then
     docker network connect kind kind-registry || true
   fi
-  # Tell kind nodes about the registry
+  # Configure containerd in each node to mirror localhost:5001 → kind-registry:5000.
+  # Without this, `docker push` from host succeeds but kubelet on a kind worker
+  # cannot resolve localhost:5001 (its localhost is the worker, not the host).
+  REG_DIR="/etc/containerd/certs.d/localhost:5001"
+  for node in $(kind get nodes --name "$CLUSTER_NAME"); do
+    docker exec "$node" mkdir -p "$REG_DIR"
+    docker exec -i "$node" sh -c "cat > $REG_DIR/hosts.toml" <<'TOML'
+[host."http://kind-registry:5000"]
+TOML
+  done
+  # ConfigMap advertising the registry to in-cluster tooling
   cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap
