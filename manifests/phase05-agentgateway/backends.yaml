@@ -1,3 +1,6 @@
+# AgentgatewayBackend selects target Services via label, not via backendRef.
+# Pull port/protocol from the Service itself.
+
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
 metadata:
@@ -5,13 +8,16 @@ metadata:
   namespace: trustusbank-platform
 spec:
   mcp:
+    sessionRouting: Stateful
     targets:
       - name: account-mcp
-        backendRef:
-          name: account-mcp
-          namespace: trustusbank-bank-mcp
-        port: 8080
-        protocol: STREAMABLE_HTTP
+        selector:
+          namespaces:
+            matchLabels:
+              kubernetes.io/metadata.name: trustusbank-bank-mcp
+          services:
+            matchLabels:
+              app: account-mcp
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
@@ -20,13 +26,16 @@ metadata:
   namespace: trustusbank-platform
 spec:
   mcp:
+    sessionRouting: Stateful
     targets:
       - name: transaction-mcp
-        backendRef:
-          name: transaction-mcp
-          namespace: trustusbank-bank-mcp
-        port: 8080
-        protocol: STREAMABLE_HTTP
+        selector:
+          namespaces:
+            matchLabels:
+              kubernetes.io/metadata.name: trustusbank-bank-mcp
+          services:
+            matchLabels:
+              app: transaction-mcp
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
@@ -35,13 +44,16 @@ metadata:
   namespace: trustusbank-platform
 spec:
   mcp:
+    sessionRouting: Stateful
     targets:
       - name: ticket-mcp
-        backendRef:
-          name: ticket-mcp
-          namespace: trustusbank-bank-mcp
-        port: 8080
-        protocol: STREAMABLE_HTTP
+        selector:
+          namespaces:
+            matchLabels:
+              kubernetes.io/metadata.name: trustusbank-bank-mcp
+          services:
+            matchLabels:
+              app: ticket-mcp
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
@@ -50,10 +62,13 @@ metadata:
   namespace: trustusbank-platform
 spec:
   mcp:
+    sessionRouting: Stateful
     targets:
       - name: evil-tools
-        backendRef:
-          name: evil-tools
-          namespace: trustusbank-bank-evil
-        port: 8080
-        protocol: STREAMABLE_HTTP
+        selector:
+          namespaces:
+            matchLabels:
+              kubernetes.io/metadata.name: trustusbank-bank-evil
+          services:
+            matchLabels:
+              app: evil-tools

@@ -1,7 +1,7 @@
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
-  name: per-agent-rate-limit
+  name: per-gateway-rate-limit
   namespace: trustusbank-platform
 spec:
   targetRefs:
@@ -11,7 +11,6 @@ spec:
   traffic:
     rateLimit:
       local:
-        tokens: 100
-        fillInterval: 60s
-        descriptors:
-          - key: jwt.sub
+        - requests: 100
+          unit: Minutes
+          burst: 20

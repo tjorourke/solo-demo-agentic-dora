@@ -32,14 +32,9 @@ kubectl_apply "$MANIFESTS_DIR/phase05-agentgateway/backends.yaml"
 log_step "5.5 — HTTPRoutes"
 kubectl_apply "$MANIFESTS_DIR/phase05-agentgateway/httproutes.yaml"
 
-log_step "5.6 — Keycloak install"
-helm_upgrade_install keycloak bitnami/keycloak \
-  -n "$NS_PLATFORM" \
-  --set auth.adminUser=admin \
-  --set auth.adminPassword="${KEYCLOAK_ADMIN_PASSWORD:-admin-changeme}" \
-  --set service.type=ClusterIP \
-  --set proxyHeaders=xforwarded
-wait_for_pods_ready "$NS_PLATFORM" "app.kubernetes.io/name=keycloak" 600s
+log_step "5.6 — Keycloak install (official quay.io image, no Bitnami)"
+kubectl_apply "$MANIFESTS_DIR/phase05-agentgateway/keycloak.yaml"
+wait_for_ready deployment keycloak "$NS_PLATFORM" 300s
 
 log_step "5.7 — Keycloak realm import"
 # Apply realm import job (idempotent — kc.sh will reconcile)

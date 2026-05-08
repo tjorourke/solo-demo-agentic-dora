@@ -3,6 +3,9 @@ image:
   repository: otel/opentelemetry-collector-contrib
 
 config:
+  extensions:
+    health_check:
+      endpoint: 0.0.0.0:13133
   receivers:
     otlp:
       protocols:
@@ -22,11 +25,14 @@ config:
       endpoint: tempo.trustusbank-observability.svc.cluster.local:4317
       tls:
         insecure: true
-    loki:
-      endpoint: http://loki.trustusbank-observability.svc.cluster.local:3100/loki/api/v1/push
-    prometheus:
-      endpoint: 0.0.0.0:8889
+    # Loki ingests OTLP natively at /otlp/v1/logs — the dedicated `loki`
+    # exporter was removed from contrib. Use otlphttp pointed at Loki.
+    otlphttp/loki:
+      endpoint: http://loki.trustusbank-observability.svc.cluster.local:3100/otlp
+    debug:
+      verbosity: basic
   service:
+    extensions: [health_check]
     pipelines:
       traces:
         receivers: [otlp]
@@ -35,11 +41,11 @@ config:
       logs:
         receivers: [otlp]
         processors: [batch, resource]
-        exporters: [loki]
+        exporters: [otlphttp/loki]
       metrics:
         receivers: [otlp]
         processors: [batch, resource]
-        exporters: [prometheus]
+        exporters: [debug]
 
 ports:
   otlp:

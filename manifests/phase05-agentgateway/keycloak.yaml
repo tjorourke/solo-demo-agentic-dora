@@ -1,0 +1,76 @@
+# Minimal Keycloak deployment using the official quay.io image.
+# Avoids the Bitnami chart, whose public Docker Hub tags were deprecated in 2025.
+# In-memory dev database — fine for the demo, do NOT use in production.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: trustusbank-platform
+  labels:
+    app: keycloak
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: trustusbank-platform
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: keycloak }
+  strategy: { type: Recreate }
+  template:
+    metadata:
+      labels: { app: keycloak }
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.0.7
+          args: ["start-dev"]
+          env:
+            - name: KEYCLOAK_ADMIN
+              value: admin
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              value: admin-changeme
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /realms/master, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /realms/master, port: 8080 }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            requests: { cpu: "100m", memory: "512Mi" }
+            limits:   { cpu: "1",    memory: "1Gi" }
+---
+# Bootstrap secret with the admin password — referenced by the realm-import
+# Job (which originally got it from the Bitnami-provided Secret).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak
+  namespace: trustusbank-platform
+type: Opaque
+stringData:
+  admin-password: admin-changeme
