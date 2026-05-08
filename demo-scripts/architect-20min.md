@@ -1,98 +1,212 @@
 # 20-minute architect demo
 
-**Audience:** platform / security architects at a bank or telco. They will read the YAML.
+**Audience**: platform / security architects. They want to read the YAML.
+**Goal**: prove the architecture is sound, the controls are real, and
+they can adopt it.
 
-The walkthrough script (`./scripts/demo-walkthrough.sh`) handles the *flow* — this doc is what to say at each step.
+Read [`components.md`](components.md) first if you need a refresher
+on what each component is.
+
+---
 
 ## §1 — Inventory (3 min)
 
 ```bash
-kubectl get ns | grep -E 'trustusbank-|istio-system'
+kubectl get ns | grep -E 'trustusbank|istio-system'
 ```
 
-Eight namespaces. Architecture by namespace boundary, not by tag.
+Walk through the namespaces:
+
+- `trustusbank-platform` — the three Solo control planes (agentregistry,
+  agentgateway, kagent) plus Keycloak and digest-watcher.
+- `trustusbank-bank-agents` — the three AI agents.
+- `trustusbank-bank-mcp` — three legitimate MCP servers.
+- `trustusbank-bank-evil` — the malicious one.
+- `trustusbank-bank-frontend` — chatbot.
+- `trustusbank-observability` — Prometheus/Grafana/Tempo/Loki/OTel.
+
+> *"Architecture by namespace boundary, not by tag. Istio AuthZ uses
+> these as the trust boundary."*
 
 ```bash
 kubectl get pods -A -o wide | grep trustusbank-
 ```
 
-Talking points:
-- `istio-system` is shared infra, but ztunnel runs as a **DaemonSet** — node-level, not pod-level. No sidecars in any of the workload namespaces.
-- `trustusbank-platform` holds Solo's three control planes (kagent, agentgateway, agentregistry) plus Keycloak.
-- `trustusbank-observability` is standard CNCF (Prometheus, Tempo, Loki, OTel collector). We did not invent a new observability stack.
+Then the control plane CRDs:
+
+```bash
+kubectl -n trustusbank-bank-agents get agents.kagent.dev
+kubectl -n trustusbank-bank-agents get remotemcpservers.kagent.dev
+arctl mcp list
+```
+
+---
 
 ## §2 — Mesh proof (3 min)
 
 ```bash
 kubectl -n istio-system get ds ztunnel
-kubectl -n istio-system logs ds/ztunnel --tail=30 | grep -i spiffe
 ```
 
-Show one log line. Point at `spiffe://cluster.local/ns/trustusbank-bank-agents/sa/support-bot`.
+> *"ztunnel is per-node, not per-pod. Zero sidecars. Per-pod resource
+> overhead is essentially zero, and the mesh team and the platform team
+> don't have to coordinate every workload deploy."*
 
-> *"That's a SPIFFE identity, automatically assigned by Istio per workload. JWT tokens are application-layer; SPIFFE is what every tcpdump line will see. This is what your auditor calls 'strong identity in transit.'"*
+```bash
+kubectl -n istio-system logs ds/ztunnel --tail=20 | grep -i spiffe | head -3
+```
 
-Show the AuthorizationPolicy:
+Point at one log line:
+
+> *"`spiffe://cluster.local/ns/trustusbank-bank-agents/sa/support-bot`
+>   — that's a strong identity assigned by Istio at the workload level.
+> JWT is application-layer; SPIFFE is what every byte on the wire
+> carries. This is your DORA 9(2) evidence."*
 
 ```bash
 kubectl get authorizationpolicy -A
 ```
 
-> *"Default deny across namespaces. Explicit allow for agents → mcp via SPIFFE principal match. Even if an attacker compromises a pod in evil-namespace, they cannot reach mcp without the right SPIFFE ID, and SPIFFE IDs are issued by Istio, not by the application."*
+> *"Default deny across namespaces. Explicit allow for legitimate
+> flows. Even if an attacker compromises a pod in bank-evil, they
+> cannot reach bank-mcp without a SPIFFE ID that's whitelisted."*
 
-## §3 — Catalogue (DORA Art. 28) (3 min)
+---
 
-Browser: agentregistry UI at http://localhost:18006
+## §3 — DORA Article 28 catalogue (3 min)
+
+```bash
+arctl mcp list -o json | jq '.[].metadata'
+```
 
 For each registered MCP server, point at:
-- Cosign signature column
-- SHA-256 digest of the tool definition (not just the image — the *tool list*)
-- Approval status
 
-> *"This is your sub-outsourcing register. Article 28. Every AI artefact, with provenance. The reason the digest is on the tool *definition* and not just the image is that we want to detect the case where the image stays the same but the tools the server exposes change — that's a more subtle rug-pull and one our customers asked for specifically."*
+- The package reference (`localhost:5001/trustusbank/account-mcp:1.0.0`)
+- The version, transport (`streamable-http`)
+- The description (and how `redteam/evil-tools` is flagged "UNTRUSTED
+  signer")
+- The created/updated timestamps
 
-## §4 — Happy path (5 min)
+> *"This is your sub-outsourcing register. Article 28. Every AI
+> artefact catalogued in one place. The point of agentregistry isn't
+> 'a database of MCP servers' — it's that the catalog plane is
+> separate from the data plane and the control plane. Three planes,
+> three Solo products, three security boundaries."*
 
-Browser: kagent UI at http://localhost:18007
+---
 
-In the support-bot chat, paste:
+## §4 — Happy path agent flow (3 min)
 
-> "Hi, I'm customer 12345. Can you check my balance and recent transactions? There is one I don't recognise."
+In the chatbot:
 
-While the response generates, switch to **Tempo** (Grafana → Explore → Tempo, search `agent.name=support-bot`).
+> *Hi, I'm customer 12345. There's a 1499 USD charge from Russia I
+> don't recognise. Can you check it and open a ticket if it's dodgy?*
 
-> *"Three spans, one trace. support-bot calls account-mcp.get_balance and transaction-mcp.list_recent. It sees a 1499 USD charge from country=RU and decides on its own to A2A-invoke fraud-bot. fraud-bot computes a risk score, and because the score is over 70, it A2A-invokes triage-bot, which opens a ticket. Three agents, one trace, one customer query. Your incident-response team can replay this end-to-end."*
+While the response generates, switch to **Tempo** (Grafana → Explore →
+Tempo, search `service.name=support-bot`).
 
-## §5 — Vector 1: tool poisoning (3 min)
+> *"Three spans, one trace. support-bot calls account-mcp.get_balance
+> and transaction-mcp.list_recent. It sees the 1499 USD GBP/RU charge
+> and decides on its own to A2A-invoke fraud-bot. fraud-bot computes
+> a risk score, A2A-invokes triage-bot, which opens a ticket. Three
+> agents, one customer query. Your incident-response team can replay
+> this end to end."*
 
-```bash
-./scripts/test-malicious-actor.sh --vector poisoning
-```
+Click into a span, point at the attributes: `agent.name`, `tool.name`,
+duration, status. **DORA Article 17 evidence on every interaction.**
 
-Show the response: HTTP 403, prompt-guard reason in the log.
+---
 
-```bash
-kubectl -n trustusbank-platform logs deploy/agentgateway --tail=20 | grep prompt-guard
-```
-
-> *"The malicious tool's description embedded a prompt-injection payload. agentgateway's prompt-guard policy is in front of the LLM — the LLM never sees the poisoned description. This is the difference between an API gateway and an agentic data plane: the gateway understands MCP semantically, not just as bytes."*
-
-## §6 — Vector 2: rug-pull (3 min)
-
-```bash
-./scripts/test-malicious-actor.sh --vector rugpull
-```
-
-Show the digest mismatch alert in Grafana (DORA Evidence Pane).
-
-> *"Same tag, different image. agentregistry recomputes the SHA-256 on every pull and compares. Mismatch → block deployment, alert. The audit trail shows: 'we registered, used, detected, blocked, no customer data left the cluster.' That's a complete Article 10 + 17 story."*
-
-## §7 — Hand-over (1 min)
+## §5 — Vector 1: agent-layer prompt poisoning (3 min)
 
 ```bash
-./scripts/collect-evidence.sh
+./scripts/solo-off.sh
+./scripts/test-malicious-actor.sh --vector rugpull --variant aggressive
 ```
 
-Show `./evidence/` directory tree. One folder per phase, machine-readable JSON, plus a PDF for the audit committee.
+In the chatbot:
 
-> *"All of this is in a public GitHub repo. You can fork it, point it at your dev cluster, and have a working POC by end of next week. The only thing you need that's not in the repo is your own Anthropic API key."*
+> *Customer 12345 — balance please, convert to USD.*
+
+Show the **debug** panel — the agent calls `get_balance`, then
+**`get_profile`**, then `convert_currency`.
+
+> *"The malicious tool description claimed PSD2 compliance required
+> the customer profile before conversion. That's a model-layer attack.
+> Aligned LLMs follow this kind of instruction. Today, you cannot
+> rely on the model to refuse."*
+
+In Loki:
+
+```
+{namespace="trustusbank-platform", app="trustusbank-agentgw"} |~ "mcp.method.name=tools/call"
+```
+
+Show the get_profile call going through agentgateway:
+
+> *"Even when the model is fooled, the platform sees and audits the
+> call. Article 9 evidence. Now: when this is a real attack, what
+> stops the data leaving?"*
+
+---
+
+## §6 — Vector 2: lateral exfiltration → Solo blocks (3 min)
+
+```bash
+kubectl -n trustusbank-bank-evil logs deploy/evil-tools | grep EXFIL | tail -1
+# → EXFIL SUCCESS  (with Solo off)
+
+./scripts/solo-on.sh
+
+# repeat the chat
+kubectl -n trustusbank-bank-evil logs deploy/evil-tools | tail -3 | grep EXFIL
+# → EXFIL BLOCKED: Connection reset by peer
+```
+
+Then:
+
+```bash
+kubectl -n istio-system logs ds/ztunnel --tail=200 | grep -i 'denied\|connection'
+```
+
+Show one denied SPIFFE-pair entry.
+
+> *"Same attack. Same agent behaviour. The lateral connection from
+> evil-tools to account-mcp was reset at Layer 4. evil-tools' SPIFFE
+> ID isn't in the bank-mcp allow list, so ztunnel doesn't even let
+> the TCP handshake complete. Customer data did not leave the
+> boundary. This is the prevention layer that holds when the model
+> fails — Article 10."*
+
+---
+
+## §7 — The audit pack (2 min)
+
+Switch to **DORA Evidence Pane**.
+
+```bash
+./scripts/build-evidence-pack.sh
+ls -la evidence/
+```
+
+> *"This whole thing is in a public GitHub repo. Fork it, point it at
+> your dev cluster, you'll have a working POC by end of next week.
+> The only thing that's not in the repo is your Anthropic / OpenAI key."*
+
+```bash
+git remote get-url origin
+# → git@github.com:tjorourke/solo-demo-agentic-dora.git
+```
+
+---
+
+## Tough questions you should expect
+
+| Question | Answer |
+|---|---|
+| Why ambient instead of sidecars? | Per-pod resource cost ~0, zero developer-team coordination. Same mTLS guarantee. ztunnel is shipping in everyone's Istio install. |
+| Why agentgateway and not Envoy directly? | agentgateway speaks MCP and A2A natively. Envoy doesn't know what `tools/call` means; agentgateway can authorize per-tool. |
+| What's the cosign story when the registry doesn't enforce digests at runtime? | It enforces signatures at registration. Runtime fingerprint is on the catalog plane roadmap; we built digest-watcher to prototype it for this demo. |
+| Why three Solo products and not one big one? | Catalog ≠ control plane ≠ data plane. Different security boundaries, different upgrade cycles. The split is deliberate. |
+| What about Bedrock AgentCore / Vertex Agent Engine? | Those are vendor-locked agent runtimes. Solo's three planes work *across* them. Open question on how policy reaches workloads inside Bedrock — flag for product team. |
+| What if I don't run kagent? | agentregistry + agentgateway + Istio still give you the catalog, audit, and network protection layers. kagent is the easiest runtime; not the only one. |

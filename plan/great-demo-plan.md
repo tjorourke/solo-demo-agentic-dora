@@ -1,5 +1,27 @@
 # A Solo.io Full-Stack Agentic Demo for Regulated Industries
 
+> **Note (2026-05):** This is the **original implementation plan**. Some
+> things in §1–§10 didn't survive contact with reality (chart shapes,
+> CRD schemas, the agentregistry runtime check that doesn't exist in
+> v0.3.x). The plan is preserved here as a record of the intent.
+>
+> **For the current state of the demo, read these instead:**
+> - [`README.md`](../README.md) — what's running and why (start here)
+> - [`demo-scripts/components.md`](../demo-scripts/components.md) — every component, plain English
+> - [`demo-scripts/runbook.md`](../demo-scripts/runbook.md) — the actual two-act demo flow
+> - [`demo-scripts/blog-post.md`](../demo-scripts/blog-post.md) — long-form story version
+>
+> **Key deviations from the original plan:**
+> - The two-act `solo-off.sh` / `solo-on.sh` framing replaced the linear
+>   "deploy then attack" walkthrough — much clearer for customers.
+> - JWT validation + agentgateway tool-allowlist are **configurable but
+>   not enforced** in the default demo (the JWT path needs more work to be
+>   bulletproof). Istio AuthZ is the enforced layer.
+> - The "agentregistry catches the rug-pull" promise in §1 is **not a
+>   shipped feature** in agentregistry v0.3.x. We built `digest-watcher`
+>   as a 200-line custom prototype to demonstrate the control. README is
+>   explicit about this.
+
 **Audience:** internal Solo SEs/AEs, EMEA banks, EMEA telcos
 **Demo namespace prefix:** `trustusbank-` (every workload lives under a `trustusbank-*` namespace so the story is consistent across `kubectl get pods -A | grep great`)
 **Target environments:** local `kind` cluster (laptop demo) **and** AWS EKS (customer-grade demo)

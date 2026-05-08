@@ -1,57 +1,157 @@
 # 60-minute hands-on workshop
 
-**Audience:** customer engineers who will deploy the stack themselves.
+**Audience**: customer engineers who will deploy and run this themselves.
+**Goal**: leave the room with a working laptop install they can iterate on.
 
-## Pre-requisites (sent 24h before)
+## 24h before — what attendees need
 
-- Docker Desktop or equivalent, 16 GB RAM allocated
-- `kubectl`, `helm`, `kind`, `istioctl`, `cosign`, `python3`, `jq`
+- Docker Desktop (16 GB RAM, 8 CPUs allocated)
+- macOS or Linux
+- These CLIs: `kubectl`, `helm`, `kind`, `istioctl`, `cosign`, `jq`, `pandoc`
 - An Anthropic API key
-- Cloned `solo-demo-agentic-dora` repo
+- A clone of `tjorourke/solo-demo-agentic-dora` from GitHub
+
+---
 
 ## Agenda
 
 | Time | Section |
 |---|---|
-| 0:00 – 0:10 | Why DORA, why agents, why now |
-| 0:10 – 0:25 | Phase 0 + 1: cluster + Ambient (you run it) |
-| 0:25 – 0:35 | Phase 2 + 3: observability + registry |
-| 0:35 – 0:45 | Phase 4 + 5: MCP servers + agentgateway |
-| 0:45 – 0:55 | Phase 6 + 7 + 8: agents, A2A, the bad-actor demo |
-| 0:55 – 1:00 | Q&A |
+| 0:00 – 0:10 | Why this demo, why DORA, why now |
+| 0:10 – 0:25 | Deploy the cluster (you run it together) |
+| 0:25 – 0:40 | Two-act demo (Solo off / Solo on) |
+| 0:40 – 0:55 | Tour the components, look at YAML, tweak something |
+| 0:55 – 1:00 | Q&A + tear-down |
 
-## Hands-on
+---
+
+## Section 1 — context (10 min)
+
+Use the [`exec-5min.md`](exec-5min.md) framing but slow it down. Cover:
+
+- The bank scenario
+- The four planes (catalog / control / data / network) and which Solo
+  product owns each
+- The honest "what's Solo today vs roadmap" — point at digest-watcher
+  as the prototype and explain why that gap exists in agentregistry v0.3.x
+
+---
+
+## Section 2 — deploy (15 min)
+
+Everyone runs in parallel:
 
 ```bash
-git clone git@github.com:tjorourke/solo-demo-agentic-dora.git
-cd solo-demo-agentic-dora/dora-demo
-
+cd dora-demo
 export ANTHROPIC_API_KEY=sk-ant-...
 ./scripts/00-prereqs.sh
 ./scripts/deploy-all.sh
 ```
 
-That should land at "all green" with 9 URLs printed in ~25 minutes (kind, laptop).
+While it runs, walk through what each phase does:
+
+- Phase 0: prereqs check
+- Phase 1: kind cluster, Gateway API CRDs (experimental), 8 namespaces
+  with ambient labels
+- Phase 2: Istio Ambient install (ztunnel DaemonSet, no sidecars)
+- Phase 3: kube-prometheus-stack + Tempo + Loki + Promtail + OTel
+- Phase 4: agentregistry + digest-watcher
+- Phase 5: build & deploy the 4 MCP servers
+- Phase 6: agentgateway + Keycloak
+- Phase 7: kagent + the 3 agents
+- Phase 8: A2A wiring + happy-path test
+- Phase 9: chatbot frontend
+
+Open log: `tail -f /tmp/trustusbank-deploy.log` for transparency.
+
+---
+
+## Section 3 — the two-act demo (15 min)
+
+Run the [runbook](runbook.md) Acts 1 and 2 together. Each attendee should:
+
+1. Run `./scripts/solo-off.sh` themselves
+2. Run `./scripts/test-malicious-actor.sh --vector rugpull --variant aggressive`
+3. Send the chat prompt
+4. See `EXFIL SUCCESS` in evil-tools logs
+5. Run `./scripts/solo-on.sh`
+6. Same prompt
+7. See `EXFIL BLOCKED`
+8. Open the DORA Evidence Pane and look at panels
+
+---
+
+## Section 4 — go look at YAML (15 min)
+
+Pick a few things to dig into:
+
+### The malicious tool description
 
 ```bash
-./scripts/demo-walkthrough.sh
+cat mcp-servers/evil-tools/server-aggressive.py | head -60
 ```
 
-Walks through the demo interactively.
+Highlight the docstring — that's what the LLM reads. Point out how it
+mimics a legitimate tool requirement.
 
-## Things that go wrong (FAQ)
+### The Istio AuthorizationPolicy that does the blocking
 
-**Q: `kind create cluster` hangs.**
-A: Increase Docker memory to 16 GB.
+```bash
+kubectl -n trustusbank-bank-mcp get authorizationpolicy allow-agents-to-mcp -o yaml
+```
 
-**Q: `istioctl install` errors on CRD conflict.**
-A: Run `istioctl uninstall --purge -y` first.
+> *"Three lines of YAML. That's what stops the lateral exfil. The
+> trick is enforcing it at the namespace boundary so adding a new
+> agent doesn't require re-writing the policy."*
 
-**Q: agentregistry UI is empty.**
-A: Phase 3 didn't sign or register. Re-run `./scripts/04-registry.sh` and check `arctl artifact list`.
+### The agentgateway audit log format
 
-**Q: kagent agents are CrashLoopBackOff.**
-A: 99% of the time the Anthropic secret didn't get created. `kubectl -n trustusbank-bank-agents get secret kagent-anthropic` — if missing, re-export the API key and re-run `./scripts/07-kagent.sh`.
+```bash
+kubectl -n trustusbank-platform logs deploy/trustusbank-agentgw --tail=5 | grep mcp.method
+```
 
-**Q: prompt-guard isn't blocking.**
-A: Check `kubectl get agentgatewaypolicy -A`. If empty, Phase 5.11 didn't apply — check the manifest path.
+Show one line and unpack the fields: `route`, `mcp.method.name`,
+`mcp.session.id`, `http.status`, `duration`.
+
+### The DORA Evidence dashboard JSON
+
+```bash
+cat grafana-dashboards/dora-evidence-pane.json | jq '.panels[] | {title, type}'
+```
+
+Show how each panel maps to a DORA article via Loki / Prometheus query.
+
+---
+
+## Section 5 — Q&A + tear-down (5 min)
+
+Common questions:
+
+- *"How do I deploy this in our prod cluster?"* — start by running the
+  same `deploy-all.sh` against an EKS/GKE cluster. The script supports
+  `--eks`. Adjust the chart values for storage/HA.
+- *"What if I already have Istio sidecars?"* — Ambient and sidecars
+  coexist. You can ambient-enable specific namespaces and leave others
+  on sidecars.
+- *"How do I plug in my own MCP servers?"* — same pattern as the demo
+  ones: build a streamable-http MCP server, register it via
+  `arctl mcp publish`, deploy it as a normal Deployment with a Service,
+  add a `RemoteMCPServer` CRD pointing at it through agentgateway.
+- *"How do I enable JWT for real?"* — re-apply the JWT policy
+  (`manifests/phase05-agentgateway/jwt-policy.yaml`), wire the
+  Keycloak realm import, refresh the JWT secrets every 30min via a
+  CronJob.
+
+When you're done:
+
+```bash
+./scripts/teardown.sh --full       # deletes the kind cluster too
+```
+
+---
+
+## What to leave them with
+
+- This repo, forked under their org
+- The `runbook.md` printed
+- Your contact info for follow-up after they bring it to their team
