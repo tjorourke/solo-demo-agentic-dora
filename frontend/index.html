@@ -150,12 +150,47 @@
       color: var(--tb-text);
     }
     .quick button:hover { border-color: var(--tb-blue); color: var(--tb-blue); }
+
+    .header-controls { display: flex; gap: 14px; align-items: center; }
+    .debug-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1; cursor: pointer; user-select: none; }
+    .debug-toggle input { cursor: pointer; }
+
+    .debug-block {
+      margin: 6px 0 6px;
+      font-size: 11px;
+      max-width: 100%;
+    }
+    .debug-block summary {
+      cursor: pointer; color: var(--tb-muted); font-family: ui-monospace, monospace;
+    }
+    .debug-block pre {
+      background: #0a2540; color: #cbd5e1;
+      padding: 10px; border-radius: 6px;
+      overflow: auto; max-height: 240px;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      margin: 6px 0 0;
+      white-space: pre-wrap; word-break: break-all;
+    }
+    .agent-step {
+      font-size: 12px; color: var(--tb-muted);
+      padding: 4px 10px; border-left: 2px solid var(--tb-grey-2);
+      margin: 4px 0 4px 4px;
+      font-family: ui-monospace, monospace;
+    }
+    .agent-step .tool-name { color: var(--tb-blue); }
   </style>
 </head>
 <body>
   <header>
     <div class="brand">TrustUsBank — Customer Support</div>
-    <div class="pill" id="conn-pill">connecting…</div>
+    <div class="header-controls">
+      <label class="debug-toggle">
+        <input type="checkbox" id="debug-toggle" />
+        <span>debug</span>
+      </label>
+      <div class="pill" id="conn-pill">connecting…</div>
+    </div>
   </header>
 
   <main>
@@ -224,6 +259,7 @@
     const sendBtn = document.getElementById('send');
     const metaEl = document.getElementById('meta');
     const connPill = document.getElementById('conn-pill');
+    const debugToggle = document.getElementById('debug-toggle');
 
     function add(text, who, agent) {
       const div = document.createElement('div');
@@ -236,6 +272,31 @@
       }
       div.appendChild(document.createTextNode(text));
       log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+      return div;
+    }
+
+    // Show a tool-call step (only when debug is on)
+    function addAgentStep(text) {
+      if (!debugToggle.checked) return;
+      const div = document.createElement('div');
+      div.className = 'agent-step';
+      div.innerHTML = text;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    // Append a collapsible <details> with raw JSON, only when debug is on
+    function addDebugBlock(label, payload) {
+      if (!debugToggle.checked) return;
+      const det = document.createElement('details');
+      det.className = 'debug-block';
+      const sum = document.createElement('summary');
+      sum.textContent = label;
+      const pre = document.createElement('pre');
+      pre.textContent = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+      det.appendChild(sum); det.appendChild(pre);
+      log.appendChild(det);
       log.scrollTop = log.scrollHeight;
     }
 
@@ -281,14 +342,58 @@
           }),
         });
         const data = await r.json();
-        const result = data?.result || data;
-        const reply = result?.message?.parts?.[0]?.text
-          || result?.parts?.[0]?.text
-          || result?.text
-          || data?.error?.message
-          || JSON.stringify(data, null, 2);
-        const responder = result?.from?.name || result?.agent?.name || 'support-bot';
-        add(reply, 'bot', responder);
+        const result = data?.result || {};
+        const responder = result?.metadata?.kagent_author || 'support-bot';
+
+        // A2A response shape:
+        //   success → result.artifacts[].parts[].text  (final output)
+        //   failure → result.status.message.parts[].text
+        //   history[] contains the running transcript with agent messages and tool calls
+        const cleanAuthor = (a) => (a || '').replace(/^trustusbank_bank_agents__NS__/, '').replace(/_/g, '-');
+        const textParts = (parts) => (parts || [])
+          .filter(p => p?.kind === 'text' && p?.text)
+          .map(p => p.text)
+          .join('\n');
+
+        // Walk the history and emit a debug timeline of tool calls / responses
+        for (const h of (result.history || [])) {
+          if (h.role !== 'agent') continue;
+          for (const p of (h.parts || [])) {
+            if (p.kind === 'data' && p.metadata?.kagent_type === 'function_call') {
+              const tool = cleanAuthor(p.data?.name);
+              addAgentStep(`→ <span class="tool-name">${tool}</span> ${JSON.stringify(p.data?.args || {})}`);
+            } else if (p.kind === 'data' && p.metadata?.kagent_type === 'function_response') {
+              const tool = cleanAuthor(p.data?.name);
+              const ok = p.data?.response?.result || p.data?.response;
+              const preview = (typeof ok === 'string' ? ok : JSON.stringify(ok)).slice(0, 100);
+              addAgentStep(`← <span class="tool-name">${tool}</span> ${preview}…`);
+            }
+          }
+        }
+
+        // Final text — try artifacts first, then status.message, then last agent text in history
+        let reply = '';
+        if (result?.artifacts?.length) {
+          reply = result.artifacts.flatMap(a => a.parts || []).filter(p => p?.kind === 'text').map(p => p.text).join('\n');
+        }
+        if (!reply && result?.status?.message?.parts) {
+          reply = textParts(result.status.message.parts);
+        }
+        if (!reply && result?.history?.length) {
+          for (let i = result.history.length - 1; i >= 0; i--) {
+            const h = result.history[i];
+            if (h.role !== 'agent') continue;
+            const t = textParts(h.parts);
+            if (t) { reply = t; break; }
+          }
+        }
+        if (!reply) reply = data?.error?.message || '(empty response)';
+
+        if (result?.status?.state && result.status.state !== 'completed') {
+          reply = `[${result.status.state}] ${reply}`;
+        }
+        add(reply, 'bot', cleanAuthor(responder));
+        addDebugBlock('raw response', data);
       } catch (e) {
         add(`(error talking to agent: ${e.message})`, 'bot', 'system');
       } finally {

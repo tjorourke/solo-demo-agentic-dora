@@ -46,6 +46,8 @@ kind: Service
 metadata:
   name: account-mcp
   namespace: trustusbank-bank-mcp
+  labels:
+    app: account-mcp
 spec:
   selector:
     app: account-mcp

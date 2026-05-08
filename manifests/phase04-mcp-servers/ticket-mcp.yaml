@@ -43,6 +43,8 @@ kind: Service
 metadata:
   name: ticket-mcp
   namespace: trustusbank-bank-mcp
+  labels:
+    app: ticket-mcp
 spec:
   selector:
     app: ticket-mcp

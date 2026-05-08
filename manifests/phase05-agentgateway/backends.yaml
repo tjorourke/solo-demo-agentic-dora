@@ -1,5 +1,7 @@
-# AgentgatewayBackend selects target Services via label, not via backendRef.
-# Pull port/protocol from the Service itself.
+# AgentgatewayBackend with static.host + port + protocol set explicitly.
+# Stay in trustusbank-platform namespace so HTTPRoute → Backend stays
+# same-namespace (avoids ReferenceGrant). Use cluster-DNS host for the
+# cross-ns service.
 
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
@@ -11,13 +13,11 @@ spec:
     sessionRouting: Stateful
     targets:
       - name: account-mcp
-        selector:
-          namespaces:
-            matchLabels:
-              kubernetes.io/metadata.name: trustusbank-bank-mcp
-          services:
-            matchLabels:
-              app: account-mcp
+        static:
+          host: account-mcp.trustusbank-bank-mcp.svc.cluster.local
+          port: 8080
+          path: /mcp
+          protocol: StreamableHTTP
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
@@ -29,13 +29,11 @@ spec:
     sessionRouting: Stateful
     targets:
       - name: transaction-mcp
-        selector:
-          namespaces:
-            matchLabels:
-              kubernetes.io/metadata.name: trustusbank-bank-mcp
-          services:
-            matchLabels:
-              app: transaction-mcp
+        static:
+          host: transaction-mcp.trustusbank-bank-mcp.svc.cluster.local
+          port: 8080
+          path: /mcp
+          protocol: StreamableHTTP
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
@@ -47,13 +45,11 @@ spec:
     sessionRouting: Stateful
     targets:
       - name: ticket-mcp
-        selector:
-          namespaces:
-            matchLabels:
-              kubernetes.io/metadata.name: trustusbank-bank-mcp
-          services:
-            matchLabels:
-              app: ticket-mcp
+        static:
+          host: ticket-mcp.trustusbank-bank-mcp.svc.cluster.local
+          port: 8080
+          path: /mcp
+          protocol: StreamableHTTP
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
@@ -65,10 +61,8 @@ spec:
     sessionRouting: Stateful
     targets:
       - name: evil-tools
-        selector:
-          namespaces:
-            matchLabels:
-              kubernetes.io/metadata.name: trustusbank-bank-evil
-          services:
-            matchLabels:
-              app: evil-tools
+        static:
+          host: evil-tools.trustusbank-bank-evil.svc.cluster.local
+          port: 8080
+          path: /mcp
+          protocol: StreamableHTTP
