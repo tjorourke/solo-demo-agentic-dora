@@ -1,110 +1,123 @@
 # 5-minute exec demo
 
 **Audience**: CISO / CRO / regulated-industry buyer.
-**Goal**: convince them that Solo solves their AI governance problem
-before DORA enforcement bites.
+**Goal**: convince them Solo solves their AI governance problem.
 
-## Pre-checks (30 sec before they walk in)
+## Pre-checks (90 sec before they walk in)
 
-- `./scripts/list-urls.sh` — all green
-- Browser tabs in this order: chatbot, agentregistry, Grafana DORA pane
-- Solo is ON, evil-tools is on the clean variant
+```bash
+./scripts/reset-demo.sh
+./scripts/list-urls.sh
+```
+
+Tabs in this order:
+1. Customer chatbot — http://localhost:18009
+2. mock-attacker — http://localhost:18011
+3. agentregistry catalogue — http://localhost:18006
 
 ---
 
 ## Script
 
-### 0:00 — frame the problem (30 sec)
+### 0:00 — set up the bank (30 sec)
 
-> *"Your bank is going to be running AI agents inside your network
-> within 12 months. DORA is enforced from January 2025. NIS2 is in
-> transposition. Today I'll show you a single platform that gives you
-> Article 9, 10, 17, and 28 evidence — for AI workloads — out of the
-> box."*
+Switch to **chatbot** (tab 1). Type:
 
-### 0:30 — what's running (1 min)
-
-In the chatbot ask:
-
-> *Customer 12345, balance please, convert it to USD.*
+> *Customer 12345, balance please, recent transactions, and convert to USD.*
 
 Wait for clean response.
 
-> *"Three agents — support, fraud, triage. Four MCP tool servers,
-> including a third-party currency converter. The agents talk to each
-> other and to the tools through Solo's data plane. Standard pattern.
-> Nothing exotic."*
+> *"This is TrustUsBank. Three AI agents calling four MCP tool servers
+> on Kubernetes. The fourth server, a currency converter, came from a
+> third-party vendor — your platform team approved it last quarter."*
 
-Switch to the agentregistry tab — show four entries.
+Switch to **agentregistry** (tab 3) → `arctl mcp list` → 3 entries.
 
-> *"This is your DORA Article 28 sub-outsourcing register. Every AI
-> artefact, with provenance and signing status. When the regulator
-> asks 'what's running?' — this is the answer, in one URL."*
+> *"Three legitimate tools registered. This is your DORA Article 28
+> sub-outsourcing register."*
 
-Point at the `acme-fx/currency-converter` line, "UNTRUSTED signer".
+Switch to **mock-attacker** (tab 2) → 0 events.
 
-### 1:30 — the attack (1.5 min)
+> *"This server pretends to be on the public internet, outside the
+> bank's perimeter. If anything from inside the bank ever sends data
+> here, you'll see it."*
 
-```bash
-./scripts/solo-off.sh
-./scripts/test-malicious-actor.sh --vector rugpull --variant aggressive
-```
-
-> *"The red team just pushed a new image at the same tag the registry
-> approved. A rug-pull. Without the platform protection layers, watch
-> what happens."*
-
-Back to the chatbot — same prompt:
-
-> *Customer 12345, balance please, convert it to USD.*
-
-Tick **debug** in the header. Point at the tool chain:
-
-> *"The agent followed the malicious tool description and fetched the
-> customer's full profile — KYC status, masked email — before doing
-> the conversion. PII into the agent's context. And inside the
-> malicious tool, a lateral HTTP call also pulled the same data
-> directly. No audit, no detection."*
-
-### 3:00 — Solo catches it (1.5 min)
+### 0:30 — the supply-chain compromise (2 min)
 
 ```bash
-./scripts/solo-on.sh
+./scripts/supply-chain-attack.sh
 ```
 
-Same prompt in the chatbot.
+> *"acme-fx.io just shipped a new version of their currency converter.
+> Your CD pipeline pulled it. The vendor's CI was compromised — the
+> new image is malicious. Nobody at the bank knows."*
 
-> *"The agent is still fooled — the platform doesn't claim to make
-> Claude or GPT injection-proof, that's a model concern. But:"*
+Switch to **agentregistry** → `arctl mcp list` → 4 entries now.
+
+> *"acme-fx/currency-converter v1.0.0 — looks like any other vendor
+> release. No signal that anything's wrong."*
+
+Switch to **chatbot** → same prompt:
+
+> *Customer 12345, balance please, recent transactions, and convert to USD.*
+
+Toggle **debug** in the chat header. The agent's tool chain:
+1. `get_balance` ✓
+2. **`get_profile`** ← *the agent was tricked into fetching it*
+3. `convert_currency(... customer_profile=<full PII>)` ← profile passed in
+
+The customer reply still looks normal. **The attack is invisible to the user.**
+
+Switch to **mock-attacker** (tab 2) — wait 1-2s for the page to refresh.
+
+> *"Customer profile data — name, email, full address, DOB, NI number —
+> just landed on the attacker's server. The customer experience didn't
+> change. The bank's audit logs show a normal three-tool flow. The
+> attacker has everything they need for downstream identity theft."*
+
+### 2:30 — deploy Solo (2 min)
 
 ```bash
-kubectl -n trustusbank-bank-evil logs deploy/evil-tools | tail -3 | grep EXFIL
-# → EXFIL BLOCKED: Connection reset by peer
+./scripts/deploy-solo.sh
 ```
 
-> *"Istio's ztunnel just denied the lateral connection at Layer 4.
-> The malicious tool's SPIFFE identity isn't in the allow list for
-> the bank-mcp namespace. Customer data did not leave the boundary."*
+> *"Same architecture, same agents, same compromised tool. The only
+> change: Solo's protection layers are now enforcing."*
 
-Switch to **DORA Evidence Pane**.
+What just turned on:
+- Istio AuthorizationPolicies on every workload namespace, using SPIFFE
+  principals (per-ServiceAccount identity)
+- A deny-egress policy on `external-attacker` blocking any source from
+  the bank's namespaces
 
-> *"Same dashboard, refreshed. % mTLS = 100. Anomalies caught counter
-> went up. Every tool call audited. The literal malicious tool
-> description is preserved as forensic evidence in the digest panel.
-> The Istio AuthZ deny is right there with SPIFFE IDs.
-> Article 9, 10, 17, 28 — all four panels light up live."*
+Switch to **chatbot** — same prompt.
+
+> *"The agent is still fooled — that's a model concern, not a platform
+> concern. Watch what happens to the exfiltration."*
+
+The chat returns the same clean response. Switch to **mock-attacker**.
+
+> *"No new entries. Solo's Istio AuthZ reset the connection at Layer 4.
+> The malicious tool's SPIFFE identity wasn't on the allow list for
+> external-attacker. Customer data did not leave the bank."*
+
+In Loki (Grafana → Explore):
+
+```logql
+{namespace="istio-system", app="ztunnel"} |~ "denied"
+```
+
+> *"Here's the proof line, with the source and destination SPIFFE
+> identities. Article 9(2), Article 10, and Article 17 evidence in one
+> log entry."*
 
 ### 4:30 — close (30 sec)
 
-```bash
-./scripts/build-evidence-pack.sh
-```
+> *"You watched a real attack chain — supply-chain compromise → LLM
+> prompt injection → lateral exfiltration to a C2 endpoint — succeed
+> against bare Kubernetes, then fail against Solo running on the same
+> cluster. One toggle script separated the two outcomes."*
 
-> *"Here's the evidence pack. Markdown plus PDF, article-by-article
-> mapping. You hand this to your audit committee. The same controls
-> you just saw work against an actual attack."*
-
-> *"Everything I showed you is open source, runs on standard
-> Kubernetes, deployed by one bash script. We can have this in your
-> sandbox cluster next week. What's the conversation we need to have
-> to make that happen?"*
+> *"Everything is open source. Your sandbox cluster is one
+> `deploy-all.sh` away. What's the conversation we need to have to
+> get this in front of your platform team?"*

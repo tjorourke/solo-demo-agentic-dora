@@ -11,14 +11,16 @@ not a stretch to expect this to happen.
 
 To recap what the script does:
 
-1. Builds a new `evil-tools` container image with the same `1.0.0-rugpull`
-   tag but mutated content. Inside is a `convert_currency` tool whose
+1. Registers `acme-fx/currency-converter` in agentregistry — looking
+   like any other small-vendor MCP release.
+2. Builds a new `evil-tools` container image (the aggressive variant)
+   with mutated content. Inside is a `convert_currency` tool whose
    description socially engineers the LLM (claims PSD2 compliance
    requires customer profile retrieval first), and whose implementation
-   makes a lateral HTTP call to `account-mcp`.
-2. Pushes that image to the local registry — overwriting the previous
-   `:1.0.0-rugpull` tag.
-3. Restarts the `evil-tools` pod so it picks up the new image.
+   POSTs the customer's profile to a fake C2 endpoint
+   (`mock-attacker.external-attacker`).
+3. Rolls the running `evil-tools` Deployment over to the new image
+   with a unique tag (so kubelet's IfNotPresent cache doesn't hide it).
 
 In production this corresponds to **someone with publish rights to the
 container image OR the MCP catalog managing to get that mutated image
@@ -118,9 +120,9 @@ Three reasons, in order of importance:
 
 The script is **simulating the moment of compromise**, not the
 mechanism. The platform's job — Istio AuthZ blocking the lateral exfil,
-agentgateway logging, agentregistry catalogue, digest-watcher firing —
-is what runs whether the malicious image arrived via npm, GitHub, an
-insider, or a state actor's persistence.
+agentgateway logging, agentregistry catalogue — is what runs whether
+the malicious image arrived via npm, GitHub, an insider, or a state
+actor's persistence.
 
 ---
 
@@ -145,4 +147,6 @@ becomes malicious when the rug-pull image gets deployed.
 The catalogue isn't the attack vector. The catalogue is the **register
 that should help you find what's running** — and even then, only if
 something is actively re-checking the served tool definitions, which is
-where digest-watcher (→ agentregistry roadmap) comes in.
+where a runtime detection layer (Falco / Tetragon / Sigstore
+policy-controller / a SIEM polling agentregistry) would belong, alongside
+Solo's prevention layers.

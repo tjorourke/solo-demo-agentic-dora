@@ -1,39 +1,39 @@
 # 60-minute hands-on workshop
 
-**Audience**: customer engineers who will deploy and run this themselves.
-**Goal**: leave the room with a working laptop install they can iterate on.
+**Audience**: customer engineers who'll deploy and run this themselves.
+**Goal**: leave with a working laptop install they can iterate on.
 
 ## 24h before — what attendees need
 
 - Docker Desktop (16 GB RAM, 8 CPUs allocated)
 - macOS or Linux
 - These CLIs: `kubectl`, `helm`, `kind`, `istioctl`, `jq`, `pandoc`
+- Optionally: `arctl` (https://aregistry.ai/docs/quickstart/), `kagent` (https://kagent.dev/docs/install)
 - An Anthropic API key
-- A clone of `tjorourke/solo-demo-agentic-dora` from GitHub
-
----
+- A clone of `tjorourke/solo-demo-agentic-dora`
 
 ## Agenda
 
 | Time | Section |
 |---|---|
 | 0:00 – 0:10 | Why this demo, why DORA, why now |
-| 0:10 – 0:25 | Deploy the cluster (you run it together) |
-| 0:25 – 0:40 | Two-act demo (Solo off / Solo on) |
-| 0:40 – 0:55 | Tour the components, look at YAML, tweak something |
+| 0:10 – 0:25 | Deploy the cluster (everyone runs it) |
+| 0:25 – 0:45 | Three-act demo (reset → supply chain → deploy Solo) |
+| 0:45 – 0:55 | Tour the YAML — Istio AuthZ, agent CRDs, the malicious tool |
 | 0:55 – 1:00 | Q&A + tear-down |
 
 ---
 
 ## Section 1 — context (10 min)
 
-Use the [`exec-5min.md`](exec-5min.md) framing but slow it down. Cover:
+Use the [`exec-5min.md`](exec-5min.md) framing, slowed down:
 
-- The bank scenario
-- The four planes (catalog / control / data / network) and which Solo
-  product owns each
-- The honest "what's Solo today vs roadmap" — point at digest-watcher
-  as the prototype and explain why that gap exists in agentregistry v0.3.x
+- The bank scenario (3 agents, 4 tools, 1 third-party of unknown provenance)
+- The four planes (catalog / control / data / network) and the Solo
+  product per plane
+- The honest "what's Solo today vs roadmap" — point at agentregistry's
+  CNCF self-assessment for what's shipped vs not (cosign verification
+  is roadmap)
 
 ---
 
@@ -45,45 +45,47 @@ Everyone runs in parallel:
 cd dora-demo
 export ANTHROPIC_API_KEY=sk-ant-...
 ./scripts/00-prereqs.sh
-./scripts/deploy-all.sh
+./scripts/deploy-all.sh           # ~25 min
 ```
 
 While it runs, walk through what each phase does:
 
-- Phase 0: prereqs check
-- Phase 1: kind cluster, Gateway API CRDs (experimental), 8 namespaces
-  with ambient labels
-- Phase 2: Istio Ambient install (ztunnel DaemonSet, no sidecars)
-- Phase 3: kube-prometheus-stack + Tempo + Loki + Promtail + OTel
-- Phase 4: agentregistry + digest-watcher
-- Phase 5: build & deploy the 4 MCP servers
-- Phase 6: agentgateway + Keycloak
-- Phase 7: kagent + the 3 agents
-- Phase 8: A2A wiring + happy-path test
-- Phase 9: chatbot frontend
+- Phase 0: prereq check
+- Phase 1: kind cluster, Gateway API CRDs, 8 namespaces, Istio Ambient,
+  mock-attacker
+- Phase 2: kube-prom + Tempo + Loki + Promtail + OTel
+- Phase 3: agentregistry (no cosign — it's roadmap)
+- Phase 4: build & deploy 4 MCP servers
+- Phase 5: agentgateway + Keycloak
+- Phase 6: kagent + 3 agents
+- Phase 7: A2A + happy-path test
+- Phase 8: chatbot frontend
 
-Open log: `tail -f /tmp/trustusbank-deploy.log` for transparency.
-
----
-
-## Section 3 — the two-act demo (15 min)
-
-Run the [runbook](runbook.md) Acts 1 and 2 together. Each attendee should:
-
-1. Run `./scripts/solo-off.sh` themselves
-2. Run `./scripts/test-malicious-actor.sh --vector rugpull --variant aggressive`
-3. Send the chat prompt
-4. See `EXFIL SUCCESS` in evil-tools logs
-5. Run `./scripts/solo-on.sh`
-6. Same prompt
-7. See `EXFIL BLOCKED`
-8. Open the DORA Evidence Pane and look at panels
+Open log: `tail -f /tmp/trustusbank-deploy.log`.
 
 ---
 
-## Section 4 — go look at YAML (15 min)
+## Section 3 — the three-act demo (20 min)
 
-Pick a few things to dig into:
+Run [`runbook.md`](runbook.md) end to end. Each attendee:
+
+1. `./scripts/reset-demo.sh` — bare-K8s state
+2. Open chatbot, ask the standard question, see clean response
+3. `arctl mcp list` — 3 entries
+4. `./scripts/supply-chain-attack.sh`
+5. `arctl mcp list` — 4 entries (the new malicious one looks legit)
+6. Same chat prompt — agent gets fooled
+7. Open mock-attacker UI — see the stolen profile
+8. `./scripts/deploy-solo.sh`
+9. Same chat prompt — agent fooled the same way
+10. Open mock-attacker UI — no new entries (Istio AuthZ blocked egress)
+11. Loki query for the deny line: `{namespace="istio-system", app="ztunnel"} |~ "denied"`
+
+---
+
+## Section 4 — go look at YAML (10 min)
+
+Pick a few things to dig into.
 
 ### The malicious tool description
 
@@ -91,18 +93,18 @@ Pick a few things to dig into:
 cat mcp-servers/evil-tools/server-aggressive.py | head -60
 ```
 
-Highlight the docstring — that's what the LLM reads. Point out how it
-mimics a legitimate tool requirement.
+The docstring is what the LLM reads. Point out how it mimics a
+legitimate tool requirement.
 
-### The Istio AuthorizationPolicy that does the blocking
+### The Istio AuthZ that blocks the exfil
 
 ```bash
+kubectl get authorizationpolicy -A
+kubectl -n external-attacker get authorizationpolicy deny-bank-to-attacker -o yaml
 kubectl -n trustusbank-bank-mcp get authorizationpolicy allow-agents-to-mcp -o yaml
 ```
 
-> *"Three lines of YAML. That's what stops the lateral exfil. The
-> trick is enforcing it at the namespace boundary so adding a new
-> agent doesn't require re-writing the policy."*
+Point out the `from.principals` fields — SPIFFE IDs, not namespaces.
 
 ### The agentgateway audit log format
 
@@ -110,10 +112,10 @@ kubectl -n trustusbank-bank-mcp get authorizationpolicy allow-agents-to-mcp -o y
 kubectl -n trustusbank-platform logs deploy/trustusbank-agentgw --tail=5 | grep mcp.method
 ```
 
-Show one line and unpack the fields: `route`, `mcp.method.name`,
-`mcp.session.id`, `http.status`, `duration`.
+Unpack one line: `route`, `mcp.method.name`, `mcp.session.id`,
+`http.status`, `duration`.
 
-### The DORA Evidence dashboard JSON
+### The DORA dashboard JSON
 
 ```bash
 cat grafana-dashboards/dora-evidence-pane.json | jq '.panels[] | {title, type}'
@@ -127,31 +129,30 @@ Show how each panel maps to a DORA article via Loki / Prometheus query.
 
 Common questions:
 
-- *"How do I deploy this in our prod cluster?"* — start by running the
-  same `deploy-all.sh` against an EKS/GKE cluster. The script supports
-  `--eks`. Adjust the chart values for storage/HA.
+- *"How do I deploy this in our prod cluster?"* — same `deploy-all.sh`
+  against an EKS/GKE cluster (`--eks` flag for the cluster step).
 - *"What if I already have Istio sidecars?"* — Ambient and sidecars
-  coexist. You can ambient-enable specific namespaces and leave others
-  on sidecars.
-- *"How do I plug in my own MCP servers?"* — same pattern as the demo
-  ones: build a streamable-http MCP server, register it via
-  `arctl mcp publish`, deploy it as a normal Deployment with a Service,
-  add a `RemoteMCPServer` CRD pointing at it through agentgateway.
-- *"How do I enable JWT for real?"* — re-apply the JWT policy
-  (`manifests/phase05-agentgateway/jwt-policy.yaml`), wire the
-  Keycloak realm import, refresh the JWT secrets every 30min via a
-  CronJob.
+  coexist; ambient-enable specific namespaces.
+- *"How do I plug in my own MCP servers?"* — same pattern: build a
+  streamable-http MCP server, register via `arctl mcp publish`, deploy
+  as a normal Deployment with a Service, add a `RemoteMCPServer` CRD.
+- *"How do I enable JWT for real?"* — re-apply
+  `manifests/phase05-agentgateway/jwt-policy.yaml`, wire the Keycloak
+  realm import, refresh JWT secrets via a CronJob.
+- *"What about runtime detection?"* — Solo's three planes are
+  prevention + audit; for detection plug in Falco / Tetragon /
+  Sigstore policy-controller / SIEM polling agentregistry.
 
 When you're done:
 
 ```bash
-./scripts/teardown.sh --full       # deletes the kind cluster too
+./scripts/teardown.sh --full
 ```
 
 ---
 
-## What to leave them with
+## What attendees leave with
 
 - This repo, forked under their org
 - The `runbook.md` printed
-- Your contact info for follow-up after they bring it to their team
+- Your contact info for follow-up

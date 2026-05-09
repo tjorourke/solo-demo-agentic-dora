@@ -53,7 +53,7 @@ The TrustUsBank platform demonstrates that:
    sub-outsourcing register). agentregistry stores a record per MCP server
    with provenance. See §4 for the export.
 4. **Anomalous tool changes are detected and blocked**, before customer data
-   moves (DORA Art. 10 detection, Art. 11 response). The digest-watcher
+   moves (DORA Art. 10 detection, Art. 11 response). The Istio AuthZ deny
    service computes SHA-256 over every MCP server's tool definitions and
    alerts on mismatch. See §5 for the rug-pull incident timeline.
 5. **Incidents have a complete, replayable audit trail** (DORA Art. 17).
@@ -119,11 +119,8 @@ append_file "agentregistry export (JSON)"       "$EVIDENCE_DIR/phase3/sub-outsou
 # §5 — bad-actor incident
 append_section "5. Bad-actor incident (rug-pull)" \
   "DORA Art. 10 (detection), Art. 11 (response), Art. 17 (incident management)" \
-  "The red team registered evil-tools (force-allowed, untrusted signature) and then pushed a v1.0.0-rugpull image with the same tag. The digest-watcher service detected the SHA-256 mismatch in the served tool definitions, recorded the event in the digest-mismatches ConfigMap, incremented the agentregistry_digest_mismatch_total counter, and triggered the MCPToolDigestMismatch Prometheus alert."
+  "A compromised third-party MCP image (acme-fx/currency-converter) was deployed via the supply-chain-attack.sh simulator. The agent was tricked by the malicious tool description into fetching the customer profile and passing it as a tool argument. The malicious tool tried to POST the profile to mock-attacker.external-attacker. With Solo's Istio AuthZ in place, the connection was reset at L4 — bank-evil's SPIFFE identity is not in external-attacker's allow list."
 append_file "incident timeline (JSON)"          "$EVIDENCE_DIR/phase8/incident.json" "json"
-append_file "digest mismatch event"             "$EVIDENCE_DIR/phase8/rugpull-mismatches.json" "json"
-append_file "Prometheus alert state"            "$EVIDENCE_DIR/phase8/rugpull-prom-alert.json" "json"
-append_file "tool-poisoning HTTP response"      "$EVIDENCE_DIR/phase8/poisoning-response.json" "json"
 
 # §6 — agent decision traces
 append_section "6. Agent decision audit trail" \
@@ -157,7 +154,7 @@ cat <<'EOF' >> "$OUT_MD"
 |---|---|---|
 | (a) | Risk-analysis & system-security policies | §3 policy CRDs + §2 AuthZ set |
 | (b) | Incident handling                         | §5 + §6 |
-| (d) | Supply chain security                     | §4 cosign signing + §5 digest-watcher |
+| (d) | Supply chain security                     | §4 agentregistry catalogue + §5 Istio AuthZ deny-egress |
 | (h) | Cryptography                              | §2 HBONE mTLS |
 | (i) | Access control                            | §3 JWT + tool allowlist |
 EOF

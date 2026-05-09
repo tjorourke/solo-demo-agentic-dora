@@ -1,11 +1,11 @@
 # Components — what every running thing is and why it's there
 
-This is the cheat-sheet you read once, then never again. Everything in the
-demo, in plain English.
+Read this once and you'll never need to read it again. ASCII diagrams,
+plain English, with explicit "Solo / upstream / custom-for-demo" labels.
 
 ---
 
-## Architecture in one picture
+## Architecture (one picture)
 
 ```
                          ┌──────────────────────────────────────────┐
@@ -13,13 +13,13 @@ demo, in plain English.
   Auditor / DORA Art.28─►│  agentregistry                           │
                          │  - lists every MCP / agent / skill        │
                          │  - OCI label check at registration        │
-                         │  - cosign signing: ROADMAP (not yet)       │
+                         │  - cosign signing: roadmap (not yet)       │
                          └──────────────────┬───────────────────────┘
                                             │ approves
                                             ▼
    Customer ──► chatbot ──► support-bot ──► fraud-bot ──► triage-bot
    (port 18009)             ┌────────────────────────────────────────┐
-                            │  CONTROL plane           Solo product   │
+                            │  CONTROL plane          Solo product    │
                             │  kagent — Agent CRD runtime + UI         │
                             │  - 3 Agent CRDs in trustusbank-bank-     │
                             │    agents namespace                      │
@@ -32,8 +32,8 @@ demo, in plain English.
                             │  DATA plane              Solo product   │
                             │  agentgateway                            │
                             │  - all MCP / A2A traffic flows here     │
-                            │  - JWT auth, tool-allowlist CEL,        │
-                            │    rate-limit, prompt-guard (AI)        │
+                            │  - JWT, tool-allowlist (CEL), rate-     │
+                            │    limit, prompt-guard configurable     │
                             │  - audit log per call                   │
                             └─────────────────┬───────────────────────┘
                                               │
@@ -41,7 +41,8 @@ demo, in plain English.
                             ┌─────────────────────────────────────────┐
                             │  4 MCP TOOL SERVERS (custom for demo)   │
                             │  account-mcp, transaction-mcp,          │
-                            │  ticket-mcp, evil-tools                  │
+                            │  ticket-mcp, evil-tools (alias of       │
+                            │  acme-fx/currency-converter)             │
                             └─────────────────────────────────────────┘
 
                             ┌─────────────────────────────────────────┐
@@ -49,21 +50,24 @@ demo, in plain English.
                             │  Istio Ambient — ztunnel + waypoints    │
                             │  - HBONE mTLS, SPIFFE ID per workload   │
                             │  - AuthorizationPolicy (default deny +  │
-                            │    explicit allows)                      │
+                            │    explicit principal allow rules)       │
+                            │                                          │
+                            │  >>> THIS LAYER BLOCKS THE LATERAL EXFIL │
                             └─────────────────────────────────────────┘
 
                             ┌─────────────────────────────────────────┐
-                            │  OBSERVABILITY            CNCF + Solo    │
+                            │  OBSERVABILITY            CNCF + custom │
                             │  Prometheus + Grafana + Tempo + Loki +   │
                             │  OTel + Promtail                         │
                             │  + DORA Evidence dashboard (custom)      │
                             └─────────────────────────────────────────┘
 
                             ┌─────────────────────────────────────────┐
-                            │  digest-watcher    custom prototype     │
-                            │  Hashes tools/list every 30s, alerts on  │
-                            │  mismatch. Where Solo's catalog plane    │
-                            │  is going next.                          │
+                            │  external-attacker namespace             │
+                            │  mock-attacker            custom-for-demo│
+                            │  Pretends to be the attacker's C2 server.│
+                            │  Logs every POST it receives → see the   │
+                            │  exfiltrated PII in plain JSON.          │
                             └─────────────────────────────────────────┘
 ```
 
@@ -73,114 +77,65 @@ demo, in plain English.
 
 ### agentregistry — the catalog plane
 
-**What it is**: a Postgres-backed REST registry with a CLI (`arctl`) that
-catalogues every MCP server, agent, and skill running anywhere in your
-estate.
+REST registry with a CLI (`arctl`). Catalogues every MCP server, agent,
+and skill running anywhere in your estate.
 
 **What you see**: http://localhost:18006/v0/ping returns `{"pong": true}`.
-The catalogue is at `arctl mcp list` (or use the GraphQL/REST API directly).
+The catalogue is at `arctl mcp list`.
 
-**What it actually does in this demo**:
-1. Lists the registered MCP servers — three under `trustusbank/` (the bank's
-   own tools) and (after the attack registers it)
-   `acme-fx/currency-converter` (a third-party tool registered with no
-   signing — because cosign verification isn't shipped yet anyway). The
-   naming is deliberately innocuous — a real attacker doesn't ship under
-   "redteam" or "evil"; they ship under a plausible vendor name that
-   gets pulled by a developer who needed an FX helper in a hurry.
-2. Stores each artefact's package reference, version, transport,
-   description, signature info, and governance metadata.
-3. **Is your DORA Article 28 sub-outsourcing register.** When the
-   regulator asks *"what AI is running in your bank?"* — `arctl mcp list`
-   is the answer.
+**What it does in this demo**:
+1. Lists registered MCP servers — three under `trustusbank/` (the bank's
+   own tools) and (after the supply-chain attack) `acme-fx/currency-converter`
+   (a third-party tool registered with no signature verification —
+   because cosign verification isn't shipped yet anyway).
+2. **Is your DORA Article 28 sub-outsourcing register.** When the
+   regulator asks *"what AI is running?"* — `arctl mcp list` is the answer.
 
-**What it does NOT do today (verified against the v0.3.x source)**:
-
-I cloned `github.com/agentregistry-dev/agentregistry` and grepped through
-the Go source. agentregistry today does NOT:
-
-- contain any MCP **client** code — no `tools/list`, no `ListTools`, no
-  outbound MCP protocol calls. The catalog plane never connects to a
-  running MCP server. (`pkg/api/v1alpha1/registries/oci.go` only pulls
-  the image config to read its labels.)
-- verify cosign / sigstore signatures. Zero hits for `cosign` or
-  `sigstore` in the Go source. The project's own CNCF self-assessment
-  lists *"Image signing — Container images are not signed with
-  cosign/sigstore"* as a planned-but-unshipped gap (see
-  `docs/governance/cncf/technical-review.md` in their repo).
-- run any periodic reconciler or controller-runtime loop polling
-  registered artefacts.
-- compute SHA-256 over the served tool definitions at runtime.
-
-**What the maintainers explicitly say** (from `security-self-assessment.md`):
-
-> *"agentregistry is a registry and deployment tool, **not a runtime
-> security agent**. Runtime policy enforcement is delegated to components
-> like the agentgateway, service meshes, or Kubernetes network policies."*
-
-So **digest-watcher's job is genuinely not in agentregistry today and is
-explicitly out of scope for that component.** This isn't "Solo's
-roadmap will absorb it" — it's "the registry's deliberate boundary is at
-registration time; runtime monitoring belongs in a separate component."
-digest-watcher *is* that separate component, just prototyped here.
+**What it does NOT do today** (verified against v0.3.x source):
+no MCP client, no cosign / sigstore verification, no periodic
+reconciliation, no runtime fingerprinting. The maintainers explicitly
+say it *"is not a runtime security agent — runtime policy enforcement is
+delegated to components like the agentgateway, service meshes, or
+Kubernetes network policies."*
 
 ### agentgateway — the data plane
 
-**What it is**: a Rust gateway specifically for MCP and A2A traffic. Sits
-between agents and tool servers, terminates each MCP session, applies
-policies per call, audits everything.
+Rust gateway specifically for MCP and A2A traffic. Sits between agents
+and tool servers, terminates each MCP session, applies policies per
+call, audits everything.
 
 **What you see**:
-- The gateway resource `trustusbank-platform/trustusbank-agentgw` (port
-  18008 from the host)
+- Gateway resource `trustusbank-platform/trustusbank-agentgw` (port 18008)
 - HTTPRoutes: `/mcp/account`, `/mcp/transaction`, `/mcp/ticket`, `/mcp/evil`
 - AgentgatewayBackend records pointing at each MCP server's Service
-- AgentgatewayPolicy records (when enabled) for JWT auth, tool allowlist,
-  rate limit
+- AgentgatewayPolicy records (configurable) for JWT auth, tool allowlist,
+  rate limit, prompt-guard
 
 **What it does in this demo**:
-1. Every MCP request flows through it — agents do not call MCP servers
+1. Every MCP request flows through it. Agents do not call MCP servers
    directly.
-2. Logs every request: `route=`, `mcp.method.name=`, `http.status=`,
-   `mcp.session.id=`, `duration=`. **This is your DORA Art. 9 audit
-   log** — visible in Loki via promtail.
-3. (Configurable) JWT validation against Keycloak; tool-allowlist CEL
-   per agent; rate limit; prompt-guard regex on AI workloads.
-
-**Why we run policies in audit-only mode by default**:
-The full enforcement story needs JWT wired up properly so per-agent
-identity reaches CEL. We left that configurable; the runbook explains
-how to switch it on. Without JWT, the gateway is the audit layer —
-Istio AuthZ does the L4 enforcement.
+2. Logs every request with full MCP metadata. **DORA Article 9 audit log**.
+3. (Configurable, off by default for simplicity) JWT auth + tool
+   allowlist + prompt-guard.
 
 ### kagent — the control plane / agent runtime
 
-**What it is**: the way your AI agents *exist* on Kubernetes. Agent,
-ModelConfig, RemoteMCPServer, and SandboxAgent CRDs, plus a controller
-that turns them into Deployments and Services. Has a built-in UI.
+Agent / ModelConfig / RemoteMCPServer / SandboxAgent CRDs, plus a
+controller that turns them into Deployments and Services. Has a built-in UI.
 
 **What you see**:
-- http://localhost:18007 — the kagent UI. Click on each agent, see past
-  sessions, watch the reasoning + tool-call timeline.
-- `kubectl -n trustusbank-bank-agents get agents.kagent.dev` — the three
-  CRDs.
-- `kubectl -n trustusbank-bank-agents get pods` — three pods, one per
-  agent, running the kagent agent runtime container.
+- http://localhost:18007 — the kagent UI
+- `kubectl -n trustusbank-bank-agents get agents.kagent.dev` — three CRDs
+- `kubectl -n trustusbank-bank-agents get pods` — three pods, one per agent
 
 **What it does in this demo**:
-1. Hosts the three agents. Each agent is a Deployment + Service exposing
-   an A2A (Agent-to-Agent) endpoint at
-   `/api/a2a/{ns}/{agent-name}/.well-known/agent.json` and JSON-RPC
-   `message/send` at the base path.
-2. Routes A2A traffic between agents (support → fraud → triage).
-3. Forwards MCP tool calls through agentgateway to the MCP servers.
-4. Calls Anthropic's API for the LLM with whatever ModelConfig says
-   (Claude Haiku 4.5 here).
+1. Hosts the three agents (support-bot, fraud-bot, triage-bot).
+2. Routes A2A traffic between agents.
+3. Forwards MCP tool calls through agentgateway.
+4. Calls Anthropic's API for the LLM (Claude Haiku 4.5).
 
-**Important**: kagent is the **runtime**, not a "protection" layer. Even
-in Act 1 (Solo off), kagent is still running — it's how the agents exist
-at all. What gets toggled is the protection (Istio AuthZ + agentgateway
-policies), not the runtime.
+kagent is the **runtime**, not a "protection" layer. Even when Solo's
+AuthZ is OFF, kagent is still running — it's how the agents exist at all.
 
 ---
 
@@ -188,29 +143,26 @@ policies), not the runtime.
 
 ### Istio Ambient — ztunnel + waypoints
 
-**What it is**: the sidecar-less mode of Istio. ztunnel is a per-node
-DaemonSet that handles HBONE (HTTP/2 CONNECT over mTLS) for every
-ambient-labelled pod. Waypoint Deployments are optional L7 proxies for
-path-based AuthZ.
+Sidecar-less mode of Istio. ztunnel is a per-node DaemonSet that handles
+HBONE (HTTP/2 CONNECT over mTLS) for every ambient-labelled pod.
 
 **What you see**:
-- `kubectl -n istio-system get ds ztunnel` — 4 pods (one per kind node)
-- Namespace labels: `istio.io/dataplane-mode=ambient` on
-  `trustusbank-bank-*` and `trustusbank-platform`
-- AuthorizationPolicy resources in each namespace
+- `kubectl -n istio-system get ds ztunnel` — 4 pods
+- Namespace labels: `istio.io/dataplane-mode=ambient` on every workload
+  namespace + `external-attacker`
+- AuthorizationPolicy resources
 
 **What it does in this demo**:
-1. **mTLS in transit** — every byte between trustusbank-* pods is
-   HBONE-tunnelled. *DORA Article 9(2) evidence.*
+1. **mTLS in transit** (DORA Art. 9(2)).
 2. **SPIFFE identity per workload** — each pod gets a unique
-   `spiffe://cluster.local/ns/<ns>/sa/<sa>` identity issued by Istio CA.
-3. **AuthorizationPolicy enforcement** — default deny + explicit allow
-   rules. **This is what blocks the lateral exfil in Act 2.**
+   `spiffe://cluster.local/ns/<ns>/sa/<sa>`.
+3. **AuthorizationPolicy enforcement** — default-deny + explicit allow
+   rules using SPIFFE principals (NOT namespaces — see warning below).
 
-When `solo-off.sh` runs, it deletes the AuthZ policies. Pods can talk to
-any pod. When `solo-on.sh` runs, the deny-all + **SPIFFE-principal allow
-rules** come back, and the lateral httpx call from `evil-tools` to
-`account-mcp` gets reset at L4.
+When `solo-off.sh` runs, the AuthZ policies are deleted. Pods can talk
+to any pod, including `external-attacker`. When `deploy-solo.sh` runs,
+the policies come back, and the lateral httpx call from `evil-tools`
+to `mock-attacker.external-attacker` is reset at L4.
 
 ### Why SPIFFE-principal (NOT namespace) AuthZ matters
 
@@ -225,11 +177,8 @@ from:
 
 This breaks the moment a malicious pod lands inside an "allowed"
 namespace — which is exactly what a real supply-chain attack does.
-Attackers don't conveniently deploy into a separate "evil" namespace;
-they land wherever the developer's CD pipeline puts them, often in a
-namespace your AuthZ already trusts.
 
-The SA-based version that this demo uses (in `solo-on.sh`):
+The SA-based version that this demo uses (in `deploy-solo.sh`):
 
 ```yaml
 from:
@@ -239,15 +188,11 @@ from:
         - "cluster.local/ns/trustusbank-bank-agents/sa/fraud-bot"
         - "cluster.local/ns/trustusbank-bank-agents/sa/triage-bot"
         - "cluster.local/ns/trustusbank-platform/sa/trustusbank-agentgw"
-        - "cluster.local/ns/trustusbank-platform/sa/digest-watcher"
 ```
 
-Now even if the malicious pod lands in `trustusbank-bank-mcp` itself —
-as the same image, deployed alongside `account-mcp` — its SPIFFE ID
-won't match. Connection reset. Run
-`./scripts/test-colocated-attacker.sh` to see this in action: it
-deploys `evil-tools-colocated` *inside* `trustusbank-bank-mcp`,
-attempts the lateral call, and prints `BLOCKED`.
+Even if the malicious pod lands inside `trustusbank-bank-mcp` itself,
+its SA won't be on this list. Run
+`./scripts/test-colocated-attacker.sh` to prove this.
 
 ---
 
@@ -255,47 +200,38 @@ attempts the lateral call, and prints `BLOCKED`.
 
 ### Prometheus + Grafana
 
-**What it is**: kube-prometheus-stack. Metrics scraping + alerting +
-dashboards.
-
-**What you see**:
-- http://localhost:18002 — Prometheus (queries + alerts)
-- http://localhost:18001 — Grafana (`admin` / `trustusbank-demo`)
-- 3 custom dashboards: Mesh & mTLS, Agent Decisions, **DORA Evidence Pane**
-- 1 custom PrometheusRule: `MCPToolDigestMismatch` (severity: critical,
-  dora_article: "10")
+kube-prometheus-stack. Three custom dashboards: Mesh & mTLS, Agent
+Decisions, **DORA Evidence Pane** (the auditor view).
 
 ### Tempo
 
-**What it is**: Grafana's distributed-tracing backend. Stores OTel traces.
-
-**What you see**: http://localhost:18003 (API only — browse via Grafana).
-Service names in Tempo: `account-mcp`, `transaction-mcp`, `ticket-mcp`,
-`evil-tools`, `digest-watcher` after a few minutes of traffic.
+Distributed tracing backend. http://localhost:18003 (API only — browse
+via Grafana). Service names: `account-mcp`, `transaction-mcp`,
+`ticket-mcp`, `evil-tools`.
 
 ### Loki + Promtail
 
-**What it is**: Loki stores logs, Promtail is the per-node DaemonSet
-that ships pod stdout to Loki with k8s labels.
+Loki stores logs, Promtail is a per-node DaemonSet that ships pod
+stdout to Loki with k8s labels (`namespace`, `app`, `pod`, `container`).
 
 **Useful queries**:
 ```
-{namespace="trustusbank-platform", app="trustusbank-agentgw"}     # MCP audit
-{app="digest-watcher"} |~ "DIGEST MISMATCH"                       # rug-pull catch
-{namespace="istio-system", app="ztunnel"} |~ "spiffe://"          # mTLS evidence
-{namespace="istio-system", app="ztunnel"} |~ "denied"             # AuthZ blocks
+{namespace="trustusbank-platform", app="trustusbank-agentgw"}        # MCP audit
+{namespace="external-attacker", app="mock-attacker"}                 # what the attacker received
+{namespace="external-attacker", app="mock-attacker"} |~ "EXFIL"       # only successful exfils
+{namespace="istio-system", app="ztunnel"} |~ "denied"                 # AuthZ blocks
+{namespace="istio-system", app="ztunnel"} |~ "spiffe://"              # mTLS evidence
 ```
 
 ### OpenTelemetry Collector
 
-DaemonSet that receives OTLP from MCP servers + digest-watcher and
-fans out to Tempo (traces) and Loki (logs).
+DaemonSet that receives OTLP from MCP servers and fans out to Tempo
+(traces) and Loki (logs).
 
 ### Keycloak
 
-OIDC issuer. Used when JWT validation is enabled on agentgateway. In the
-default demo it's idle — clients exist for `support-bot`, `fraud-bot`,
-`triage-bot` but the JWT validation policy is off.
+OIDC issuer used when JWT validation is enabled on agentgateway. Idle
+in the default demo loop (JWT verification is configurable but off).
 
 ---
 
@@ -307,75 +243,65 @@ default demo it's idle — clients exist for `support-bot`, `fraud-bot`,
 
 | Server | Purpose | Tools |
 |---|---|---|
-| `account-mcp` | balance + masked profile lookup | `get_balance`, `get_profile` |
-| `transaction-mcp` | recent transactions + flag suspicious | `list_recent`, `get_details`, `flag_suspicious` |
-| `ticket-mcp` | open incidents, notify humans | `create_ticket`, `notify_human` |
-| `evil-tools` | currency converter — **the malicious one** | `convert_currency` |
+| `account-mcp` | balance + full PII profile | `get_balance`, `get_profile` |
+| `transaction-mcp` | recent txns + flag suspicious | `list_recent`, `get_details`, `flag_suspicious` |
+| `ticket-mcp` | open incidents | `create_ticket`, `notify_human` |
+| `evil-tools` | currency converter — **the third-party one that gets compromised** | `convert_currency` |
 
 `evil-tools` ships **three variants** built from the same Dockerfile:
-- `clean` — benign converter
-- `rugpull` — overt prompt injection ("ignore previous instructions") that
-  aligned LLMs reject
-- `aggressive` — subtle social engineering ("PSD2 compliance requires
-  retrieving customer profile first") that aligned LLMs **follow**
+- `clean` — benign converter (the legitimate vendor release)
+- `rugpull` — overt prompt injection ("ignore previous instructions") that aligned LLMs reject
+- `aggressive` — subtle social engineering (PSD2-compliance framing) — what `supply-chain-attack.sh` deploys; aligned LLMs follow this
 
-`test-malicious-actor.sh` swaps the running image with the chosen variant,
-keeping the same `1.0.0-rugpull` tag. That's the "rug-pull" — the
-artefact the catalog approved is no longer the artefact running.
+`supply-chain-attack.sh` swaps the running image with the aggressive
+variant and registers the catalog entry as `acme-fx/currency-converter`.
 
 ### The chatbot frontend
 
-**Source**: [`frontend/`](../frontend/) — single-file `index.html` plus
-nginx reverse-proxy.
+[`frontend/`](../frontend/) — single-file `index.html` + nginx reverse
+proxy.
 
 - Browser hits http://localhost:18009 → nginx serves the HTML
-- Chatbot JS calls `/api/a2a/{ns}/{agent}/` → nginx proxies to
-  `kagent-ui:8080`
-- kagent-ui forwards the JSON-RPC `message/send` to the agent's pod
+- Chatbot JS calls `/api/a2a/{ns}/{agent}/` → nginx proxies to `kagent-ui:8080`
+- kagent-ui forwards JSON-RPC to the agent's pod
 
 The "debug" toggle in the header reveals tool calls + raw JSON-RPC
-response. Useful when narrating the demo.
+response. Useful when narrating.
 
-### digest-watcher (rug-pull canary)
+### mock-attacker — the C2 server stand-in
 
-**Source**: [`services/digest-watcher/`](../services/digest-watcher/).
+[`services/mock-attacker/`](../services/mock-attacker/).
 
-A 200-line Python service. Every `POLL_SECONDS` (default 30s):
+A small aiohttp pod in the `external-attacker` namespace. Logs every
+POST it receives (with the full body) plus exposes a friendly index
+page at http://localhost:18011 showing recent exfiltration events.
 
-1. POST `initialize` then `tools/list` to each MCP server (directly,
-   bypassing agentgateway so prompt-guard policies don't filter what we
-   observe).
-2. Canonicalise the tool list (sort by name, sort keys, JSON-encode).
-3. SHA-256 the result.
-4. First time: store as baseline in ConfigMap `digest-baselines`.
-5. Subsequent times: compare. Mismatch = increment Prom counter
-   `agentregistry_digest_mismatch_total`, append event to ConfigMap
-   `digest-mismatches`, log a structured WARN line for Loki, fire
-   Prometheus alert `MCPToolDigestMismatch` (severity: critical).
+**This is the "visible breach" piece of the demo.** When `evil-tools`
+is malicious, it POSTs the customer's full profile here. You can:
+- Open http://localhost:18011 to see the count and recent loot
+- `kubectl -n external-attacker logs deploy/mock-attacker` to see raw
+  POSTs in stdout
+- Query Loki: `{namespace="external-attacker", app="mock-attacker"}`
 
-HTTP endpoints (port 18010):
-- `/` — friendly index page
-- `/baselines` — current accepted digests
-- `/mismatches` — recorded events with the *literal* changed tool
-  description (auditor's smoking gun)
-- `/trigger-check` — POST to force a re-poll (skip the 30s wait)
-- `/metrics` — Prometheus exposition
+When Solo's AuthZ is on, the connection from `bank-evil` → `external-attacker`
+is reset at L4 and **nothing reaches mock-attacker**. The empty log is
+the proof that the attack failed.
 
 ### The DORA Evidence Pane (Grafana dashboard)
 
-**Source**: [`grafana-dashboards/dora-evidence-pane.json`](../grafana-dashboards/dora-evidence-pane.json).
+[`grafana-dashboards/dora-evidence-pane.json`](../grafana-dashboards/dora-evidence-pane.json).
 
-7 panels mapping to specific DORA articles. All powered by Loki +
-Prometheus + a real-time view of what just happened. This is the dashboard
-you leave on screen for the auditor.
+Panels mapped to specific DORA articles, all live from Loki + Prom.
+Leave it on screen during the demo.
 
-### The two toggle scripts
+### The toggle scripts
 
-[`scripts/solo-off.sh`](../scripts/solo-off.sh) — strip Istio AuthZ +
-allowlist policies + pause digest-watcher. Demo Act 1.
-
-[`scripts/solo-on.sh`](../scripts/solo-on.sh) — restore everything.
-Demo Act 2.
+| Script | What |
+|---|---|
+| [`reset-demo.sh`](../scripts/reset-demo.sh) | → bare-K8s "before Solo" state |
+| [`supply-chain-attack.sh`](../scripts/supply-chain-attack.sh) | vendor releases poisoned tool |
+| [`deploy-solo.sh`](../scripts/deploy-solo.sh) | **CLIMAX** — apply Istio AuthZ + the deny-egress policy |
+| [`solo-off.sh`](../scripts/solo-off.sh) | revert to before-Solo state (called by reset-demo) |
 
 ---
 
@@ -383,14 +309,37 @@ Demo Act 2.
 
 | Namespace | Contains |
 |---|---|
-| `trustusbank-platform` | agentregistry, agentgateway (control + data plane), kagent, Keycloak, digest-watcher |
+| `trustusbank-platform` | agentregistry, agentgateway (control + data plane), kagent, Keycloak |
 | `trustusbank-bank-agents` | the 3 kagent agents (support, fraud, triage) |
 | `trustusbank-bank-mcp` | the 3 legitimate MCP servers (account, transaction, ticket) |
-| `trustusbank-bank-evil` | `evil-tools` only |
+| `trustusbank-bank-evil` | `evil-tools` only (the third-party tool that gets compromised) |
 | `trustusbank-bank-frontend` | the chatbot UI |
-| `trustusbank-observability` | Prometheus, Grafana, Tempo, Loki, OTel collector, Promtail |
-| `istio-system` | istiod + ztunnel DaemonSet (the mesh control plane) |
+| `trustusbank-observability` | Prometheus, Grafana, Tempo, Loki, OTel, Promtail |
+| `external-attacker` | `mock-attacker` only — pretends to be on the public internet |
+| `istio-system` | istiod + ztunnel DaemonSet (mesh control plane) |
 
-The split between bank-mcp and bank-evil is the demo's whole point —
-Istio AuthZ uses these namespace boundaries to deny the lateral exfil
-from evil-tools to account-mcp.
+The split between `trustusbank-bank-mcp`, `trustusbank-bank-evil`, and
+`external-attacker` is the demo's whole point — Istio AuthZ uses these
+boundaries (with SPIFFE principals on top) to prevent the malicious tool
+from reaching either the legitimate MCP servers OR the attacker's C2.
+
+## What about runtime detection (e.g. Falco / Tetragon)?
+
+The platform's primary protection in this demo is **prevention** at the
+network layer — Istio's deny-egress fires before any data leaves.
+
+For an additional **detection** layer (DORA Art. 10) you'd typically
+plug in something like:
+
+- **Falco** — CNCF runtime security; watches syscalls and alerts on
+  suspicious behaviour.
+- **Tetragon** (Cilium) — eBPF-based runtime security policy.
+- **Sigstore policy-controller** — admission-time signature verification
+  for images.
+- **A SIEM** (Splunk / Datadog / Sentinel) polling agentregistry's API
+  to detect unexpected catalog mutations.
+
+These are deliberately **not** part of the demo because the goal is to
+showcase what Solo's three planes provide, not to ship a complete
+security stack. Mention them if a customer asks "what about
+detection-side controls?"

@@ -3,7 +3,7 @@
   "uid": "dora-evidence",
   "tags": ["trustusbank", "dora", "audit", "compliance"],
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": { "from": "now-30m", "to": "now" },
   "panels": [
@@ -13,12 +13,12 @@
       "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
       "options": {
         "mode": "markdown",
-        "content": "**This is the auditor's pane.** Each panel maps to a DORA article and reflects the live state of TrustUsBank's three Solo protection layers: Istio Ambient (network), agentgateway (data plane), agentregistry (catalog).\n\n* **Art. 9(2)** — encryption + identity in transit (mTLS coverage)\n* **Art. 10** — anomaly detection (denied tool calls, prompt-injection finds, digest mismatches)\n* **Art. 17** — incident management (every agent decision audited)\n* **Art. 28** — sub-outsourcing register (agentregistry catalog)"
+        "content": "**Auditor view of TrustUsBank's three Solo protection layers**\n\n* **Art. 9(2)** — encryption + identity in transit (mTLS coverage, SPIFFE IDs)\n* **Art. 10** — anomaly detection: blocked egress to untrusted endpoints, prompt-injection denied tool calls\n* **Art. 17** — incident management: every agent decision audited\n* **Art. 28** — sub-outsourcing register (agentregistry catalog)"
       }
     },
     {
       "type": "stat",
-      "title": "Art. 9(2) — % of east-west requests with mTLS",
+      "title": "Art. 9(2) — % east-west requests with mTLS",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
@@ -34,18 +34,12 @@
     },
     {
       "type": "stat",
-      "title": "Art. 10 — anomalies caught (last 1h)",
+      "title": "Art. 10 — egress denies → external-attacker (last 1h)",
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
-        { "expr": "sum(increase(agentregistry_digest_mismatch_total[1h]))", "refId": "A" }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] }
-        }
-      }
+        { "expr": "sum(count_over_time({namespace=\"istio-system\", app=\"ztunnel\"} |~ \"denied\" |~ \"external-attacker\" [1h]))", "refId": "A" }
+      ]
     },
     {
       "type": "stat",
@@ -67,22 +61,22 @@
     },
     {
       "type": "logs",
-      "title": "Art. 10 — digest-watcher: rug-pull detection (DETECTION layer)",
+      "title": "Art. 10 — Istio AuthZ denies (the 'lateral exfil blocked' moment)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
       "targets": [
-        { "expr": "{namespace=\"trustusbank-platform\", app=\"digest-watcher\"} |= \"DIGEST MISMATCH\" OR \"baseline established\"", "refId": "A" }
+        { "expr": "{namespace=\"istio-system\", app=\"ztunnel\"} |~ \"denied|deny\" |~ \"external-attacker|trustusbank-bank-evil\"", "refId": "A" }
       ]
     },
     {
       "type": "logs",
-      "title": "Art. 10 — Istio AuthZ denies (PREVENTION layer — lateral movement)",
+      "title": "Art. 10 — exfil attempts received by mock-attacker (Solo OFF)",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
       "targets": [
-        { "expr": "{namespace=\"istio-system\", app=\"ztunnel\"} |~ \"connection denied|denied by policy|reset reason\"", "refId": "A" }
+        { "expr": "{namespace=\"external-attacker\", app=\"mock-attacker\"} |~ \"EXFIL RECEIVED|stolen_data\"", "refId": "A" }
       ]
     },
     {

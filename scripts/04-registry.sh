@@ -42,7 +42,7 @@ if [[ -s "$AREG_CHART_TGZ" ]] && file "$AREG_CHART_TGZ" | grep -q gzip; then
     --set "database.postgres.bundled.image.tag=pg17" \
     --set "database.postgres.vectorEnabled=true" \
     --set "service.type=ClusterIP" \
-    || log_warn "agentregistry helm install failed — digest-watcher still provides the rug-pull canary"
+    || log_warn "agentregistry helm install failed — continuing"
 else
   log_warn "skipping agentregistry — chart unavailable."
 fi

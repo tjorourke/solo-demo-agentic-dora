@@ -10,52 +10,53 @@ It is **not a CRD-based controller**. There are no Kubernetes
 
 1. `helm upgrade --install agentregistry ...` from the project's release
    tarball. The chart needs:
-   - `config.jwtPrivateKey` set to a hex string (NOT a PEM key — yes, the
-     name is misleading).
+   - `config.jwtPrivateKey` set to a hex string (NOT a PEM key).
    - The bundled postgres overridden to `pgvector/pgvector:pg17` because
-     the migrations require the `vector` extension and the default
-     `postgres:18` doesn't ship it.
-2. `arctl mcp publish` for each MCP server, registering them under
-   meaningful namespaces:
+     the migrations require the `vector` extension.
+2. `arctl mcp publish` for each legitimate MCP server, registering them
+   under the `trustusbank/` namespace:
    - `trustusbank/account-mcp`
    - `trustusbank/transaction-mcp`
    - `trustusbank/ticket-mcp`
-   - `acme-fx/currency-converter` (with a description flagging "UNTRUSTED signer")
-3. The `digest-watcher` Deployment + Service + ConfigMaps
-   (`digest-baselines`, `digest-mismatches`) + ServiceMonitor.
+
+`acme-fx/currency-converter` (the malicious third-party tool) is
+**not** registered at deploy time — that happens during the demo,
+inside `./scripts/supply-chain-attack.sh`, modelling the moment a
+compromised vendor pushes a release.
 
 ## What this gets you
 
 - The **DORA Article 28 sub-outsourcing register**. `arctl mcp list`
-  returns every MCP server with provenance, transport, version,
-  description.
-- Cosign signature verification at registration (when `signing.required`
-  is set on a future agentregistry release, or via the `--allow-unsigned`
-  override gotcha).
+  returns every registered MCP server with provenance, transport,
+  version, description.
+- OCI image label validation at registration (`io.modelcontextprotocol.server.name`).
 
-## What it does NOT do today (and what fills the gap)
+## What it does NOT do today (verified against v0.3.x source)
 
-agentregistry v0.3.x does not recompute SHA-256 over the served
-`tools/list` payload at runtime. So an attacker who pushes a new image
-with the same tag — a "rug-pull" — gets past the registry, because the
-artefact was already approved.
+- agentregistry has no MCP **client** code — it never connects out to a
+  running MCP server. The catalog plane never re-checks artefacts at
+  runtime.
+- It does not verify cosign / sigstore signatures. Image signing is
+  listed as a planned-but-unshipped gap in their CNCF self-assessment
+  (`docs/governance/cncf/technical-review.md` in their repo).
+- The maintainers explicitly say agentregistry *"is not a runtime
+  security agent — runtime policy enforcement is delegated to
+  components like the agentgateway, service meshes, or Kubernetes
+  network policies."*
 
-The `digest-watcher` service in `services/digest-watcher/` fills that
-gap as a roadmap prototype. It polls each MCP server every 30 seconds,
-hashes the tool definitions, and alerts on mismatch. The control is
-real; only the placement (sidecar service vs catalog-plane feature) is
-provisional.
-
-In the demo runbook, agentregistry plays the role of "the catalog —
-which is what the auditor reads", and digest-watcher plays the role of
-"the runtime canary — which is what the SRE alerts on." Both are needed
-for a complete DORA Article 10 + 28 story.
+So the runtime fingerprinting / artefact-mutation detection that
+*would* close the rug-pull gap is deliberately out of scope for
+agentregistry. In production you'd plug in a separate runtime tool
+(Falco, Tetragon, Sigstore policy-controller, or a SIEM watching the
+registry's API) alongside Solo's three planes. The demo doesn't ship
+that piece because the breach prevention happens at the network layer
+in Act 2 — Istio AuthZ resets the lateral exfil before any data
+moves.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `digest-watcher.yaml` | The custom prototype service deployment + RBAC + Service + ConfigMaps + ServiceMonitor |
 | `artefacts/*.yaml` | Reference artefact records — used to be `arctl apply` input but the current arctl uses `arctl mcp publish` instead. Kept as documentation of the intended catalog state. |
 
 ## Operator commands you'll actually run

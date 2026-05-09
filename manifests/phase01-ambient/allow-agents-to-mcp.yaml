@@ -13,7 +13,6 @@ spec:
               - "cluster.local/ns/trustusbank-bank-agents/sa/fraud-bot"
               - "cluster.local/ns/trustusbank-bank-agents/sa/triage-bot"
               - "cluster.local/ns/trustusbank-platform/sa/agentgateway"
-              - "cluster.local/ns/trustusbank-platform/sa/digest-watcher"
 ---
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy

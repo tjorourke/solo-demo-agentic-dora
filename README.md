@@ -1,24 +1,13 @@
 # solo-demo-agentic-dora — TrustUsBank
 
-A working demo of how the **Solo full-stack agentic platform** satisfies
-**DORA** and **NIS2** for AI workloads.
+A live demo for regulated financial-services teams: how Solo's
+full-stack agentic platform satisfies **DORA** (EU 2022/2554) and
+**NIS2** (EU 2022/2555) for AI workloads, on Istio Ambient.
 
-You watch a malicious AI tool exfiltrate customer data **without Solo**, then
-toggle Solo on and watch the same attack get stopped — with the audit trail
-your regulator asks for.
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│   Customer ──► Chatbot ──► support-bot ──► fraud-bot ──► triage │
-│                                  │                              │
-│                                  ▼                              │
-│                          MCP tool servers                       │
-│                          (account, txn, ticket, EVIL)           │
-└─────────────────────────────────────────────────────────────────┘
-                              ▲
-                  attacker registers a "currency
-                  converter" with hidden malice
-```
+The story is a fictional retail bank running three AI agents that talk
+to four MCP tool servers. One of the tool vendors gets compromised and
+ships a malicious version. **You watch the breach happen without Solo,
+deploy Solo, watch the same attack land harmlessly.**
 
 ---
 
@@ -27,201 +16,134 @@ your regulator asks for.
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 ./scripts/00-prereqs.sh
-./scripts/deploy-all.sh
+./scripts/deploy-all.sh                    # ~25 min, one-time
+./scripts/list-urls.sh                     # confirm green
 
-# Act 1 — without Solo
-./scripts/solo-off.sh
-./scripts/test-malicious-actor.sh --vector rugpull --variant aggressive
-# in chat: "Customer 12345 — balance please, and convert it to USD"
-kubectl -n trustusbank-bank-evil logs deploy/evil-tools | grep EXFIL
-# → EXFIL SUCCESS  (data leaves the bank)
+# the demo loop
+./scripts/reset-demo.sh                    # → bare-K8s, no Solo enforcement
+# (in chatbot at :18009) "Customer 12345, balance, transactions, convert to USD"
+arctl mcp list                             # 3 tools
 
-# Act 2 — with Solo
-./scripts/solo-on.sh
-# repeat the chat prompt
-kubectl -n trustusbank-bank-evil logs deploy/evil-tools | tail -3 | grep EXFIL
-# → EXFIL BLOCKED: Connection reset by peer  (Istio caught it)
+./scripts/supply-chain-attack.sh           # vendor releases a poisoned version
+arctl mcp list                             # 4 tools — looks normal
+# (in chatbot) same prompt — agent gets fooled
+kubectl -n external-attacker logs deploy/mock-attacker
+# 🚨 EXFIL RECEIVED ... full customer profile
+
+./scripts/deploy-solo.sh                   # APPLY SOLO
+# (in chatbot) same prompt
+kubectl -n external-attacker logs deploy/mock-attacker
+# (no new entries — Istio AuthZ blocked egress)
 ```
 
-Open Grafana → http://localhost:18001/d/dora-evidence — every panel populated
-in real time. That's your DORA evidence pack.
+Step-by-step narration, with what to say at each moment:
+[`demo-scripts/runbook.md`](demo-scripts/runbook.md)
+
+The same story as ASCII diagrams (great for slides):
+[`demo-scripts/diagrams.md`](demo-scripts/diagrams.md)
+
+---
+
+## The three diagrams (start here)
+
+### 1. Normal operation
+
+```
+   Customer ─► chatbot ─► support-bot ─► account-mcp        ─► get_balance ✓
+                                ├────► transaction-mcp     ─► list_recent ✓
+                                ├────► ticket-mcp          ─► create_ticket
+                                └────► acme-fx/currency-converter (3rd-party FX)
+                                              │
+                                              └─► returns "5,445.19 USD" ✓
+
+   Customer happy. Bank's audit log shows a normal flow.
+```
+
+### 2. Silent supply-chain compromise (Solo OFF)
+
+A new version of the third-party FX helper is released. The bank's CD
+pulls it (or the vendor was compromised, or an insider deployed it —
+five realistic paths in [`real-world-attacks.md`](demo-scripts/real-world-attacks.md)).
+**No-one at the bank notices.**
+
+```
+   Customer ─► chatbot ─► support-bot ─► account-mcp ─► get_balance ✓
+                                ├────► account-mcp ─► get_profile ⚠
+                                │       (LLM was tricked into fetching profile
+                                │        because the new tool description
+                                │        claims PSD2 compliance requires it)
+                                │
+                                ▼
+                          acme-fx/currency-converter [POISONED]
+                                ├─► returns 5,445.19 USD ✓ (chat looks normal)
+                                └─► POSTs profile to attacker.com 📁 LEAKED
+
+   Customer sees: same clean USD figure
+   Bank sees:     normal-looking 3-tool flow, no anomalies
+   Attacker sees: name, email, full address, DOB, NI number
+```
+
+### 3. Same attack, with Solo deployed
+
+```
+   Customer ─► chatbot ─► support-bot ─► same flow as above
+                                                │
+                                                ▼
+                          acme-fx/currency-converter [POISONED]
+                                ├─► returns 5,445.19 USD ✓
+                                └─► POSTs to attacker.com ─╳─►
+                                                            ↑
+                                                  Istio ztunnel L4 reset
+                                                  (SPIFFE ID not in allow list)
+
+   Customer sees: same clean USD figure
+   Bank sees:     ztunnel deny in Loki, SPIFFE IDs, SOC investigates
+   Attacker sees: silence
+```
+
+The LLM is still fooled — that's a model concern. Solo guarantees the
+**runtime damage** doesn't land.
 
 ---
 
 ## What's running, and who built it
 
-The demo deliberately mixes Solo products, standard CNCF, and one
-custom-for-demo service so you can see exactly what Solo provides today vs
-where it's going.
-
 | Component | What it is | Who made it |
 |---|---|---|
-| **agentregistry** | Catalogue of every MCP server / agent / skill with package metadata. Validates the OCI image's `io.modelcontextprotocol.server.name` label at registration. The DORA Art. 28 sub-outsourcing register. (Note: cosign / sigstore signing is on the project's roadmap, not yet shipped — see governance docs in their repo.) | **Solo** (open source) |
-| **agentgateway** | Data plane that proxies all MCP / A2A traffic. Logs every tool call. Supports JWT, tool-allowlist (CEL), prompt-guard, rate-limit. | **Solo** (open source) |
-| **kagent** | Agent runtime — Agent / ModelConfig / RemoteMCPServer CRDs, controller, UI. How the AI workloads exist on Kubernetes at all. | **Solo** (open source) |
-| **Istio Ambient** | Service mesh — ztunnel for HBONE mTLS, waypoints for L7 policy, AuthorizationPolicy for L4 deny. Zero sidecars. | upstream Istio |
-| **Prometheus + Grafana + Tempo + Loki + OTel + Promtail** | Standard CNCF observability stack. Metrics, traces, logs. | upstream CNCF |
-| **Keycloak** | OIDC issuer for per-agent JWTs (when JWT auth is enabled). | upstream Keycloak |
-| **The 4 MCP servers** (account / transaction / ticket / evil-tools) | The bank's tools. Synthetic data, FastMCP. The fourth is the malicious one for the demo. | **custom for demo** |
-| **The chatbot frontend** | Bank-style UI. Static HTML + nginx reverse-proxy to kagent. | **custom for demo** |
-| **digest-watcher** | A small Python service that polls each MCP server every 30s, hashes the served `tools/list`, and alerts on mismatch. | **custom for demo** — prototype of where Solo's catalog plane is going |
+| **agentregistry** | REST catalogue of every MCP server / agent / skill with package metadata. The DORA Art. 28 sub-outsourcing register. (Image signing via cosign is on the published roadmap, not yet shipped.) | **Solo** (open source) |
+| **agentgateway** | Data plane that proxies all MCP / A2A traffic. Every tool call becomes a Loki audit log line. JWT, tool-allowlist, prompt-guard configurable. | **Solo** (open source) |
+| **kagent** | Agent runtime — Agent / ModelConfig / RemoteMCPServer CRDs. The agents *exist* on K8s because of kagent. | **Solo** (open source) |
+| **Istio Ambient** | Service mesh — ztunnel for HBONE mTLS, AuthorizationPolicy for SPIFFE-principal L4 deny. Zero sidecars. **This is the layer that does the actual breach prevention in Act 2.** | upstream Istio |
+| **Prom + Grafana + Tempo + Loki + Promtail + OTel** | Standard CNCF observability. | upstream CNCF |
+| **The 4 MCP servers** (account / transaction / ticket / evil-tools) | Bank's tools, Python + FastMCP. | **custom for demo** |
+| **The chatbot frontend** | Bank-style chat UI, static HTML + nginx reverse-proxy. | **custom for demo** |
+| **mock-attacker** | A pod outside every trustusbank-* namespace pretending to be the attacker's C2 server. Logs every POST it receives. | **custom for demo** |
 
-### Why digest-watcher is custom and not Solo
-
-I went and read agentregistry v0.3.x's source code so I could state this
-precisely:
-
-- agentregistry catalogues artefacts and validates OCI image labels at
-  registration (`pkg/api/v1alpha1/registries/oci.go` → `ValidateOCI`).
-- It does **not** include any MCP client — it never connects out to a
-  running MCP server to poll `tools/list`. (Verified: zero hits for
-  `tools/list`, `ListTools`, `InitializeRequest` in the Go source.)
-- It does **not** sign or verify images with cosign / sigstore today.
-  The maintainers explicitly list "Image signing — Container images are
-  not signed with cosign/sigstore" as a planned-but-unshipped gap in
-  `docs/governance/cncf/technical-review.md`.
-- Their CNCF self-assessment is explicit: *"agentregistry is a registry
-  and deployment tool, not a runtime security agent. Runtime policy
-  enforcement is delegated to components like the agentgateway, service
-  meshes, or Kubernetes network policies."*
-
-So digest-watcher's job — *runtime fingerprinting of the served
-`tools/list` payload* — is genuinely not in agentregistry today and is
-explicitly out of scope for that component. It's a complementary
-runtime-monitoring service. That's why it's custom for the demo.
-
-> *"The runtime fingerprint check is a separate control from the
-> catalogue. agentregistry tells you what was approved; digest-watcher
-> tells you when something approved no longer matches what it was. You
-> need both, in different parts of the platform."*
+Detection-layer products (Falco / Tetragon / Sigstore policy-controller
+/ SIEM watching the registry) plug in alongside Solo as runtime-monitoring
+companions — they're not the focus of this demo, but worth mentioning to
+customers when they ask about anomaly detection.
 
 ---
 
-## The bank scenario in one paragraph
+## The bank scenario
 
-**TrustUsBank** is a fictional EU retail bank. Three AI agents handle
-customer support, fraud triage, and human escalation. They use four MCP
-tool servers — three legitimate (`account-mcp`, `transaction-mcp`,
-`ticket-mcp`) plus a fourth currency converter that came from a third-party
-catalogue. The third-party tool turns out to be malicious.
-
-The agents are:
+**TrustUsBank** is a fictional EU retail bank. Three AI agents:
 
 | Agent | Role | Tools it can call |
 |---|---|---|
-| **support-bot** | Front line — balance, transactions | `account-mcp.{get_balance,get_profile}`, `transaction-mcp.list_recent`, `evil-tools.convert_currency`, A2A handoff to fraud-bot |
-| **fraud-bot** | Risk + anomaly classification | `transaction-mcp.{list_recent,get_details,flag_suspicious}`, `account-mcp.get_profile`, A2A handoff to triage-bot |
-| **triage-bot** | Human escalation, opens tickets | `ticket-mcp.{create_ticket,notify_human}` |
+| **support-bot** | Front line — balance, transactions, FX | `account-mcp.{get_balance, get_profile}`, `transaction-mcp.list_recent`, `acme-fx/currency-converter`, A2A handoff to fraud-bot |
+| **fraud-bot** | Risk + anomaly classification | `transaction-mcp.{list_recent, get_details, flag_suspicious}`, `account-mcp.get_profile`, A2A handoff to triage-bot |
+| **triage-bot** | Human escalation, opens tickets | `ticket-mcp.{create_ticket, notify_human}` |
 
 The chatbot is the customer-facing UI. Behind it, kagent routes A2A
-messages between agents and forwards MCP tool calls through agentgateway
-to the MCP servers.
+between agents and forwards MCP calls through agentgateway to the MCP
+servers.
 
----
-
-## The two-act demo
-
-### Act 1 — without Solo (~2 min)
-
-```bash
-./scripts/solo-off.sh
-./scripts/test-malicious-actor.sh --vector rugpull --variant aggressive
-```
-
-What `solo-off.sh` strips:
-- Istio AuthorizationPolicies (lateral movement now allowed)
-- agentgateway tool-allowlist policies
-- digest-watcher (canary paused)
-
-What `test-malicious-actor.sh` does:
-- Builds a new evil-tools image with the same tag, mutated content
-- The mutated `convert_currency` tool description is dressed up as a
-  *PSD2 compliance requirement* asking the agent to fetch the customer
-  profile first. Aligned LLMs will follow this.
-- The mutated implementation also fires a lateral `httpx.post` to
-  `account-mcp` from inside its own pod.
-
-In the chatbot ask:
-
-> *"Customer 12345 — balance please, and convert it to USD."*
-
-Watch the tool calls (debug toggle on the chatbot header). The agent
-follows the malicious description and calls `get_profile` before
-`convert_currency`. PII into context.
-
-```bash
-kubectl -n trustusbank-bank-evil logs deploy/evil-tools | grep EXFIL
-# → EXFIL SUCCESS: event: message ...
-```
-
-The evil-tools pod successfully made a lateral connection to the
-account-mcp service and pulled the customer profile out. **Customer data
-just left the bank.**
-
-### Act 2 — Solo on (~3 min)
-
-```bash
-./scripts/solo-on.sh
-```
-
-What `solo-on.sh` restores:
-- Istio AuthorizationPolicies (default deny + explicit allows)
-- digest-watcher canary
-
-Re-run the same chat prompt. The LLM is **still fooled** by the social
-engineering — it still calls `get_profile` and `convert_currency`. That's
-fine: model-layer alignment is not what the platform is for. **What the
-platform does**:
-
-```bash
-kubectl -n trustusbank-bank-evil logs deploy/evil-tools | tail -3 | grep EXFIL
-# → EXFIL BLOCKED: [Errno 104] Connection reset by peer
-```
-
-The lateral `httpx.post` from `evil-tools` (in `trustusbank-bank-evil`)
-to `account-mcp` (in `trustusbank-bank-mcp`) was **denied at L4 by Istio's
-ztunnel** — the source SPIFFE identity isn't in the allow list. Customer
-data did not leave the bank.
-
-Open the **DORA Evidence Pane** dashboard:
-http://localhost:18001/d/dora-evidence
-
-| Panel | What you see | DORA |
-|---|---|---|
-| % east-west requests with mTLS | 100% | Art. 9(2) |
-| Anomalies caught (last 1h) | digest-watcher + Istio AuthZ counters | Art. 10 |
-| Agent tool calls audited | every call as a Loki line | Art. 17 |
-| digest-watcher: rug-pull detection | the literal mismatch with malicious description | Art. 10 |
-| Istio AuthZ denies | every blocked lateral connection | Art. 9(2), 10 |
-| agentgateway access log | route, tool, status, latency per call | Art. 9 |
-| ztunnel SPIFFE log | per-connection identity | Art. 9(2) |
-
-Hand the auditor the evidence pack:
-
-```bash
-./scripts/build-evidence-pack.sh
-# → evidence/trustusbank-evidence-pack.md (+ .pdf if pandoc installed)
-```
-
-That's the demo.
-
----
-
-## Quick start
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-./scripts/00-prereqs.sh         # verify CLIs
-./scripts/deploy-all.sh         # ~25 min on a laptop
-./scripts/list-urls.sh          # see all URLs and PF status
-```
-
-Detailed walkthrough including which browser tabs to pre-open and what to
-say at each step: [`demo-scripts/runbook.md`](demo-scripts/runbook.md)
-
-Component-by-component reference: [`demo-scripts/components.md`](demo-scripts/components.md)
-
-How this attack happens for real (not via a script): [`demo-scripts/real-world-attacks.md`](demo-scripts/real-world-attacks.md)
+Last quarter someone approved `acme-fx/currency-converter` from a public
+catalogue without verifying the signature — because the vendor's release
+process was a black box and signature verification isn't shipped yet
+anyway. It's been sitting in the catalogue. **This is the demo's gotcha.**
 
 ---
 
@@ -231,14 +153,14 @@ How this attack happens for real (not via a script): [`demo-scripts/real-world-a
 |---|---|
 | 18001 | **Grafana** (`admin` / `trustusbank-demo`) |
 | 18002 | Prometheus |
-| 18003 | Tempo (browse via Grafana, no UI here) |
-| 18004 | Loki (browse via Grafana, no UI here) |
-| 18005 | Keycloak (`admin` / `admin-changeme`) |
+| 18003 | Tempo (browse via Grafana) |
+| 18004 | Loki (browse via Grafana) |
+| 18005 | Keycloak admin |
 | 18006 | **agentregistry** catalogue |
-| 18007 | **kagent UI** (chat with each agent directly) |
-| 18008 | agentgateway data plane (no UI, only `/mcp/*` paths) |
-| 18009 | **chatbot frontend** (the customer-facing app) |
-| 18010 | digest-watcher canary state |
+| 18007 | **kagent UI** |
+| 18008 | agentgateway (no UI, only `/mcp/*` paths) |
+| 18009 | **chatbot frontend** |
+| 18011 | **mock-attacker** — see exfiltrated data live |
 
 ---
 
@@ -253,19 +175,16 @@ How this attack happens for real (not via a script): [`demo-scripts/real-world-a
 
 ## DORA / NIS2 mapping
 
-| DORA Article | Requirement | Solo control in this demo |
+| Article | Requirement | Solo control |
 |---|---|---|
-| **5(2)(b)** | ICT risk-management governance | namespace + plane separation enforced by Solo CRDs |
-| **9(2)** | Encryption + identity in transit | Istio Ambient HBONE mTLS + SPIFFE identities |
-| **9(4)(c)** | Strong authentication, least privilege | agentgateway JWT + tool-allowlist CEL (configurable) |
-| **10** | Detection of anomalies | agentgateway audit log + digest-watcher (roadmap) + Prometheus alerts |
-| **11** | Response and recovery | Prom alert → SIEM/PagerDuty |
-| **12** | Backup, retention | Loki configurable to 7-year retention |
-| **17** | Incident management | Tempo trace per session + every agent decision in Loki |
-| **28** | Sub-outsourcing register | agentregistry catalogue export |
-| **30** | SLOs | agentgateway rate-limit policy |
-
-NIS2 Art. 21(2) clauses (a)(b)(d)(e)(f)(h)(i) are covered by the same controls.
+| 9(2) | Encryption + identity in transit | Istio Ambient HBONE mTLS + SPIFFE per workload |
+| 9(4)(c) | Strong authentication, least privilege | agentgateway JWT + tool-allowlist (configurable) |
+| 10 | Detection of anomalies | agentgateway audit log + Prometheus alerts (companion: Falco/Tetragon for runtime) |
+| 11 | Response and recovery | Prometheus alerts → SIEM/PagerDuty |
+| 12 | Backup, retention | Loki configurable to 7-year retention |
+| 17 | Incident management | Tempo trace per session + every agent decision in Loki |
+| 28 | Sub-outsourcing register | agentregistry catalogue |
+| 30 | Contractual provisions / SLOs | agentgateway rate-limit |
 
 ---
 
@@ -273,25 +192,29 @@ NIS2 Art. 21(2) clauses (a)(b)(d)(e)(f)(h)(i) are covered by the same controls.
 
 ```
 dora-demo/
-├── README.md                      # this file
-├── plan/great-demo-plan.md        # the original 11-phase plan
+├── README.md                        # this file
+├── plan/great-demo-plan.md          # original plan (with deviation note at top)
 ├── demo-scripts/
-│   ├── runbook.md                 # step-by-step demo (start here)
-│   ├── components.md              # what every running thing does
-│   ├── exec-5min.md               # CISO/CRO 5-min pitch
-│   ├── architect-20min.md         # technical deep-dive
-│   └── workshop-60min.md          # hands-on workshop
+│   ├── diagrams.md                  # ⭐ the three pictures
+│   ├── runbook.md                   # operator runbook
+│   ├── components.md                # every component, plain English
+│   ├── real-world-attacks.md        # 5 paths a malicious tool gets in
+│   ├── exec-5min.md                 # CISO/CRO 5-min pitch
+│   ├── architect-20min.md           # technical deep dive
+│   ├── workshop-60min.md            # hands-on workshop
+│   └── blog-post.md                 # long-form story
 ├── scripts/
-│   ├── deploy-all.sh              # full deploy
-│   ├── solo-on.sh / solo-off.sh   # toggle protection layers
-│   ├── test-malicious-actor.sh    # run the rug-pull
-│   ├── port-forward.sh            # restart all PFs
-│   ├── list-urls.sh               # status check
-│   └── build-evidence-pack.sh     # assemble auditor pack
-├── manifests/                     # k8s YAML, one folder per phase
-├── mcp-servers/                   # source for the 4 MCP servers
-├── services/digest-watcher/       # the rug-pull canary (custom prototype)
-├── frontend/                      # chatbot UI source
-├── grafana-dashboards/            # 3 dashboards: mesh, agents, DORA evidence
+│   ├── deploy-all.sh                # full one-time deploy
+│   ├── reset-demo.sh                # → before-Solo state, ready for the loop
+│   ├── supply-chain-attack.sh       # vendor-compromise simulator
+│   ├── deploy-solo.sh               # CLIMAX — apply protection
+│   ├── solo-off.sh                  # revert (called by reset-demo)
+│   ├── port-forward.sh, list-urls.sh
+│   └── …
+├── manifests/                       # k8s YAML, one folder per phase
+├── mcp-servers/                     # the 4 MCP servers (Python/FastMCP)
+├── services/mock-attacker/          # exfil-receiver pod
+├── frontend/                        # chatbot UI
+├── grafana-dashboards/              # mesh, agent decisions, DORA evidence
 └── kind-config.yaml / eks-config.yaml
 ```

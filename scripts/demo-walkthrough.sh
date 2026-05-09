@@ -130,28 +130,36 @@ run_cmd "kubectl -n $NS_PLATFORM logs deploy/agentgateway --tail=20 | grep -E 'p
 pause
 
 # ─────────────────────────────────────────────────────────────
-narrate "═══ §6 — Vector 2: the rug-pull ═══"
-narrate "evil-tools is registered cleanly at v1.0.0 and used by support-bot."
-narrate "The attacker pushes a NEW image with the SAME tag — different content."
-narrate ""
-narrate "Our digest-watcher service polls every MCP server's tools/list every 30s,"
-narrate "computes SHA-256 over the canonical JSON of the tool definitions, and"
-narrate "compares against the baseline ConfigMap. When the rugpull image changes"
-narrate "the served tool descriptions, the digest changes — caught in seconds."
+narrate "═══ §6 — Supply-chain compromise (Solo OFF) ═══"
+narrate "A new version of acme-fx/currency-converter is released."
+narrate "Vendor's CI got compromised → mutated image lands in production."
 pause
 
-narrate "Current baselines (before the rug-pull):"
-run_cmd "curl -s http://localhost:${PF_DIGEST_WATCHER_PORT}/baselines | python3 -m json.tool || true"
+run_cmd "$SCRIPT_DIR/supply-chain-attack.sh"
 pause
 
-run_cmd "$SCRIPT_DIR/test-malicious-actor.sh --vector rugpull"
+narrate "Now ask the chatbot: 'Customer 12345, balance, recent txns, USD'"
+narrate "The agent gets fooled, fetches profile, passes it to the poisoned tool."
 pause
 
-narrate "Mismatches recorded:"
-run_cmd "curl -s http://localhost:${PF_DIGEST_WATCHER_PORT}/mismatches | python3 -m json.tool | head -40"
+narrate "What landed on the attacker's server:"
+run_cmd "kubectl -n external-attacker logs deploy/mock-attacker --tail=30 | grep -A2 EXFIL"
 pause
 
-open_url "http://localhost:${PF_PROMETHEUS_PORT}/alerts" "Prometheus alerts — MCPToolDigestMismatch should be FIRING"
+open_url "http://localhost:${PF_MOCK_ATTACKER_PORT}" "mock-attacker UI — see the stolen PII live"
+pause
+
+narrate "═══ §7 — Deploy Solo (climax) ═══"
+run_cmd "$SCRIPT_DIR/deploy-solo.sh"
+pause
+
+narrate "Re-run the same chat prompt. Same agent, same fooled LLM."
+narrate "Then check mock-attacker again:"
+run_cmd "kubectl -n external-attacker logs deploy/mock-attacker --tail=10"
+pause
+
+narrate "And the Istio AuthZ deny line:"
+run_cmd "kubectl -n istio-system logs ds/ztunnel --tail=200 | grep -i denied | tail -3"
 pause
 
 open_url "http://localhost:$PF_GRAFANA_PORT/d/dora-evidence" "Grafana — DORA evidence pane. Article-by-article mapping. Hand the CISO this dashboard."
