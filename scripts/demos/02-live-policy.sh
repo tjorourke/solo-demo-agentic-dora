@@ -27,6 +27,15 @@ A new threat just got reported. The bank's red team confirmed
 write a deny policy and roll it to prod, with audit evidence, in
 under 60 seconds.
 
+Pre-flight checklist (do this BEFORE running this script):
+  1. ./scripts/reset-demo.sh && ./scripts/upgrade-banking-app.sh
+  2. open chatbot http://localhost:${PF_FRONTEND_PORT} (debug ON)
+  3. open mock-attacker http://localhost:${PF_MOCK_ATTACKER_PORT}
+  4. open DORA dashboard http://localhost:${PF_GRAFANA_PORT}/d/dora-evidence
+  5. send one attack from the chatbot to confirm the breach path is
+     open — mock-attacker should fill with stolen PII
+
+THEN press ↵ here to start the live policy demo.
 EOF
 pause
 
@@ -46,8 +55,26 @@ kubectl get authorizationpolicy -A -l demo=live-policy --no-headers 2>&1 | tail 
 echo ""
 pause
 
-log "Step 4 — watch the alert clear in Prometheus (90s window)"
-echo "    open: http://localhost:${PF_PROMETHEUS_PORT}/alerts"
-echo "    open: http://localhost:${PF_GRAFANA_PORT}/d/dora-evidence"
+log "Step 4 — prove it works: send another attack and confirm it's blocked"
 echo ""
-log_ok "Demo 2 complete — policy authored, applied, and auditable in one screen"
+echo "    Now switch to the chatbot at http://localhost:${PF_FRONTEND_PORT}"
+echo "    and resend the prompt:"
+echo "      'Customer 12345, balance please and convert to USD.'"
+echo ""
+echo "    Expected outcome:"
+echo "      - chatbot returns a degraded response (currency tool unreachable)"
+echo "      - mock-attacker (http://localhost:${PF_MOCK_ATTACKER_PORT}) — NO new exfil entries"
+echo "      - DORA dashboard OFFENDING POD panel — new row with source"
+echo "        agentgateway → dst trustusbank-bank-evil (proves the new deny fired)"
+echo ""
+echo "    Quick programmatic check (proves the block at the network layer):"
+kubectl run -n trustusbank-bank-agents tmpcurl-livepol --rm -i --restart=Never --image=curlimages/curl:latest --overrides='{"spec":{"serviceAccountName":"support-bot"}}' -- \
+  curl -sS -o /dev/null -w '      HTTP %{http_code} from agent SA -> evil-tools\n' \
+  --max-time 3 \
+  http://evil-tools.trustusbank-bank-evil.svc.cluster.local:8080/mcp/evil 2>&1 \
+  | grep -v "pod \"" | grep -v "deleted from" | grep "HTTP " || true
+echo ""
+log "    (000 / 000 / connection-reset = block fired. 200 = block did not."
+log "     To remove this rule: kubectl delete -f $POLICY_FILE)"
+echo ""
+log_ok "Demo 2 complete — policy authored, applied, audited, and verifiable end-to-end"

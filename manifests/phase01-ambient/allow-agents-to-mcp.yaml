@@ -26,5 +26,17 @@ spec:
         - source:
             principals:
               - "cluster.local/ns/trustusbank-platform/sa/agentgateway"
-              - "cluster.local/ns/trustusbank-platform/sa/kagent"
+              # kagent-controller is the actual SA on the kagent runtime
+              # pod (NOT 'kagent') — it's what proxies A2A calls into the
+              # agent pods. Without this, A2A returns 503 upstream connect
+              # error from kagent-controller→support-bot/fraud-bot/etc.
+              - "cluster.local/ns/trustusbank-platform/sa/kagent-controller"
+              - "cluster.local/ns/trustusbank-platform/sa/kagent-ui"
               - "cluster.local/ns/trustusbank-bank-frontend/sa/chatbot"
+              # In Ambient with waypoints, pod-to-pod traffic transits
+              # the destination namespace's waypoint. From ztunnel's view
+              # on the inbound side, the SOURCE is the waypoint — not
+              # the original caller. So the L4 allow needs the waypoint
+              # SA too (the waypoint then enforces L7 / original-source
+              # rules separately).
+              - "cluster.local/ns/trustusbank-bank-agents/sa/waypoint"
