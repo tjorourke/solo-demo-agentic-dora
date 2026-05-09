@@ -66,7 +66,7 @@ spec:
           expr: |
             sum by (source_workload, source_workload_namespace, source_principal,
                     destination_service_namespace, destination_service_name)
-              (rate(istio_tcp_connections_failed_total{response_flags="CONNECT"}[2m])) > 0
+              (rate(istio_tcp_connections_failed_total{response_flags="CONNECT"}[10m])) > 0
           for: 0m
           labels:
             severity: critical
@@ -89,7 +89,7 @@ spec:
               (rate(istio_tcp_connections_opened_total{
                 source_workload_namespace=~"trustusbank-bank-.*|trustusbank-platform",
                 destination_workload_namespace="external-attacker"
-              }[2m])) > 0
+              }[10m])) > 0
           for: 0m
           labels:
             severity: critical

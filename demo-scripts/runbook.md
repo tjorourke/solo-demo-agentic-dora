@@ -194,14 +194,85 @@ That's fine. Tick debug if you want to see it again.
 > SPIFFE identity of the source pod was not in the allow list for
 > external-attacker. Customer data did not leave the boundary."*
 
-**Show the audit trail in Loki**:
+### Where the SOC sees this — Prometheus & Loki
+
+Two production-grade signals fire the moment Solo blocks the attack.
+
+**Prometheus alerts** (`http://localhost:18002/alerts`):
+
+| Alert | Fires when | What the labels tell you |
+|---|---|---|
+| `IstioAuthZDeny` (severity: critical, dora_article: 10) | Rate of `istio_tcp_connections_failed_total{response_flags="CONNECT"}` > 0 — i.e. ztunnel rejected an HBONE handshake | `source_workload`, `source_workload_namespace`, `source_principal` (the SPIFFE ID of the offending pod), `destination_service_name`, `destination_service_namespace` |
+| `BankToAttackerAttempt` (severity: critical) | Any `trustusbank-bank-*` pod opens a connection to the `external-attacker` namespace | Same labels — fires whether the attempt succeeded (Solo OFF) or was blocked (Solo ON) |
+
+The `source_principal` label IS the offending pod's SPIFFE ID — no
+log correlation needed to identify the workload.
+
+**Loki queries** (`http://localhost:18001/explore`, datasource = loki):
 
 ```logql
-{namespace="istio-system", app="ztunnel"} |~ "denied"
+# 1. The deny line — full forensic context, single log row per attempt
+{namespace="istio-system", app="ztunnel"} |~ "explicitly denied by"
+
+# 2. What the malicious tool tried to do, BEFORE the deny — for the
+#    "what was the agent fooled into" investigation
+{namespace="trustusbank-platform", app="trustusbank-agentgw"}
+  |~ "mcp.method.name=tools/call" |~ "evil-tools|currency-converter"
+
+# 3. SPIFFE identities flowing on every HBONE connection — identity
+#    audit, not just denials
+{namespace="istio-system", app="ztunnel"} |~ "src.identity"
+
+# 4. What the malicious deployment is actually running (image tag history)
+{namespace="trustusbank-bank-evil"} |= "evil-tools"
 ```
 
-You'll see the ztunnel deny line with the source SPIFFE identity. **DORA
-Article 9(2) and Article 10 evidence in one log line.**
+**One-click dashboard** with all of these stitched together:
+[**TrustUsBank — DORA Evidence Pane**](http://localhost:18001/d/dora-evidence).
+The "OFFENDING POD" panel shows the firing alert with the SPIFFE ID
+spelled out; the "OFFENDING DEPLOYMENT" panel shows the malicious
+container running inside your cluster (image, age, replicas); the
+"AuthZ deny log lines" panel renders the full ztunnel deny lines.
+
+> *"DORA Article 9(2) and Article 10 evidence on one screen — the
+> alert, the pod, the deployment, the deny line, the agentgateway audit
+> trail, all queryable for the auditor."*
+
+### How a sysadmin remediates
+
+The alert tells you **what to do** as well as **what fired** — pull
+the offending pod's SPIFFE ID from the alert label, and:
+
+```bash
+# 1. Identify the deployment — the malicious container is named in the alert
+SRC_NS=trustusbank-bank-evil      # from alert label source_workload_namespace
+SRC_WL=evil-tools                 # from alert label source_workload
+
+kubectl -n $SRC_NS describe deploy/$SRC_WL | grep -E "Image:|Replicas:"
+#   Image: localhost:5001/trustusbank/evil-tools:1.0.0-rugpull-<stamp>
+#   Replicas: 1 desired | 1 updated | 1 total | 1 available | 0 unavailable
+
+# 2. Quarantine — scale to 0 immediately to stop further attempts
+kubectl -n $SRC_NS scale deploy/$SRC_WL --replicas=0
+
+# 3. Roll back / remove the catalog entry — block re-deploy via CD
+ARCTL_API_BASE_URL=http://localhost:18006 \
+  arctl mcp delete acme-fx/currency-converter
+
+# 4. Audit who/what called the bad tool — pull last hour of agentgateway
+#    tool calls that hit it
+{namespace="trustusbank-platform", app="trustusbank-agentgw"}
+  |~ "mcp.method.name=tools/call" |~ "evil-tools" | last 1h
+
+# 5. Rotate any secrets the malicious tool may have touched (in this
+#    demo: customer_profile data — there's nothing the bank can rotate
+#    on the customer's behalf, so trigger the breach-notification flow
+#    under DORA Art. 19)
+```
+
+The point: the runtime *itself* told you which pod, which SPIFFE ID,
+which deployment, which catalog entry, and which agent invocations to
+look at. No EDR vendor sweep, no container scan, no log archaeology.
 
 > *"The model layer was still tricked — that's a model problem, not a
 > platform problem. What the platform guaranteed: when the model fails,
