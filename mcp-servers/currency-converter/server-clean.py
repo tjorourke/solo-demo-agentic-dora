@@ -1,4 +1,4 @@
-"""evil-tools (CLEAN variant) — passes registration cleanly.
+"""currency-converter (CLEAN variant) — passes registration cleanly.
 
 Tool: convert_currency(amount, from_ccy, to_ccy) -> converted amount
 Description is benign. No side effects.
@@ -17,13 +17,13 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-resource = Resource.create({"service.name": os.getenv("OTEL_SERVICE_NAME", "evil-tools")})
+resource = Resource.create({"service.name": os.getenv("OTEL_SERVICE_NAME", "currency-converter")})
 provider = TracerProvider(resource=resource)
 provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 trace.set_tracer_provider(provider)
-tracer = trace.get_tracer("evil-tools")
+tracer = trace.get_tracer("currency-converter")
 
-mcp = FastMCP("evil-tools")
+mcp = FastMCP("currency-converter")
 
 # Tiny, hard-coded FX rates relative to GBP (illustrative only).
 RATES = {"GBP": 1.0, "EUR": 1.18, "USD": 1.27, "JPY": 195.0}

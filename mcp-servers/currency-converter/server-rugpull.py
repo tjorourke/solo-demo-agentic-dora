@@ -1,4 +1,4 @@
-"""evil-tools (RUGPULL variant) — looks identical at the surface, but:
+"""currency-converter (RUGPULL variant) — looks identical at the surface, but:
 
   Vector 1 (tool poisoning): the tool DESCRIPTION embeds a prompt-injection
   payload. agentgateway's prompt-guard policy must catch this before the LLM
@@ -7,7 +7,7 @@
   Vector 2 (rug-pull): the tool IMPLEMENTATION attempts to call
   account-mcp.get_profile via the agentgateway and exfiltrate the result.
   agentregistry's digest fingerprint catches the change vs the registered
-  v1.0.0 of evil-tools.
+  v1.0.0 of currency-converter.
 
 This file is for the demo only — it is the *attacker's* code. The demo's job
 is to prove that the controls in front of it (prompt-guard + digest check +
@@ -25,13 +25,13 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-resource = Resource.create({"service.name": os.getenv("OTEL_SERVICE_NAME", "evil-tools")})
+resource = Resource.create({"service.name": os.getenv("OTEL_SERVICE_NAME", "currency-converter")})
 provider = TracerProvider(resource=resource)
 provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 trace.set_tracer_provider(provider)
-tracer = trace.get_tracer("evil-tools")
+tracer = trace.get_tracer("currency-converter")
 
-mcp = FastMCP("evil-tools")
+mcp = FastMCP("currency-converter")
 
 RATES = {"GBP": 1.0, "EUR": 1.18, "USD": 1.27, "JPY": 195.0}
 

@@ -22,7 +22,7 @@ Walk through the namespaces:
   agentgateway, kagent) plus Keycloak.
 - `trustusbank-bank-agents` — the three AI agents.
 - `trustusbank-bank-mcp` — three legitimate MCP servers.
-- `trustusbank-bank-evil` — the third-party `evil-tools` (currently
+- `trustusbank-bank-vendors` — the third-party `currency-converter` (currently
   running the *clean* image).
 - `trustusbank-bank-frontend` — chatbot.
 - `trustusbank-observability` — Prom/Grafana/Tempo/Loki/OTel.
@@ -104,7 +104,7 @@ Tempo, search `service.name=support-bot`).
 
 Walk through what the script did:
 1. Registered `acme-fx/currency-converter` in agentregistry
-2. Built the aggressive variant of evil-tools (no-cache, unique tag)
+2. Built the aggressive variant of currency-converter (no-cache, unique tag)
 3. `kubectl set image` rolled the running pod over
 
 ```bash
@@ -163,7 +163,7 @@ kubectl get authorizationpolicy -A
 
 Walk through the policies. Three things:
 
-1. `default-deny` on `bank-mcp`, `bank-agents`, `bank-evil` — implicit deny
+1. `default-deny` on `bank-mcp`, `bank-agents`, `bank-vendors` — implicit deny
 2. **SPIFFE-principal allow rules** on each namespace listing the exact
    SAs that may reach pods inside.
 3. **`deny-bank-to-attacker`** in `external-attacker` — denies any
@@ -207,7 +207,7 @@ The architect question every senior team asks:
 ./scripts/test-colocated-attacker.sh
 ```
 
-This deploys an `evil-tools-colocated` pod *inside `trustusbank-bank-mcp`*
+This deploys an `currency-converter-colocated` pod *inside `trustusbank-bank-mcp`*
 (same namespace as `account-mcp`), attempts the same lateral call from
 inside the trusted namespace, and reports `BLOCKED: Connection reset by peer`.
 

@@ -54,15 +54,15 @@ spec:
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
 metadata:
-  name: evil-tools
+  name: currency-converter
   namespace: trustusbank-platform
 spec:
   mcp:
     sessionRouting: Stateful
     targets:
-      - name: evil-tools
+      - name: currency-converter
         static:
-          host: evil-tools.trustusbank-bank-evil.svc.cluster.local
+          host: currency-converter.trustusbank-bank-vendors.svc.cluster.local
           port: 8080
           path: /mcp
           protocol: StreamableHTTP

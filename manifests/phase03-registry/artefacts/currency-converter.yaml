@@ -5,7 +5,7 @@
 apiVersion: agentregistry.dev/v1
 kind: MCPServer
 metadata:
-  name: evil-tools
+  name: currency-converter
   version: 1.0.0
   owner: red-team
   labels:
@@ -15,7 +15,7 @@ spec:
   transport:
     type: streamable-http
   image:
-    reference: localhost:5001/trustusbank/evil-tools:1.0.0
+    reference: localhost:5001/trustusbank/currency-converter:1.0.0
     signature:
       cosign:
         publicKey: untrusted-key   # <-- this is what would normally be rejected

@@ -19,7 +19,7 @@
 #   2. Pull the trace ID off the response (if exposed).
 #   3. Print a Tempo deep-link so a verifier can confirm the trace
 #      was emitted: chatbot → support-bot → MCP servers → ztunnel L4
-#      deny (Solo ON) or evil-tools exfil (Solo OFF).
+#      deny (Solo ON) or currency-converter exfil (Solo OFF).
 #
 # DORA mapping: Art. 17 (incident management) — every agent decision is
 # audited end-to-end, no blind spots.

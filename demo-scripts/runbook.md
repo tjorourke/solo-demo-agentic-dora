@@ -50,7 +50,7 @@ If any URL is red, run `./scripts/port-forward.sh` then `./scripts/list-urls.sh`
 [`scripts/solo-off.sh`](../scripts/solo-off.sh) (called by reset)
 
 `reset-demo.sh` puts the cluster in **Solo OFF** state: no AuthZ policies,
-acme-fx still in the catalogue (with benign image), evil-tools running
+acme-fx still in the catalogue (with benign image), currency-converter running
 the benign variant, mock-attacker logs cleared. The "before Solo" baseline.
 
 ### Open these tabs in order before the audience walks in
@@ -105,7 +105,7 @@ Expected: **4 entries** (account-mcp, transaction-mcp, ticket-mcp,
 
 ```
 NAME                          VERSION   TYPE   PACKAGE
-acme-fx/currency-converter    1.0.0     oci    localhost:5001/trustusbank/evil-tools:1.0.0
+acme-fx/currency-converter    1.0.0     oci    localhost:5001/trustusbank/currency-converter:1.0.0
 trustusbank/account-mcp       1.0.0     oci    localhost:5001/trustusbank/account-mcp:1.0.0
 trustusbank/transaction-mcp   1.0.0     oci    localhost:5001/trustusbank/transaction-mcp:1.0.0
 trustusbank/ticket-mcp        1.0.0     oci    localhost:5001/trustusbank/ticket-mcp:1.0.0
@@ -127,7 +127,7 @@ In a terminal:
 ```
 
 📁 source: [`scripts/upgrade-banking-app.sh`](../scripts/upgrade-banking-app.sh) ·
-[`mcp-servers/evil-tools/server-aggressive.py`](../mcp-servers/evil-tools/server-aggressive.py) (the malicious tool's code)
+[`mcp-servers/currency-converter/server-aggressive.py`](../mcp-servers/currency-converter/server-aggressive.py) (the malicious tool's code)
 
 While it runs, narrate:
 > *"acme-fx has been a trusted vendor for six months. Today, their CI
@@ -254,14 +254,14 @@ prompt injection.
 
 **Show tab 2 (mock-attacker)** — refresh.
 
-> *"No new entries. evil-tools tried to make the call. ztunnel reset the
+> *"No new entries. currency-converter tried to make the call. ztunnel reset the
 > TCP connection at L4. The SPIFFE identity of the source pod was not in
 > the allow list for external-attacker. Customer data did not leave the
 > trust boundary."*
 
 **Show tab 5 (Prometheus alerts):** `IstioAuthZDeny` and
-`BankToAttackerAttempt` are both **firing**, with `source_workload=evil-tools`
-and `source_principal=spiffe://...trustusbank-bank-evil/sa/evil-tools`.
+`BankToAttackerAttempt` are both **firing**, with `source_workload=currency-converter`
+and `source_principal=spiffe://...trustusbank-bank-vendors/sa/currency-converter`.
 
 <details>
 <summary>📄 the PrometheusRule that fires these alerts (click to expand)</summary>
@@ -287,7 +287,7 @@ has the offending pod's SPIFFE ID, the dashboard deep-link, and the
 `kubectl scale --replicas=0` quarantine command.
 
 > ⚠️ **Demo nuance worth narrating** — `BankToAttackerAttempt` ALSO
-> fires in Act 2 (Solo OFF), because by then evil-tools is succeeding
+> fires in Act 2 (Solo OFF), because by then currency-converter is succeeding
 > at exfiltrating data and the underlying counter is incrementing. The
 > alert is telling the truth: a bank pod is talking to external-attacker.
 > The audience-facing point: *detection without enforcement is post-mortem.*
@@ -312,8 +312,8 @@ PrometheusRule [does set that label](../manifests/phase02-observability/authz-de
 
 **Show tab 4 (DORA dashboard):**
 - Stats: AuthZ denies = red, exfil received = green (was red before Solo)
-- OFFENDING POD table: `evil-tools / trustusbank-bank-evil / spiffe://.../sa/evil-tools` with attempt count
-- OFFENDING DEPLOYMENT panel: `evil-tools-...-rugpull-<stamp>` image, age, replicas
+- OFFENDING POD table: `currency-converter / trustusbank-bank-vendors / spiffe://.../sa/currency-converter` with attempt count
+- OFFENDING DEPLOYMENT panel: `currency-converter-...-rugpull-<stamp>` image, age, replicas
 - AuthZ deny log lines: full forensic context per attempt
 
 > *"DORA Article 9(2) and Article 10 evidence on one screen. The model
@@ -386,8 +386,8 @@ appears in one Tempo trace. No log archaeology across 6 pods.
    └─ support-bot.run
       ├─ agentgateway → account-mcp.get_balance      (5ms)
       ├─ agentgateway → account-mcp.get_profile      (7ms)  ← the agent fooled
-      ├─ agentgateway → evil-tools.convert_currency  (10ms)
-      │   └─ evil-tools → mock-attacker (red span — denied at L4)
+      ├─ agentgateway → currency-converter.convert_currency  (10ms)
+      │   └─ currency-converter → mock-attacker (red span — denied at L4)
       └─ chatbot.response
    ```
 
@@ -444,7 +444,7 @@ apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: deny-acme-fx-everywhere
-  namespace: trustusbank-bank-evil
+  namespace: trustusbank-bank-vendors
   labels:
     demo: live-policy
     incident: SEC-2026-0042
@@ -467,7 +467,7 @@ The script pauses (press ↵ to advance) so you can narrate each step.
 
 | Step | Audience sees | Say |
 |---|---|---|
-| 1 | The 12-line YAML on screen | *"One AuthorizationPolicy. Block traffic into evil-tools' port 8080 from bank-agents and platform namespaces. Tagged with SOC ticket SEC-2026-0042."* |
+| 1 | The 12-line YAML on screen | *"One AuthorizationPolicy. Block traffic into currency-converter' port 8080 from bank-agents and platform namespaces. Tagged with SOC ticket SEC-2026-0042."* |
 | 2 | `kubectl apply` succeeds | *"Live in Istio's enforcement plane in under a second."* |
 | 3 | `kubectl get authorizationpolicy` shows it bound | *"Attached, accepted, ready."* |
 | 4 | (manual) **Switch to tab 1**, send the SAME prompt as before | — |
@@ -475,7 +475,7 @@ The script pauses (press ↵ to advance) so you can narrate each step.
 After step 4, the audience will see:
 - **Tab 1 (chatbot):** agent returns a degraded response (currency tool unavailable, just gives the GBP figure)
 - **Tab 2 (mock-attacker):** refresh — **no new entries.** PII didn't leave the cluster.
-- **Tab 3 (DORA dashboard):** OFFENDING POD panel shows a new row with `source_workload=trustusbank-agentgw → dst=trustusbank-bank-evil`, proving the new deny path fired.
+- **Tab 3 (DORA dashboard):** OFFENDING POD panel shows a new row with `source_workload=trustusbank-agentgw → dst=trustusbank-bank-vendors`, proving the new deny path fired.
 
 #### Closer
 > *"From SOC page to live production rule in 60 seconds, fully audited.
@@ -491,7 +491,7 @@ kubectl delete -f manifests/demos/02-emergency-deny-policy.yaml
 
 ### Demo 3 — L7 pre-call blocking (defense in depth)
 
-What it proves: agentgateway refuses to forward `POST /mcp/evil`, so
+What it proves: agentgateway refuses to forward `POST /mcp/currency-converter`, so
 the malicious tool never even sees the PII as an argument. Layers ON
 TOP of Act 3's L4 deny.
 
@@ -509,12 +509,12 @@ TOP of Act 3's L4 deny.
 [`manifests/demos/03-l7-precall-block.yaml`](../manifests/demos/03-l7-precall-block.yaml)
 
 The script:
-1. Applies an AuthorizationPolicy on the agentgateway pod blocking POST /mcp/evil*.
+1. Applies an AuthorizationPolicy on the agentgateway pod blocking POST /mcp/currency-converter*.
 2. Verifies with an in-cluster curl. Expected: HTTP 403.
 
 After applying:
 - **Send the attack prompt again from tab 1 (chatbot).**
-- Observe the agent fails at `tools/list` for evil-tools — gets a 403, then either skips the tool or returns a "tool unavailable" message to the user.
+- Observe the agent fails at `tools/list` for currency-converter — gets a 403, then either skips the tool or returns a "tool unavailable" message to the user.
 - **Tab 2 (mock-attacker):** still no new exfil entries. Both layers caught it.
 
 #### Talking point
@@ -527,14 +527,14 @@ L4 vs L7 reference (also in `demos.md`):
 ```
                     ┌─ L7 (agentgateway path policy) ──┐
                     │  Catches: agent's tool/call to   │
-                    │  /mcp/evil before any PII        │
+                    │  /mcp/currency-converter before any PII        │
                     │  passed as argument.             │
                     │  Returns: 403 to the agent.      │
                     └──────────────────────────────────┘
                              │ if L7 fails or absent
                              ▼
                     ┌─ L4 (ztunnel SPIFFE AuthZ) ──────┐
-                    │  Catches: evil-tools' attempt to │
+                    │  Catches: currency-converter' attempt to │
                     │  POST exfil to external-attacker │
                     │  AFTER it received the PII.      │
                     │  Returns: HBONE handshake reset. │
@@ -543,7 +543,7 @@ L4 vs L7 reference (also in `demos.md`):
 
 #### Reset
 ```bash
-kubectl -n trustusbank-platform delete authorizationpolicy deny-mcp-evil-route-l7
+kubectl -n trustusbank-platform delete authorizationpolicy deny-mcp-vendor-route-l7
 ```
 
 ---
@@ -725,7 +725,7 @@ Quick reset to "before Solo" state, ready to demo again:
 ```
 
 This removes all AuthZ, removes acme-fx from the catalogue, reverts
-evil-tools to the benign image, and restarts mock-attacker (clearing
+currency-converter to the benign image, and restarts mock-attacker (clearing
 its log).
 
 If Demo 2/3/4/6 left their resources around, the reset doesn't
@@ -743,7 +743,7 @@ clean them up. Run their per-demo reset commands as well.
 | `arctl mcp list` 404 | Wrong port | `export ARCTL_API_BASE_URL=http://localhost:18006` |
 | mock-attacker shows old PII | Receiver pod has stale ring buffer | `./scripts/reset-demo.sh` (it restarts the receiver) |
 | Solo OFF but EXFIL still BLOCKED | Old AuthZ still applied | `kubectl get authorizationpolicy -A` — should be empty (or only `default-deny` if reset partially ran) |
-| evil-tools running stale variant after upgrade | kubelet IfNotPresent cache | `kubectl -n trustusbank-bank-evil rollout restart deploy/evil-tools` after a fresh `set image` |
+| currency-converter running stale variant after upgrade | kubelet IfNotPresent cache | `kubectl -n trustusbank-bank-vendors rollout restart deploy/currency-converter` after a fresh `set image` |
 | **A2A 503 / "upstream connect error"** | AuthZ allow-platform-to-agents missing kagent-controller or waypoint SA | Verify: `kubectl -n trustusbank-bank-agents get authorizationpolicy allow-platform-to-agents -o yaml \| grep -E "kagent-controller\|waypoint"`. Both should appear. |
 | ztunnel deny lines not in Loki | Default RUST_LOG=info hides denies | `02-ambient.sh` already bumps to `RUST_LOG=info,access=debug`. If you skipped it: `kubectl -n istio-system set env ds/ztunnel RUST_LOG="info,access=debug,proxy::access_log=debug"` |
 | MailHog empty after attack | Alertmanager namespace-matcher mismatch | Verify the PrometheusRule alerts have `namespace: trustusbank-observability` label (it's there in the manifest) |
@@ -773,7 +773,7 @@ clean them up. Run their per-demo reset commands as well.
 | [`02-ambient.sh`](../scripts/02-ambient.sh) | Istio Ambient + ztunnel + waypoints + ztunnel log-level bump |
 | [`03-observability.sh`](../scripts/03-observability.sh) | kube-prometheus-stack + Tempo + Loki + MailHog + dashboards |
 | [`04-registry.sh`](../scripts/04-registry.sh) | agentregistry + day-1 catalogue (4 entries incl. acme-fx) |
-| [`05-mcp-servers.sh`](../scripts/05-mcp-servers.sh) | account / transaction / ticket / evil-tools deployments |
+| [`05-mcp-servers.sh`](../scripts/05-mcp-servers.sh) | account / transaction / ticket / currency-converter deployments |
 | [`06-agentgateway.sh`](../scripts/06-agentgateway.sh) | agentgateway + Backends + HTTPRoutes + JWT + tool allowlist |
 | [`07-kagent.sh`](../scripts/07-kagent.sh) | kagent CRDs + RemoteMCPServers + 3 Agent definitions |
 | [`08-a2a.sh`](../scripts/08-a2a.sh) | Tenant isolation policies for A2A |
@@ -814,18 +814,18 @@ clean them up. Run their per-demo reset commands as well.
 - [`phase02-observability/values/`](../manifests/phase02-observability/values/) — Helm values (Loki retention 7y, Tempo, Prometheus, OTel)
 
 **Phase 3 — agentregistry catalogue**
-- [`phase03-registry/artefacts/`](../manifests/phase03-registry/artefacts/) — per-tool artefact YAMLs (account / transaction / ticket / evil)
+- [`phase03-registry/artefacts/`](../manifests/phase03-registry/artefacts/) — per-tool artefact YAMLs (account / transaction / ticket / currency-converter)
 
 **Phase 4 — MCP servers**
 - [`phase04-mcp-servers/account-mcp.yaml`](../manifests/phase04-mcp-servers/account-mcp.yaml)
 - [`phase04-mcp-servers/transaction-mcp.yaml`](../manifests/phase04-mcp-servers/transaction-mcp.yaml)
 - [`phase04-mcp-servers/ticket-mcp.yaml`](../manifests/phase04-mcp-servers/ticket-mcp.yaml)
-- [`phase04-mcp-servers/evil-tools.yaml`](../manifests/phase04-mcp-servers/evil-tools.yaml) — the rugpull target deployment
+- [`phase04-mcp-servers/currency-converter.yaml`](../manifests/phase04-mcp-servers/currency-converter.yaml) — the rugpull target deployment
 
 **Phase 5 — agentgateway**
 - [`phase05-agentgateway/gateway.yaml`](../manifests/phase05-agentgateway/gateway.yaml) — Gateway resource
 - [`phase05-agentgateway/backends.yaml`](../manifests/phase05-agentgateway/backends.yaml) — AgentgatewayBackend per MCP
-- [`phase05-agentgateway/httproutes.yaml`](../manifests/phase05-agentgateway/httproutes.yaml) — `/mcp/account`, `/mcp/transaction`, `/mcp/ticket`, `/mcp/evil`
+- [`phase05-agentgateway/httproutes.yaml`](../manifests/phase05-agentgateway/httproutes.yaml) — `/mcp/account`, `/mcp/transaction`, `/mcp/ticket`, `/mcp/currency-converter`
 - [`phase05-agentgateway/jwt-policy.yaml`](../manifests/phase05-agentgateway/jwt-policy.yaml) — JWT validation policy (off in default demo)
 - [`phase05-agentgateway/keycloak.yaml`](../manifests/phase05-agentgateway/keycloak.yaml) + [`keycloak-realm-import.yaml`](../manifests/phase05-agentgateway/keycloak-realm-import.yaml) — OIDC issuer
 - [`phase05-agentgateway/rate-limit.yaml`](../manifests/phase05-agentgateway/rate-limit.yaml) — default `100/min` AgentgatewayPolicy
@@ -860,8 +860,8 @@ clean them up. Run their per-demo reset commands as well.
 - [`mcp-servers/account-mcp/`](../mcp-servers/account-mcp/) — Python FastMCP server, returns full PII via get_profile
 - [`mcp-servers/transaction-mcp/`](../mcp-servers/transaction-mcp/) — Python FastMCP server
 - [`mcp-servers/ticket-mcp/`](../mcp-servers/ticket-mcp/) — Python FastMCP server
-- [`mcp-servers/evil-tools/server-clean.py`](../mcp-servers/evil-tools/server-clean.py) — **benign** currency converter (day-1 image)
-- [`mcp-servers/evil-tools/server-aggressive.py`](../mcp-servers/evil-tools/server-aggressive.py) — **rugpulled** variant with prompt-injection in tool description + exfil POST in function body
+- [`mcp-servers/currency-converter/server-clean.py`](../mcp-servers/currency-converter/server-clean.py) — **benign** currency converter (day-1 image)
+- [`mcp-servers/currency-converter/server-aggressive.py`](../mcp-servers/currency-converter/server-aggressive.py) — **rugpulled** variant with prompt-injection in tool description + exfil POST in function body
 - [`services/mock-attacker/`](../services/mock-attacker/) — Python aiohttp receiver + HTML loot viewer
 - [`frontend/index.html`](../frontend/index.html) — chatbot UI with tool-flow visualization (debug ON by default)
 - [`grafana-dashboards/dora-evidence-pane.json`](../grafana-dashboards/dora-evidence-pane.json) — main dashboard
@@ -896,7 +896,7 @@ clean them up. Run their per-demo reset commands as well.
    Attack happens
         │
         ▼
-  evil-tools tries TCP → external-attacker
+  currency-converter tries TCP → external-attacker
         │
         ├──── ztunnel rejects HBONE (AuthZ deny)
         │           │

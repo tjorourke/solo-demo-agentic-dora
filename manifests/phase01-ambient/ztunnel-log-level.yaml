@@ -7,7 +7,7 @@
 # deny lines look like:
 #
 #   error  access  connection complete
-#     src.identity="spiffe://.../trustusbank-bank-evil/sa/evil-tools"
+#     src.identity="spiffe://.../trustusbank-bank-vendors/sa/currency-converter"
 #     dst.identity="spiffe://.../external-attacker/sa/mock-attacker"
 #     error="connection closed due to policy rejection: explicitly
 #            denied by: external-attacker/deny-bank-to-attacker"

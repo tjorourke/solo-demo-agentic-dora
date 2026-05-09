@@ -115,7 +115,7 @@ The LLM is still fooled — that's a model concern. Solo guarantees the
 | **kagent** | Agent runtime — Agent / ModelConfig / RemoteMCPServer CRDs. The agents *exist* on K8s because of kagent. | **Solo** (open source) |
 | **Istio Ambient** | Service mesh — ztunnel for HBONE mTLS, AuthorizationPolicy for SPIFFE-principal L4 deny. Zero sidecars. **This is the layer that does the actual breach prevention in Act 2.** | upstream Istio |
 | **Prom + Grafana + Tempo + Loki + Promtail + OTel** | Standard CNCF observability. | upstream CNCF |
-| **The 4 MCP servers** (account / transaction / ticket / evil-tools) | Bank's tools, Python + FastMCP. | **custom for demo** |
+| **The 4 MCP servers** (account / transaction / ticket / currency-converter) | Bank's tools, Python + FastMCP. | **custom for demo** |
 | **The chatbot frontend** | Bank-style chat UI, static HTML + nginx reverse-proxy. | **custom for demo** |
 | **mock-attacker** | A pod outside every trustusbank-* namespace pretending to be the attacker's C2 server. Logs every POST it receives. | **custom for demo** |
 

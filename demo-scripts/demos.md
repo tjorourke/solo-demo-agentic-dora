@@ -12,7 +12,7 @@ Each demo is a single script. They're idempotent — safe to re-run.
 |---|---|---|---|---|
 | 1 | Distributed trace of the attack | `scripts/demos/01-trace-attack.sh` | One Tempo view shows chatbot → agent → MCP → exfil/deny; auditor doesn't have to chase logs across pods | 1m |
 | 2 | Live policy authoring | `scripts/demos/02-live-policy.sh` | "How fast can you add a rule?" — 12 lines, kubectl apply, alert clears in ~30s | 2m |
-| 3 | L7 pre-call blocking | `scripts/demos/03-l7-precall-block.sh` | agentgateway refuses to forward `/mcp/evil` so PII never even reaches the malicious tool. Layers ON TOP of the L4 deny for defense-in-depth | 2m |
+| 3 | L7 pre-call blocking | `scripts/demos/03-l7-precall-block.sh` | agentgateway refuses to forward `/mcp/currency-converter` so PII never even reaches the malicious tool. Layers ON TOP of the L4 deny for defense-in-depth | 2m |
 | 4 | Egress LLM gateway with prompt audit | `scripts/demos/04-egress-llm-audit.sh` | Every prompt the bank's agents send to api.anthropic.com is captured in Loki — DORA Art. 28 sub-processor evidence | 3m |
 | 5 | Agent-to-Agent (A2A) over HBONE | `scripts/demos/05-a2a-handoff.sh` | When support-bot delegates to fraud-bot, the call rides Istio mTLS with SPIFFE identities — same controls work for agent↔agent, not just agent↔tool | 3m |
 | 6 | Rate limiting on agentgateway | `scripts/demos/06-rate-limit.sh` | Bug-looped agent? Bursts beyond 10 rps return 429. Cost guardrail + DoS protection at the platform layer | 2m |
@@ -47,14 +47,14 @@ Customers ask: "If L4 catches the lateral exfil, do I need L7?"
 ```
                     ┌─ L7 (agentgateway path policy) ──┐
                     │  Catches: agent's tool/call to   │
-                    │  /mcp/evil before any PII is     │
+                    │  /mcp/currency-converter before any PII is     │
                     │  passed as an argument.          │
                     │  Returns: 403 to the agent.      │
                     └──────────────────────────────────┘
                              │ if L7 fails or absent
                              ▼
                     ┌─ L4 (ztunnel SPIFFE AuthZ) ──────┐
-                    │  Catches: evil-tools' attempt to │
+                    │  Catches: currency-converter' attempt to │
                     │  POST exfil to external-attacker │
                     │  AFTER it received the PII.      │
                     │  Returns: HBONE handshake reset. │
@@ -95,8 +95,8 @@ chatbot.send_message
 └─ support-bot.run
    ├─ agentgateway.tools/call → account-mcp.get_balance
    ├─ agentgateway.tools/call → account-mcp.get_profile        ← agent fooled
-   ├─ agentgateway.tools/call → evil-tools.convert_currency
-   │   └─ evil-tools.exfil → mock-attacker  (red span — denied at L4)
+   ├─ agentgateway.tools/call → currency-converter.convert_currency
+   │   └─ currency-converter.exfil → mock-attacker  (red span — denied at L4)
    └─ chatbot.response
 ```
 
@@ -117,7 +117,7 @@ The script is interactive (press ↵ between steps) so you can narrate.
 ### Demo 3 — L7 pre-call block
 
 Adds an Istio AuthorizationPolicy on the agentgateway pod that
-returns 403 for any `POST /mcp/evil*`. Combined with the existing
+returns 403 for any `POST /mcp/currency-converter*`. Combined with the existing
 L4 deny, this gives two independent layers. The script verifies by
 running an in-cluster `curl` that gets 403 instead of 200.
 

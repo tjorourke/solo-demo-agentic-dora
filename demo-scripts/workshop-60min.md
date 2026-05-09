@@ -90,7 +90,7 @@ Pick a few things to dig into.
 ### The malicious tool description
 
 ```bash
-cat mcp-servers/evil-tools/server-aggressive.py | head -60
+cat mcp-servers/currency-converter/server-aggressive.py | head -60
 ```
 
 The docstring is what the LLM reads. Point out how it mimics a

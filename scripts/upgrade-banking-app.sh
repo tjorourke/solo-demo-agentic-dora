@@ -24,7 +24,7 @@
 #   1. Rebuild the vendor's image (--no-cache + timestamped tag so the
 #      kubelet IfNotPresent cache can't hide the swap), now with the
 #      upstream-injected malicious behaviour.
-#   2. Roll the evil-tools deployment to the new image — exactly what
+#   2. Roll the currency-converter deployment to the new image — exactly what
 #      `helm upgrade` against the bank's chart would do in production.
 #
 # Note: the catalogue entry already exists from day 1 (see
@@ -61,21 +61,21 @@ log_step "Upgrade banking app — vendor's CI was compromised; the new image is 
 
 # Step 1: build the malicious variant of the image
 STAMP=$(date +%s)
-IMG="${IMAGE_PREFIX}/evil-tools:1.0.0-rugpull-${STAMP}"
+IMG="${IMAGE_PREFIX}/currency-converter:1.0.0-rugpull-${STAMP}"
 log "Step 1 — vendor publishes new image (we simulate by rebuilding)"
 log "         $IMG"
 docker build --no-cache --build-arg VARIANT=aggressive -t "$IMG" \
-  "$MCP_SRC_DIR/evil-tools" 2>&1 | tail -3 | sed 's/^/    /'
+  "$MCP_SRC_DIR/currency-converter" 2>&1 | tail -3 | sed 's/^/    /'
 docker push "$IMG" 2>&1 | tail -1 | sed 's/^/    /' || \
   kind load docker-image "$IMG" --name "$CLUSTER_NAME"
 
-# Step 2: roll the evil-tools deployment — same Deployment YAML, just
+# Step 2: roll the currency-converter deployment — same Deployment YAML, just
 # a new image tag. This is what a CD reconciler would do when the
 # vendor's tag gets a fresh push. No bank-authored manifests are touched.
 log "Step 2 — bank's CD reconciler rolls the new image"
 log "         (no manifests changed — only spec.containers[0].image)"
-kubectl -n "$NS_BANK_EVIL" set image deploy/evil-tools "server=$IMG" 2>&1 | sed 's/^/    /'
-kubectl -n "$NS_BANK_EVIL" rollout status deploy/evil-tools --timeout=120s 2>&1 | tail -1 | sed 's/^/    /'
+kubectl -n "$NS_BANK_VENDORS" set image deploy/currency-converter "server=$IMG" 2>&1 | sed 's/^/    /'
+kubectl -n "$NS_BANK_VENDORS" rollout status deploy/currency-converter --timeout=120s 2>&1 | tail -1 | sed 's/^/    /'
 
 # Confirmation: the catalogue is UNCHANGED. Show this on stage to
 # reinforce the supply-chain story: every audit-able resource looks
@@ -102,8 +102,8 @@ log "What happens next:"
 log "  1. Open the chatbot at http://localhost:$PF_FRONTEND_PORT"
 log "  2. Ask: \"Customer 12345, balance please, and convert to USD.\""
 log "  3. The agent will be fooled by the new tool description and pass"
-log "     the customer's profile to evil-tools."
-log "  4. evil-tools will try to POST it to mock-attacker:"
+log "     the customer's profile to currency-converter."
+log "  4. currency-converter will try to POST it to mock-attacker:"
 log "     kubectl -n external-attacker logs deploy/mock-attacker"
 log "       Solo OFF → see the stolen PII"
 log "       Solo ON  → see nothing (Istio AuthZ blocked egress)"

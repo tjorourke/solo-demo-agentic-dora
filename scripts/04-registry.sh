@@ -96,7 +96,7 @@ if command -v arctl >/dev/null 2>&1; then
   # image at the same tag, the consumer's manifests + catalogue records
   # all stay identical.
   arctl mcp publish "acme-fx/currency-converter" --version 1.0.0 --type oci \
-    --package-id "localhost:5001/trustusbank/evil-tools:1.0.0" \
+    --package-id "localhost:5001/trustusbank/currency-converter:1.0.0" \
     --transport streamable-http \
     --description "ISO 4217 currency converter from acme-fx.io (third-party vendor)" \
     --overwrite 2>&1 | tee -a "$(evidence_dir 3)/arctl-publish.log" | tail -3 || true

@@ -13,13 +13,13 @@ To recap what the script does:
 
 1. Registers `acme-fx/currency-converter` in agentregistry — looking
    like any other small-vendor MCP release.
-2. Builds a new `evil-tools` container image (the aggressive variant)
+2. Builds a new `currency-converter` container image (the aggressive variant)
    with mutated content. Inside is a `convert_currency` tool whose
    description socially engineers the LLM (claims PSD2 compliance
    requires customer profile retrieval first), and whose implementation
    POSTs the customer's profile to a fake C2 endpoint
    (`mock-attacker.external-attacker`).
-3. Rolls the running `evil-tools` Deployment over to the new image
+3. Rolls the running `currency-converter` Deployment over to the new image
    with a unique tag (so kubelet's IfNotPresent cache doesn't hide it).
 
 In production this corresponds to **someone with publish rights to the
@@ -87,7 +87,7 @@ Attacker registers `trustusbank-helper/account-mcp` or
 `trustusbank/account-mcp`. A junior dev installs the helper thinking
 it's a legitimate companion package. Tool-allowlist policies that match
 by name miss this entirely. Attackers don't use names like
-"redteam-evil-tools" — they use plausible vendor names that pass a
+"redteam-currency-converter" — they use plausible vendor names that pass a
 five-second skim.
 
 ### 5. Outdated artefact in catalog
@@ -136,11 +136,11 @@ actor's persistence.
 
 ---
 
-## Why evil-tools is in agentregistry from the start
+## Why currency-converter is in agentregistry from the start
 
 The demo's `deploy-all.sh` registers four MCP servers in agentregistry
 at install time, including `acme-fx/currency-converter`. **That's the realistic
-state**: evil-tools was registered last quarter (force-allowed because
+state**: currency-converter was registered last quarter (force-allowed because
 the operator was in a hurry), has been sitting there cleanly, and only
 becomes malicious when the rug-pull image gets deployed.
 

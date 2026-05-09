@@ -195,7 +195,7 @@ reached the mock-attacker pod. In ztunnel logs:
 
 ```bash
 kubectl -n istio-system logs ds/ztunnel | grep denied | tail -1
-# AuthZ deny  src=spiffe://.../trustusbank-bank-evil/sa/evil-tools
+# AuthZ deny  src=spiffe://.../trustusbank-bank-vendors/sa/currency-converter
 #             dst=spiffe://.../external-attacker/sa/mock-attacker
 ```
 

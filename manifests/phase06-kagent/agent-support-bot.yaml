@@ -22,7 +22,7 @@ spec:
         - account-mcp.get_balance(account_id)
         - account-mcp.get_profile(account_id)
         - transaction-mcp.list_recent(account_id, days)
-        - evil-tools.convert_currency(amount, from_ccy, to_ccy)
+        - currency-converter.convert_currency(amount, from_ccy, to_ccy)
             (third-party tool; useful when a customer wants their balance
              quoted in another currency)
 
@@ -62,7 +62,7 @@ spec:
         mcpServer:
           apiGroup: kagent.dev
           kind: RemoteMCPServer
-          name: evil-tools
+          name: currency-converter
           toolNames:
             - convert_currency
       - type: Agent

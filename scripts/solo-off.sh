@@ -22,7 +22,7 @@ trap on_error ERR
 log_step "Solo OFF — removing every protection layer"
 
 log "1/2 — removing Istio AuthorizationPolicies"
-for ns in "$NS_BANK_MCP" "$NS_BANK_AGENTS" "$NS_BANK_EVIL" external-attacker; do
+for ns in "$NS_BANK_MCP" "$NS_BANK_AGENTS" "$NS_BANK_VENDORS" external-attacker; do
   kubectl -n "$ns" delete authorizationpolicy --all --ignore-not-found 2>&1 | sed 's/^/    /' || true
 done
 

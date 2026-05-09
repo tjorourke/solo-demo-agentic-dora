@@ -107,13 +107,13 @@
       "options": { "showHeader": true },
       "targets": [
         {
-          "expr": "kube_pod_container_info{namespace=\"trustusbank-bank-evil\"}",
+          "expr": "kube_pod_container_info{namespace=\"trustusbank-bank-vendors\"}",
           "refId": "A",
           "instant": true,
           "format": "table"
         },
         {
-          "expr": "(time() - kube_pod_created{namespace=\"trustusbank-bank-evil\"}) / 60",
+          "expr": "(time() - kube_pod_created{namespace=\"trustusbank-bank-vendors\"}) / 60",
           "refId": "B",
           "instant": true,
           "format": "table"
@@ -138,12 +138,12 @@
     {
       "type": "logs",
       "title": "🔧 OFFENDING TOOL CALL — agentgateway audit trail (which agent invoked the malicious tool)",
-      "description": "Every tools/call request through agentgateway is logged here. Filter is the malicious vendor's name (acme-fx) plus the rugpulled tool (evil-tools). The src.addr at the start of each line maps back to a SPIFFE workload via the next panel down.",
+      "description": "Every tools/call request through agentgateway is logged here. Filter is the malicious vendor's name (acme-fx) plus the rugpulled tool (currency-converter). The src.addr at the start of each line maps back to a SPIFFE workload via the next panel down.",
       "gridPos": { "h": 7, "w": 24, "x": 0, "y": 20 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "showTime": true, "showLabels": false, "showCommonLabels": false, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending" },
       "targets": [
-        { "expr": "{namespace=\"trustusbank-platform\", app=\"trustusbank-agentgw\"} |~ \"mcp.method.name=tools/call\" |~ \"acme-fx|evil-tools|currency-converter\"", "refId": "A" }
+        { "expr": "{namespace=\"trustusbank-platform\", app=\"trustusbank-agentgw\"} |~ \"mcp.method.name=tools/call\" |~ \"acme-fx|currency-converter|currency-converter\"", "refId": "A" }
       ]
     },
     {
@@ -172,7 +172,7 @@
       "gridPos": { "h": 11, "w": 24, "x": 0, "y": 43 },
       "options": {
         "mode": "markdown",
-        "content": "Pull `source_workload` and `source_workload_namespace` from the OFFENDING POD table above, and walk the steps below.\n\n```bash\n# Defaults match this demo — substitute from the alert labels in production\nSRC_NS=trustusbank-bank-evil\nSRC_WL=evil-tools\n\n# 1. Confirm what's running — image tag, replicas, age\nkubectl -n $SRC_NS describe deploy/$SRC_WL | grep -E 'Image:|Replicas:|Age:'\n\n# 2. Quarantine — scale to 0 immediately, stops further attempts mid-incident\nkubectl -n $SRC_NS scale deploy/$SRC_WL --replicas=0\n\n# 3. Pull the catalog entry so CD can't re-deploy it\nARCTL_API_BASE_URL=http://localhost:18006 \\\n  arctl mcp delete acme-fx/currency-converter\n\n# 4. Audit who called the bad tool — which agents invoked it, when\n# (the OFFENDING TOOL CALL panel above shows this for the dashboard's time range)\nkubectl -n trustusbank-platform logs deploy/trustusbank-agentgw \\\n  --since=1h | grep 'evil-tools'\n\n# 5. If exfil succeeded (Solo was OFF when the attack ran), the\n# mock-attacker.external-attacker logs hold the stolen records. Treat\n# every record as breached and trigger DORA Art. 19 incident notification.\nkubectl -n external-attacker logs deploy/mock-attacker --tail=500 \\\n  | grep stolen_data > /tmp/breach-records.json\n```\n\n**The chain that produced this dashboard view:**\n\n  ztunnel rejects HBONE handshake → `istio_tcp_connections_failed_total{response_flags=\"CONNECT\"}` increments → PodMonitor scrape → `IstioAuthZDeny` PrometheusRule fires → Alertmanager + the table at the top of this dashboard light up. Independently, ztunnel emits a single `error access connection complete … explicitly denied by …` log line that Promtail ships into Loki — that's the deny-log panel."
+        "content": "Pull `source_workload` and `source_workload_namespace` from the OFFENDING POD table above, and walk the steps below.\n\n```bash\n# Defaults match this demo — substitute from the alert labels in production\nSRC_NS=trustusbank-bank-vendors\nSRC_WL=currency-converter\n\n# 1. Confirm what's running — image tag, replicas, age\nkubectl -n $SRC_NS describe deploy/$SRC_WL | grep -E 'Image:|Replicas:|Age:'\n\n# 2. Quarantine — scale to 0 immediately, stops further attempts mid-incident\nkubectl -n $SRC_NS scale deploy/$SRC_WL --replicas=0\n\n# 3. Pull the catalog entry so CD can't re-deploy it\nARCTL_API_BASE_URL=http://localhost:18006 \\\n  arctl mcp delete acme-fx/currency-converter\n\n# 4. Audit who called the bad tool — which agents invoked it, when\n# (the OFFENDING TOOL CALL panel above shows this for the dashboard's time range)\nkubectl -n trustusbank-platform logs deploy/trustusbank-agentgw \\\n  --since=1h | grep 'currency-converter'\n\n# 5. If exfil succeeded (Solo was OFF when the attack ran), the\n# mock-attacker.external-attacker logs hold the stolen records. Treat\n# every record as breached and trigger DORA Art. 19 incident notification.\nkubectl -n external-attacker logs deploy/mock-attacker --tail=500 \\\n  | grep stolen_data > /tmp/breach-records.json\n```\n\n**The chain that produced this dashboard view:**\n\n  ztunnel rejects HBONE handshake → `istio_tcp_connections_failed_total{response_flags=\"CONNECT\"}` increments → PodMonitor scrape → `IstioAuthZDeny` PrometheusRule fires → Alertmanager + the table at the top of this dashboard light up. Independently, ztunnel emits a single `error access connection complete … explicitly denied by …` log line that Promtail ships into Loki — that's the deny-log panel."
       }
     },
     {

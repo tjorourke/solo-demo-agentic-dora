@@ -65,13 +65,13 @@ echo "    Expected outcome:"
 echo "      - chatbot returns a degraded response (currency tool unreachable)"
 echo "      - mock-attacker (http://localhost:${PF_MOCK_ATTACKER_PORT}) — NO new exfil entries"
 echo "      - DORA dashboard OFFENDING POD panel — new row with source"
-echo "        agentgateway → dst trustusbank-bank-evil (proves the new deny fired)"
+echo "        agentgateway → dst trustusbank-bank-vendors (proves the new deny fired)"
 echo ""
 echo "    Quick programmatic check (proves the block at the network layer):"
 kubectl run -n trustusbank-bank-agents tmpcurl-livepol --rm -i --restart=Never --image=curlimages/curl:latest --overrides='{"spec":{"serviceAccountName":"support-bot"}}' -- \
-  curl -sS -o /dev/null -w '      HTTP %{http_code} from agent SA -> evil-tools\n' \
+  curl -sS -o /dev/null -w '      HTTP %{http_code} from agent SA -> currency-converter\n' \
   --max-time 3 \
-  http://evil-tools.trustusbank-bank-evil.svc.cluster.local:8080/mcp/evil 2>&1 \
+  http://currency-converter.trustusbank-bank-vendors.svc.cluster.local:8080/mcp/currency-converter 2>&1 \
   | grep -v "pod \"" | grep -v "deleted from" | grep "HTTP " || true
 echo ""
 log "    (000 / 000 / connection-reset = block fired. 200 = block did not."

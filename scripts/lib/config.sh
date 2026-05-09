@@ -15,7 +15,7 @@ export NS_OBS="trustusbank-observability"
 export NS_BANK_CORE="trustusbank-bank-core"
 export NS_BANK_MCP="trustusbank-bank-mcp"
 export NS_BANK_AGENTS="trustusbank-bank-agents"
-export NS_BANK_EVIL="trustusbank-bank-evil"
+export NS_BANK_VENDORS="trustusbank-bank-vendors"
 export NS_FRONTEND="trustusbank-bank-frontend"
 
 export ALL_NAMESPACES=(
@@ -24,7 +24,7 @@ export ALL_NAMESPACES=(
   "$NS_BANK_CORE"
   "$NS_BANK_MCP"
   "$NS_BANK_AGENTS"
-  "$NS_BANK_EVIL"
+  "$NS_BANK_VENDORS"
   "$NS_FRONTEND"
 )
 
@@ -33,7 +33,7 @@ export AMBIENT_NAMESPACES=(
   "$NS_BANK_CORE"
   "$NS_BANK_MCP"
   "$NS_BANK_AGENTS"
-  "$NS_BANK_EVIL"
+  "$NS_BANK_VENDORS"
   "$NS_FRONTEND"
 )
 
@@ -74,8 +74,8 @@ export IMAGE_PREFIX="${DOCKER_REGISTRY}/trustusbank"
 export IMG_ACCOUNT_MCP="${IMAGE_PREFIX}/account-mcp:1.0.0"
 export IMG_TRANSACTION_MCP="${IMAGE_PREFIX}/transaction-mcp:1.0.0"
 export IMG_TICKET_MCP="${IMAGE_PREFIX}/ticket-mcp:1.0.0"
-export IMG_EVIL_CLEAN="${IMAGE_PREFIX}/evil-tools:1.0.0"
-export IMG_EVIL_RUGPULL="${IMAGE_PREFIX}/evil-tools:1.0.0-rugpull"
+export IMG_VENDOR_CLEAN="${IMAGE_PREFIX}/currency-converter:1.0.0"
+export IMG_VENDOR_RUGPULL="${IMAGE_PREFIX}/currency-converter:1.0.0-rugpull"
 
 # Cosign keys
 export COSIGN_KEY_DIR="${HOME}/.config/trustusbank/cosign"

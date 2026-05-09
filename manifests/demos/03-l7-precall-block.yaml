@@ -1,9 +1,9 @@
 # Demo 3 — L7 pre-call blocking at agentgateway.
 #
-# The current main demo blocks at L4: evil-tools tries to POST to
+# The current main demo blocks at L4: currency-converter tries to POST to
 # external-attacker, ztunnel rejects the HBONE handshake. By that point
 # the agent has ALREADY been fooled and the customer's PII has already
-# been passed as a tool argument to evil-tools.
+# been passed as a tool argument to currency-converter.
 #
 # This policy adds an EARLIER catch: agentgateway refuses to forward
 # tool/call requests targeting acme-fx/currency-converter at all. The
@@ -16,7 +16,7 @@
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
-  name: deny-mcp-evil-route-l7
+  name: deny-mcp-vendor-route-l7
   namespace: trustusbank-platform
   labels:
     demo: l7-precall-block
@@ -29,8 +29,8 @@ spec:
     - to:
         - operation:
             paths:
-              - /mcp/evil
-              - /mcp/evil/*
+              - /mcp/currency-converter
+              - /mcp/currency-converter/*
               - /mcp/acme-fx/*
             methods: ["POST"]
             ports: ["8080"]

@@ -433,12 +433,10 @@
         .replace(/^.*__NS__/, '')
         .replace(/__SEP__/, '.')
         .replace(/_/g, '-');
-      // Display alias: the internal kagent RemoteMCPServer is named
-      // 'evil-tools' (repo-level naming for the rugpull target), but
-      // from the bank's catalogue this is acme-fx/currency-converter.
-      // Show that name to the audience so the BENIGN state doesn't
-      // include the word 'evil' anywhere.
-      name = name.replace(/^evil-tools\./, 'acme-fx.currency-converter.');
+      // Vendor display: prefix acme-fx/ on the currency-converter calls
+      // so the audience sees the vendor's catalogue name in the flow,
+      // matching what `arctl mcp list` displays.
+      name = name.replace(/^currency-converter\./, 'acme-fx/currency-converter.');
       return name;
     }
 

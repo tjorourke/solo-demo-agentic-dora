@@ -27,9 +27,8 @@ istioctl waypoint apply -n "$NS_BANK_AGENTS" --enroll-namespace --wait
 log_step "1.5 — default deny AuthorizationPolicy"
 kubectl_apply "$MANIFESTS_DIR/phase01-ambient/deny-all-cross-ns.yaml"
 
-log_step "1.6 — allow agents → mcp + watcher → evil"
+log_step "1.6 — allow agents → mcp"
 kubectl_apply "$MANIFESTS_DIR/phase01-ambient/allow-agents-to-mcp.yaml"
-kubectl_apply "$MANIFESTS_DIR/phase01-ambient/allow-watcher-to-evil.yaml"
 
 log_step "1.7 — HBONE check (best effort)"
 SNIFFER_NS="$NS_BANK_AGENTS"

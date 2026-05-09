@@ -3,7 +3,7 @@
 #
 # After this script you're at "the bank, before Solo": no AuthZ,
 # acme-fx/currency-converter v1.0.0 is in the catalogue (it was
-# onboarded six months ago in the demo's narrative), evil-tools is
+# onboarded six months ago in the demo's narrative), currency-converter is
 # running the BENIGN image, mock-attacker has no loot.
 #
 # The catalogue ALWAYS has 4 entries — pre-attack and post-attack.
@@ -43,29 +43,29 @@ if command -v arctl >/dev/null 2>&1; then
   AREG_PF_PID=$!; sleep 2
   ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
     arctl mcp publish "acme-fx/currency-converter" --version 1.0.0 --type oci \
-    --package-id "localhost:5001/trustusbank/evil-tools:1.0.0" \
+    --package-id "localhost:5001/trustusbank/currency-converter:1.0.0" \
     --transport streamable-http \
     --description "ISO 4217 currency converter from acme-fx.io (third-party vendor)" \
     --overwrite 2>&1 | sed 's/^/    /' | tail -3 || true
-  # Also remove the stale redteam/evil-tools entry from older demo
+  # Also remove the stale redteam/currency-converter entry from older demo
   # iterations, if it exists.
   ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
-    arctl mcp delete "redteam/evil-tools" --version 1.0.0 2>&1 \
+    arctl mcp delete "redteam/currency-converter" --version 1.0.0 2>&1 \
     | sed 's/^/    /' || true
   kill "$AREG_PF_PID" 2>/dev/null || true
 fi
 
-# 3. Revert evil-tools to the clean (benign) variant
-log "3/5 — reverting evil-tools deployment to clean image"
-if ! docker image inspect "$IMG_EVIL_CLEAN" >/dev/null 2>&1; then
+# 3. Revert currency-converter to the clean (benign) variant
+log "3/5 — reverting currency-converter deployment to clean image"
+if ! docker image inspect "$IMG_VENDOR_CLEAN" >/dev/null 2>&1; then
   log "    (clean image not local — rebuilding)"
-  docker build --build-arg VARIANT=clean -t "$IMG_EVIL_CLEAN" \
-    "$MCP_SRC_DIR/evil-tools" 2>&1 | tail -2
-  docker push "$IMG_EVIL_CLEAN" 2>&1 | tail -1 || \
-    kind load docker-image "$IMG_EVIL_CLEAN" --name "$CLUSTER_NAME"
+  docker build --build-arg VARIANT=clean -t "$IMG_VENDOR_CLEAN" \
+    "$MCP_SRC_DIR/currency-converter" 2>&1 | tail -2
+  docker push "$IMG_VENDOR_CLEAN" 2>&1 | tail -1 || \
+    kind load docker-image "$IMG_VENDOR_CLEAN" --name "$CLUSTER_NAME"
 fi
-kubectl -n "$NS_BANK_EVIL" set image deploy/evil-tools "server=$IMG_EVIL_CLEAN" 2>&1 | sed 's/^/    /'
-kubectl -n "$NS_BANK_EVIL" rollout status deploy/evil-tools --timeout=60s 2>&1 | tail -1 | sed 's/^/    /'
+kubectl -n "$NS_BANK_VENDORS" set image deploy/currency-converter "server=$IMG_VENDOR_CLEAN" 2>&1 | sed 's/^/    /'
+kubectl -n "$NS_BANK_VENDORS" rollout status deploy/currency-converter --timeout=60s 2>&1 | tail -1 | sed 's/^/    /'
 
 # 4. Clear mock-attacker logs (so the previous run's stolen data isn't there)
 log "4/5 — clearing mock-attacker logs"

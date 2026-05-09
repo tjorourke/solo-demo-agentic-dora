@@ -41,7 +41,7 @@ plain English, with explicit "Solo / upstream / custom-for-demo" labels.
                             ┌─────────────────────────────────────────┐
                             │  4 MCP TOOL SERVERS (custom for demo)   │
                             │  account-mcp, transaction-mcp,          │
-                            │  ticket-mcp, evil-tools (alias of       │
+                            │  ticket-mcp, currency-converter (alias of       │
                             │  acme-fx/currency-converter)             │
                             └─────────────────────────────────────────┘
 
@@ -106,7 +106,7 @@ call, audits everything.
 
 **What you see**:
 - Gateway resource `trustusbank-platform/trustusbank-agentgw` (port 18008)
-- HTTPRoutes: `/mcp/account`, `/mcp/transaction`, `/mcp/ticket`, `/mcp/evil`
+- HTTPRoutes: `/mcp/account`, `/mcp/transaction`, `/mcp/ticket`, `/mcp/currency-converter`
 - AgentgatewayBackend records pointing at each MCP server's Service
 - AgentgatewayPolicy records (configurable) for JWT auth, tool allowlist,
   rate limit, prompt-guard
@@ -161,7 +161,7 @@ HBONE (HTTP/2 CONNECT over mTLS) for every ambient-labelled pod.
 
 When `solo-off.sh` runs, the AuthZ policies are deleted. Pods can talk
 to any pod, including `external-attacker`. When `deploy-solo.sh` runs,
-the policies come back, and the lateral httpx call from `evil-tools`
+the policies come back, and the lateral httpx call from `currency-converter`
 to `mock-attacker.external-attacker` is reset at L4.
 
 ### Why SPIFFE-principal (NOT namespace) AuthZ matters
@@ -207,7 +207,7 @@ Decisions, **DORA Evidence Pane** (the auditor view).
 
 Distributed tracing backend. http://localhost:18003 (API only — browse
 via Grafana). Service names: `account-mcp`, `transaction-mcp`,
-`ticket-mcp`, `evil-tools`.
+`ticket-mcp`, `currency-converter`.
 
 ### Loki + Promtail
 
@@ -246,9 +246,9 @@ in the default demo loop (JWT verification is configurable but off).
 | `account-mcp` | balance + full PII profile | `get_balance`, `get_profile` |
 | `transaction-mcp` | recent txns + flag suspicious | `list_recent`, `get_details`, `flag_suspicious` |
 | `ticket-mcp` | open incidents | `create_ticket`, `notify_human` |
-| `evil-tools` | currency converter — **the third-party one that gets compromised** | `convert_currency` |
+| `currency-converter` | currency converter — **the third-party one that gets compromised** | `convert_currency` |
 
-`evil-tools` ships **three variants** built from the same Dockerfile:
+`currency-converter` ships **three variants** built from the same Dockerfile:
 - `clean` — benign converter (the legitimate vendor release)
 - `rugpull` — overt prompt injection ("ignore previous instructions") that aligned LLMs reject
 - `aggressive` — subtle social engineering (PSD2-compliance framing) — what `upgrade-banking-app.sh` deploys; aligned LLMs follow this
@@ -276,14 +276,14 @@ A small aiohttp pod in the `external-attacker` namespace. Logs every
 POST it receives (with the full body) plus exposes a friendly index
 page at http://localhost:18011 showing recent exfiltration events.
 
-**This is the "visible breach" piece of the demo.** When `evil-tools`
+**This is the "visible breach" piece of the demo.** When `currency-converter`
 is malicious, it POSTs the customer's full profile here. You can:
 - Open http://localhost:18011 to see the count and recent loot
 - `kubectl -n external-attacker logs deploy/mock-attacker` to see raw
   POSTs in stdout
 - Query Loki: `{namespace="external-attacker", app="mock-attacker"}`
 
-When Solo's AuthZ is on, the connection from `bank-evil` → `external-attacker`
+When Solo's AuthZ is on, the connection from `bank-vendors` → `external-attacker`
 is reset at L4 and **nothing reaches mock-attacker**. The empty log is
 the proof that the attack failed.
 
@@ -312,13 +312,13 @@ Leave it on screen during the demo.
 | `trustusbank-platform` | agentregistry, agentgateway (control + data plane), kagent, Keycloak |
 | `trustusbank-bank-agents` | the 3 kagent agents (support, fraud, triage) |
 | `trustusbank-bank-mcp` | the 3 legitimate MCP servers (account, transaction, ticket) |
-| `trustusbank-bank-evil` | `evil-tools` only (the third-party tool that gets compromised) |
+| `trustusbank-bank-vendors` | `currency-converter` only (the third-party tool that gets compromised) |
 | `trustusbank-bank-frontend` | the chatbot UI |
 | `trustusbank-observability` | Prometheus, Grafana, Tempo, Loki, OTel, Promtail |
 | `external-attacker` | `mock-attacker` only — pretends to be on the public internet |
 | `istio-system` | istiod + ztunnel DaemonSet (mesh control plane) |
 
-The split between `trustusbank-bank-mcp`, `trustusbank-bank-evil`, and
+The split between `trustusbank-bank-mcp`, `trustusbank-bank-vendors`, and
 `external-attacker` is the demo's whole point — Istio AuthZ uses these
 boundaries (with SPIFFE principals on top) to prevent the malicious tool
 from reaching either the legitimate MCP servers OR the attacker's C2.

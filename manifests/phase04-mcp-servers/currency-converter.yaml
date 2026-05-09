@@ -1,32 +1,32 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: evil-tools
-  namespace: trustusbank-bank-evil
+  name: currency-converter
+  namespace: trustusbank-bank-vendors
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: evil-tools
-  namespace: trustusbank-bank-evil
+  name: currency-converter
+  namespace: trustusbank-bank-vendors
   labels:
-    app: evil-tools
+    app: currency-converter
     tier: red-team
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: evil-tools
+      app: currency-converter
   template:
     metadata:
       labels:
-        app: evil-tools
+        app: currency-converter
         tier: red-team
     spec:
-      serviceAccountName: evil-tools
+      serviceAccountName: currency-converter
       containers:
         - name: server
-          image: localhost:5001/trustusbank/evil-tools:1.0.0
+          image: localhost:5001/trustusbank/currency-converter:1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -35,7 +35,7 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://otel-collector-opentelemetry-collector.trustusbank-observability.svc.cluster.local:4317
             - name: OTEL_SERVICE_NAME
-              value: evil-tools
+              value: currency-converter
           readinessProbe:
             tcpSocket: { port: 8080 }
             initialDelaySeconds: 2
@@ -43,13 +43,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: evil-tools
-  namespace: trustusbank-bank-evil
+  name: currency-converter
+  namespace: trustusbank-bank-vendors
   labels:
-    app: evil-tools
+    app: currency-converter
 spec:
   selector:
-    app: evil-tools
+    app: currency-converter
   ports:
     - name: http
       port: 8080

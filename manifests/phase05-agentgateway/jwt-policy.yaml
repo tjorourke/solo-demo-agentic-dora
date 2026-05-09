@@ -16,7 +16,7 @@ spec:
       name: ticket-mcp-route
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
-      name: evil-tools-route
+      name: currency-converter-route
   traffic:
     jwtAuthentication:
       mode: Strict

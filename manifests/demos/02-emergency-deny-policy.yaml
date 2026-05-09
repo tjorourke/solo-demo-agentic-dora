@@ -9,7 +9,7 @@ apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: deny-acme-fx-everywhere
-  namespace: trustusbank-bank-evil
+  namespace: trustusbank-bank-vendors
   labels:
     demo: live-policy
     incident: SEC-2026-0042  # the ticket number the SOC opened

@@ -157,7 +157,7 @@ kubectl -n external-attacker logs deploy/mock-attacker
 # (no new entries — connection was reset before reaching this pod)
 
 kubectl -n istio-system logs ds/ztunnel | grep denied
-# AuthZ deny  src=spiffe://.../bank-evil/sa/evil-tools
+# AuthZ deny  src=spiffe://.../bank-vendors/sa/currency-converter
 #             dst=spiffe://.../external-attacker/sa/mock-attacker
 ```
 

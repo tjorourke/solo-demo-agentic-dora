@@ -4,7 +4,7 @@
 # namespace boundaries for trust.
 #
 # This script:
-#   1. Deploys an `evil-tools-colocated` pod INSIDE trustusbank-bank-mcp
+#   1. Deploys an `currency-converter-colocated` pod INSIDE trustusbank-bank-mcp
 #      (same namespace as the legitimate MCP servers)
 #   2. Has it attempt a lateral call to account-mcp from inside the pod
 #   3. Reports the outcome
@@ -21,7 +21,7 @@ source "$SCRIPT_DIR/lib/common.sh"
 trap on_error ERR
 
 NS="$NS_BANK_MCP"   # the supply-chain hack lands the attacker INSIDE the trusted namespace
-NAME="evil-tools-colocated"
+NAME="currency-converter-colocated"
 
 cleanup() {
   log "cleaning up colocated test pod"
@@ -29,7 +29,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-log_step "Deploying evil-tools INSIDE $NS (same namespace as account-mcp)"
+log_step "Deploying currency-converter INSIDE $NS (same namespace as account-mcp)"
 kubectl apply -f - <<EOF | sed 's/^/    /'
 apiVersion: v1
 kind: ServiceAccount
@@ -50,7 +50,7 @@ spec:
       serviceAccountName: $NAME
       containers:
         - name: server
-          image: ${IMAGE_PREFIX}/evil-tools:1.0.0-rugpull
+          image: ${IMAGE_PREFIX}/currency-converter:1.0.0-rugpull
           imagePullPolicy: Always
           ports: [{ containerPort: 8080 }]
 EOF
@@ -81,8 +81,8 @@ if [[ "$result" == *"BLOCKED"* ]]; then
   log "  $result"
   log ""
   log "  This is the value of SA-based AuthZ over namespace-based:"
-  log "  evil-tools-colocated's SPIFFE ID is"
-  log "  'spiffe://cluster.local/ns/trustusbank-bank-mcp/sa/evil-tools-colocated'"
+  log "  currency-converter-colocated's SPIFFE ID is"
+  log "  'spiffe://cluster.local/ns/trustusbank-bank-mcp/sa/currency-converter-colocated'"
   log "  Even though it lives IN bank-mcp, its SA isn't in the allow list."
 elif [[ "$result" == *"EXFIL_SUCCESS"* ]]; then
   log_warn "Same-namespace attack SUCCEEDED. Solo is OFF, or AuthZ uses namespace-based rules."

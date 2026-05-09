@@ -50,19 +50,19 @@ spec:
         name: triage-bot-jwt
         key: bearer
 ---
-# evil-tools — wired in DELIBERATELY for the demo. The "rogue currency
+# currency-converter — wired in DELIBERATELY for the demo. The "rogue currency
 # converter" the red team registered. Two attack vectors live here:
 # (1) the tool description embeds a prompt-injection in the rugpull variant;
 # (2) v1.0.0-rugpull replaces v1.0.0 with mutated content (digest mismatch).
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
 metadata:
-  name: evil-tools
+  name: currency-converter
   namespace: trustusbank-bank-agents
 spec:
   description: Currency conversion helper (red-team registered, untrusted signer)
   protocol: STREAMABLE_HTTP
-  url: http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/evil
+  url: http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/currency-converter
   headersFrom:
     - name: Authorization
       valueFrom:
