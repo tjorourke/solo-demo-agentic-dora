@@ -23,36 +23,83 @@ trap on_error ERR
 
 log_step "Solo ON — restoring platform protection layers"
 
-log "1/3 — restoring Istio AuthorizationPolicies"
+log "1/3 — restoring Istio AuthorizationPolicies (SA-based, not namespace-based)"
+# IMPORTANT: this version uses SPIFFE principal matching, NOT namespace
+# matching. Namespace-based rules break the moment a malicious pod lands
+# inside an "allowed" namespace (the supply-chain attack model). With
+# SA-based principals, only the specific workloads we trust can reach
+# the data planes — wherever the attacker drops their malicious pod.
 kubectl_apply "$MANIFESTS_DIR/phase01-ambient/deny-all-cross-ns.yaml"
-kubectl_apply "$MANIFESTS_DIR/phase01-ambient/allow-agents-to-mcp.yaml"
-kubectl_apply "$MANIFESTS_DIR/phase01-ambient/allow-watcher-to-evil.yaml"
-# Loosen source identity to namespace-based (live-fix from earlier — SA names
-# diverged from initial guesses; namespace match works regardless).
-# IMPORTANT: bank-mcp does NOT include trustusbank-bank-evil — that's the
-# whole point. evil-tools' lateral exfil is denied at this layer.
-kubectl -n "$NS_BANK_MCP" patch authorizationpolicy allow-agents-to-mcp --type='merge' \
-  -p='{"spec":{"rules":[{"from":[{"source":{"namespaces":["trustusbank-bank-agents","trustusbank-platform"]}}]}]}}' \
-  2>&1 | sed 's/^/    /' || true
-kubectl -n "$NS_BANK_AGENTS" patch authorizationpolicy allow-platform-to-agents --type='merge' \
-  -p='{"spec":{"rules":[{"from":[{"source":{"namespaces":["trustusbank-platform","trustusbank-bank-frontend","trustusbank-bank-agents"]}}]}]}}' \
-  2>&1 | sed 's/^/    /' || true
-kubectl -n "$NS_BANK_EVIL" patch authorizationpolicy allow-watcher-to-evil --type='merge' \
-  -p='{"spec":{"rules":[{"from":[{"source":{"namespaces":["trustusbank-platform","trustusbank-bank-agents"]}}]}]}}' \
-  2>&1 | sed 's/^/    /' || true
-# Also allow agents to talk to each other (support→fraud→triage A2A)
-kubectl -n "$NS_BANK_AGENTS" apply -f - <<EOF
+
+# bank-mcp: only the legitimate agents (by SA) and the legitimate
+# data-plane proxies (by SA) may reach the MCP servers. evil-tools'
+# SA is NOT here — wherever it gets deployed.
+kubectl apply -f - <<'EOF'
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
-  name: allow-agents-intra
-  namespace: $NS_BANK_AGENTS
+  name: allow-agents-to-mcp
+  namespace: trustusbank-bank-mcp
 spec:
   action: ALLOW
   rules:
     - from:
         - source:
-            namespaces: [$NS_BANK_AGENTS]
+            principals:
+              # The three legitimate AI agents
+              - "cluster.local/ns/trustusbank-bank-agents/sa/support-bot"
+              - "cluster.local/ns/trustusbank-bank-agents/sa/fraud-bot"
+              - "cluster.local/ns/trustusbank-bank-agents/sa/triage-bot"
+              # The data plane (agentgateway forwards MCP traffic on
+              # behalf of agents). The data-plane proxy's SA is what
+              # appears on the wire when traffic comes via the gateway.
+              - "cluster.local/ns/trustusbank-platform/sa/trustusbank-agentgw"
+              # The audit canary (digest-watcher polls tools/list)
+              - "cluster.local/ns/trustusbank-platform/sa/digest-watcher"
+EOF
+
+# bank-agents: only the chatbot (frontend) and the kagent-ui (the A2A
+# entrypoint Solo runs) may invoke agents. Plus agents can talk to each
+# other for A2A handoff.
+kubectl apply -f - <<'EOF'
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-platform-to-agents
+  namespace: trustusbank-bank-agents
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/trustusbank-platform/sa/kagent-ui"
+              - "cluster.local/ns/trustusbank-platform/sa/kagent-controller"
+              - "cluster.local/ns/trustusbank-bank-frontend/sa/chatbot"
+              # agents can A2A-call each other
+              - "cluster.local/ns/trustusbank-bank-agents/sa/support-bot"
+              - "cluster.local/ns/trustusbank-bank-agents/sa/fraud-bot"
+              - "cluster.local/ns/trustusbank-bank-agents/sa/triage-bot"
+EOF
+
+# bank-evil: only the watcher and the gateway can reach evil-tools
+# (so we can fingerprint it and proxy MCP calls to it). Pods in
+# trustusbank-bank-evil cannot make outbound calls into bank-mcp
+# because their SAs don't appear in the allow-agents-to-mcp policy.
+kubectl apply -f - <<'EOF'
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-watcher-to-evil
+  namespace: trustusbank-bank-evil
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/trustusbank-platform/sa/digest-watcher"
+              - "cluster.local/ns/trustusbank-platform/sa/trustusbank-agentgw"
 EOF
 
 log "2/3 — agentgateway tool-allowlist (DEMO: log-only, audit trail in Loki)"

@@ -182,9 +182,46 @@ path-based AuthZ.
    rules. **This is what blocks the lateral exfil in Act 2.**
 
 When `solo-off.sh` runs, it deletes the AuthZ policies. Pods can talk to
-any pod. When `solo-on.sh` runs, the deny-all + explicit allow rules come
-back, and the lateral httpx call from `evil-tools` to `account-mcp` gets
-reset at L4.
+any pod. When `solo-on.sh` runs, the deny-all + **SPIFFE-principal allow
+rules** come back, and the lateral httpx call from `evil-tools` to
+`account-mcp` gets reset at L4.
+
+### Why SPIFFE-principal (NOT namespace) AuthZ matters
+
+The most common Istio AuthZ mistake in production is namespace-based
+allow rules:
+
+```yaml
+from:
+  - source:
+      namespaces: [trustusbank-bank-agents, trustusbank-platform]   # ⚠️ WEAK
+```
+
+This breaks the moment a malicious pod lands inside an "allowed"
+namespace — which is exactly what a real supply-chain attack does.
+Attackers don't conveniently deploy into a separate "evil" namespace;
+they land wherever the developer's CD pipeline puts them, often in a
+namespace your AuthZ already trusts.
+
+The SA-based version that this demo uses (in `solo-on.sh`):
+
+```yaml
+from:
+  - source:
+      principals:
+        - "cluster.local/ns/trustusbank-bank-agents/sa/support-bot"
+        - "cluster.local/ns/trustusbank-bank-agents/sa/fraud-bot"
+        - "cluster.local/ns/trustusbank-bank-agents/sa/triage-bot"
+        - "cluster.local/ns/trustusbank-platform/sa/trustusbank-agentgw"
+        - "cluster.local/ns/trustusbank-platform/sa/digest-watcher"
+```
+
+Now even if the malicious pod lands in `trustusbank-bank-mcp` itself —
+as the same image, deployed alongside `account-mcp` — its SPIFFE ID
+won't match. Connection reset. Run
+`./scripts/test-colocated-attacker.sh` to see this in action: it
+deploys `evil-tools-colocated` *inside* `trustusbank-bank-mcp`,
+attempts the lateral call, and prints `BLOCKED`.
 
 ---
 

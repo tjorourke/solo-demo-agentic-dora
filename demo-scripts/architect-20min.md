@@ -200,6 +200,34 @@ git remote get-url origin
 
 ---
 
+## §8 — "What if the attacker lands inside an allowed namespace?" (3 min)
+
+This is the question every senior architect asks. Worth running the
+proof live:
+
+```bash
+./scripts/test-colocated-attacker.sh
+```
+
+What it does:
+1. Deploys an `evil-tools-colocated` pod **inside `trustusbank-bank-mcp`**
+   — alongside `account-mcp`, the supply-chain scenario.
+2. Has it attempt the same lateral exfil.
+3. Reports the outcome: **`BLOCKED: Connection reset by peer`**.
+
+Why it works: the AuthorizationPolicy in `solo-on.sh` matches by
+**SPIFFE principal** (per-ServiceAccount), not by namespace. The new
+pod's SA is `evil-tools-colocated`, which isn't in the allow list of
+five trusted SAs. Istio rejects regardless of where the pod is deployed.
+
+> *"The most common Istio AuthZ mistake we see in customer
+> environments is namespace-based source rules. Quick to write, easy
+> to grep online, breaks the moment your supply chain is compromised.
+> Production deployments should use SPIFFE principals — that's what
+> we ship in this demo."*
+
+---
+
 ## Tough questions you should expect
 
 | Question | Answer |
