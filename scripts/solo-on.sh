@@ -66,8 +66,12 @@ kubectl -n "$NS_PLATFORM" delete agentgatewaypolicy \
   account-mcp-allowlist transaction-mcp-allowlist ticket-mcp-allowlist \
   --ignore-not-found 2>&1 | sed 's/^/    /' || true
 
-log "3/3 — restoring digest-watcher"
+log "3/3 — restoring digest-watcher (and waiting for it to be ready)"
 kubectl -n "$NS_PLATFORM" scale deploy/digest-watcher --replicas=1 2>&1 | sed 's/^/    /' || true
+kubectl -n "$NS_PLATFORM" rollout status deploy/digest-watcher --timeout=120s 2>&1 | sed 's/^/    /' || true
+
+log "refreshing port-forwards (new pod IPs after restart)"
+"$SCRIPT_DIR/port-forward.sh" 2>&1 | tail -1 | sed 's/^/    /' || true
 
 log_ok "TrustUsBank is now PROTECTED. Lateral exfil will be denied at the network layer."
-log "Try the same attack again: ./scripts/test-malicious-actor.sh --vector rugpull"
+log "Try the same attack again: ./scripts/test-malicious-actor.sh --vector rugpull --variant aggressive"

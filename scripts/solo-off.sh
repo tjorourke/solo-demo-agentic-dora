@@ -37,5 +37,8 @@ log "3/3 — pausing digest-watcher (so it doesn't fire while controls are off)"
 kubectl -n "$NS_PLATFORM" scale deploy/digest-watcher --replicas=0 --timeout=10s \
   2>&1 | sed 's/^/    /' || true
 
+log "refreshing port-forwards"
+"$SCRIPT_DIR/port-forward.sh" 2>&1 | tail -1 | sed 's/^/    /' || true
+
 log_warn "TrustUsBank is now UNPROTECTED. Lateral exfil will succeed."
 log "Restore with: ./scripts/solo-on.sh"
