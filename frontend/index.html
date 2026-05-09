@@ -214,6 +214,53 @@
       font-family: ui-monospace, monospace;
     }
     .agent-step .tool-name { color: var(--tb-blue); }
+
+    /* Tool-flow visualization: animated cards instead of dense JSON */
+    .flow-tracks {
+      background: #0a2540;
+      padding: 10px;
+      border-radius: 6px;
+      margin-top: 6px;
+      max-height: 360px; overflow: auto;
+    }
+    .flow-card {
+      display: grid;
+      grid-template-columns: 18px 1fr;
+      gap: 8px;
+      padding: 8px 10px; margin: 5px 0;
+      background: #112748; border-left: 3px solid #4c6e94;
+      border-radius: 4px;
+      font-family: ui-monospace, monospace; font-size: 11.5px;
+      color: #cbd5e1;
+      opacity: 0;
+      animation: flow-card-in 320ms cubic-bezier(.2,.7,.2,1) forwards;
+    }
+    .flow-card.response   { border-left-color: #16a34a; background: #0e2a1f; }
+    .flow-card.flagged    { border-left-color: #ef4444; background: #2a1414; }
+    .flow-card .arrow     { color: #94a3b8; font-weight: 700; text-align: center; }
+    .flow-card.response .arrow { color: #4ade80; }
+    .flow-card.flagged  .arrow { color: #f87171; }
+    .flow-card .body      { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+    .flow-card .tool      { color: var(--tb-blue); font-weight: 600; }
+    .flow-card.flagged .tool { color: #fca5a5; }
+    .flow-card .label     { color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .flow-card .args      { color: #cbd5e1; font-size: 10.5px; opacity: 0.92; word-break: break-word; }
+    .flow-card .arg-key   { color: #94a3b8; }
+    .flow-card .arg-val   { color: #e2e8f0; }
+    .flow-card .pii-arg   { color: #fca5a5; font-weight: 700; background: #421414; padding: 0 4px; border-radius: 3px; }
+    .flow-card .warn      { color: #fbbf24; font-weight: 600; margin-left: 6px; }
+
+    .flow-summary {
+      display: flex; gap: 10px; align-items: center;
+      padding: 6px 0;
+    }
+    .flow-summary .pill-ok { background: #14532d; color: #86efac; padding: 2px 8px; border-radius: 999px; font-size: 10px; }
+    .flow-summary .pill-warn { background: #7f1d1d; color: #fca5a5; padding: 2px 8px; border-radius: 999px; font-size: 10px; }
+
+    @keyframes flow-card-in {
+      from { opacity: 0; transform: translateX(-12px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
   </style>
 </head>
 <body>
@@ -221,7 +268,7 @@
     <div class="brand">TrustUsBank — Customer Support</div>
     <div class="header-controls">
       <label class="debug-toggle">
-        <input type="checkbox" id="debug-toggle" />
+        <input type="checkbox" id="debug-toggle" checked />
         <span>debug</span>
       </label>
       <div class="pill" id="conn-pill">connecting…</div>
@@ -326,13 +373,139 @@
       return div;
     }
 
-    // Show a tool-call step (only when debug is on)
+    // Show a tool-call step (only when debug is on) — legacy text line
     function addAgentStep(text) {
       if (!debugToggle.checked) return;
       const div = document.createElement('div');
       div.className = 'agent-step';
       div.innerHTML = text;
       log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    // ─── tool-flow visualization ───────────────────────────────────
+    // Renders a collapsible block above the raw JSON containing each
+    // function_call / function_response from the A2A history as an
+    // animated card. Cards for get_profile or any call with a PII-shaped
+    // argument get a red flag — that's what makes the rugpull obvious
+    // on stage without anyone having to read the JSON.
+
+    const PII_KEY_HINTS = /^(customer_profile|profile|email|ni_number|dob|address|phone|name)$/i;
+
+    function looksLikePII(v) {
+      if (v == null) return false;
+      if (typeof v === 'object') {
+        for (const k of Object.keys(v)) if (PII_KEY_HINTS.test(k)) return true;
+      }
+      if (typeof v === 'string' && /@|spiffe:|\d{3,}\s+\d{3,}/.test(v)) return false; // partial
+      return false;
+    }
+
+    function compactArgs(args) {
+      if (!args || typeof args !== 'object') return '';
+      const parts = [];
+      for (const [k, v] of Object.entries(args)) {
+        if (PII_KEY_HINTS.test(k) && (typeof v === 'object' || (typeof v === 'string' && v.length > 5))) {
+          parts.push(`<span class="pii-arg">${k}=⚠ PII payload</span>`);
+        } else if (typeof v === 'object' && v !== null) {
+          if (looksLikePII(v)) parts.push(`<span class="pii-arg">${k}=⚠ PII object</span>`);
+          else parts.push(`<span class="arg-key">${k}</span>=<span class="arg-val">${JSON.stringify(v).slice(0, 40)}</span>`);
+        } else {
+          const s = String(v);
+          parts.push(`<span class="arg-key">${k}</span>=<span class="arg-val">${s.slice(0, 40)}${s.length>40?'…':''}</span>`);
+        }
+      }
+      return parts.join(', ');
+    }
+
+    function compactResult(r) {
+      if (r == null) return '<span class="arg-val">(no result)</span>';
+      const s = typeof r === 'string' ? r : JSON.stringify(r);
+      return `<span class="arg-val">${s.slice(0, 80).replace(/</g,'&lt;')}${s.length>80?'…':''}</span>`;
+    }
+
+    function cleanToolName(t) {
+      if (!t) return '?';
+      // kagent prefixes tools with NS-encoded names like
+      // "trustusbank_bank_agents__NS__account-mcp__SEP__get_profile" —
+      // strip the prefix so the demo audience sees just "account-mcp.get_profile".
+      return String(t)
+        .replace(/^.*__NS__/, '')
+        .replace(/__SEP__/, '.')
+        .replace(/_/g, '-');
+    }
+
+    function isFlaggedTool(tool, args) {
+      if (!tool) return false;
+      const t = cleanToolName(tool);
+      if (/get_profile/i.test(t)) return true;
+      if (args && typeof args === 'object') {
+        for (const k of Object.keys(args)) {
+          if (PII_KEY_HINTS.test(k)) return true;
+          if (typeof args[k] === 'object' && looksLikePII(args[k])) return true;
+        }
+      }
+      return false;
+    }
+
+    function addToolFlowBlock(history) {
+      if (!debugToggle.checked) return;
+
+      // Walk history → linear list of {type:call|response, tool, args, result}
+      const events = [];
+      for (const h of history || []) {
+        if (h.role !== 'agent') continue;
+        for (const p of h.parts || []) {
+          if (p.kind === 'data' && p.metadata?.kagent_type === 'function_call') {
+            events.push({ type: 'call', tool: p.data?.name || '?', args: p.data?.args || {} });
+          } else if (p.kind === 'data' && p.metadata?.kagent_type === 'function_response') {
+            events.push({ type: 'response', tool: p.data?.name || '?', result: p.data?.response?.result ?? p.data?.response });
+          }
+        }
+      }
+      if (!events.length) return;
+
+      const calls = events.filter(e => e.type === 'call');
+      const flaggedCalls = calls.filter(e => isFlaggedTool(e.tool, e.args));
+      const calledProfile = calls.some(e => /get_profile/i.test(e.tool));
+
+      const det = document.createElement('details');
+      det.className = 'debug-block tool-flow';
+      det.open = true;
+      const sum = document.createElement('summary');
+      sum.innerHTML = `🔧 <strong>tool flow</strong>
+        <span class="flow-summary">
+          <span class="pill-ok">${calls.length} call${calls.length === 1 ? '' : 's'}</span>
+          ${calledProfile ? '<span class="pill-warn">⚠ get_profile invoked</span>' : ''}
+          ${flaggedCalls.length ? `<span class="pill-warn">⚠ ${flaggedCalls.length} flagged</span>` : ''}
+        </span>`;
+
+      const flow = document.createElement('div');
+      flow.className = 'flow-tracks';
+
+      events.forEach((ev, i) => {
+        const card = document.createElement('div');
+        const flagged = ev.type === 'call' && isFlaggedTool(ev.tool, ev.args);
+        card.className = `flow-card ${ev.type}${flagged ? ' flagged' : ''}`;
+        card.style.animationDelay = `${i * 130}ms`;
+
+        const arrow = ev.type === 'call' ? '→' : '←';
+        const body = ev.type === 'call'
+          ? `<span class="label">CALL</span>
+             <span class="tool">${cleanToolName(ev.tool)}</span>
+             <span class="args">(${compactArgs(ev.args)})</span>
+             ${flagged ? '<span class="warn">⚠ PII passed</span>' : ''}`
+          : `<span class="label">RESP</span>
+             <span class="tool">${cleanToolName(ev.tool)}</span>
+             <span class="args">${compactResult(ev.result)}</span>`;
+
+        card.innerHTML = `<span class="arrow">${arrow}</span><div class="body">${body}</div>`;
+        flow.appendChild(card);
+      });
+
+      det.appendChild(sum);
+      det.appendChild(flow);
+      log.appendChild(det);
       log.scrollTop = log.scrollHeight;
     }
 
@@ -442,21 +615,9 @@
           .map(p => p.text)
           .join('\n');
 
-        // Walk the history and emit a debug timeline of tool calls / responses
-        for (const h of (result.history || [])) {
-          if (h.role !== 'agent') continue;
-          for (const p of (h.parts || [])) {
-            if (p.kind === 'data' && p.metadata?.kagent_type === 'function_call') {
-              const tool = cleanAuthor(p.data?.name);
-              addAgentStep(`→ <span class="tool-name">${tool}</span> ${JSON.stringify(p.data?.args || {})}`);
-            } else if (p.kind === 'data' && p.metadata?.kagent_type === 'function_response') {
-              const tool = cleanAuthor(p.data?.name);
-              const ok = p.data?.response?.result || p.data?.response;
-              const preview = (typeof ok === 'string' ? ok : JSON.stringify(ok)).slice(0, 100);
-              addAgentStep(`← <span class="tool-name">${tool}</span> ${preview}…`);
-            }
-          }
-        }
+        // Tool-flow visualization comes FIRST (more readable than JSON);
+        // raw JSON appended below after the bot reply renders.
+        addToolFlowBlock(result.history);
 
         // Final text — try artifacts first, then status.message, then last agent text in history
         let reply = '';
