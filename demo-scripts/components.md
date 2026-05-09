@@ -12,7 +12,8 @@ demo, in plain English.
                          │  CATALOG plane           Solo product    │
   Auditor / DORA Art.28─►│  agentregistry                           │
                          │  - lists every MCP / agent / skill        │
-                         │  - cosign sig + governance metadata       │
+                         │  - OCI label check at registration        │
+                         │  - cosign signing: ROADMAP (not yet)       │
                          └──────────────────┬───────────────────────┘
                                             │ approves
                                             ▼
@@ -81,22 +82,47 @@ The catalogue is at `arctl mcp list` (or use the GraphQL/REST API directly).
 
 **What it actually does in this demo**:
 1. Lists the registered MCP servers — three under `trustusbank/` (the bank's
-   own tools, signed by org key) and (after the attack registers it)
-   `acme-fx/currency-converter` (a third-party tool, signature unverified,
-   force-allowed by ops). The naming is deliberately innocuous — a real
-   attacker doesn't ship under "redteam" or "evil"; they ship under a
-   plausible vendor name that gets pulled by a developer who needed an FX
-   helper in a hurry.
+   own tools) and (after the attack registers it)
+   `acme-fx/currency-converter` (a third-party tool registered with no
+   signing — because cosign verification isn't shipped yet anyway). The
+   naming is deliberately innocuous — a real attacker doesn't ship under
+   "redteam" or "evil"; they ship under a plausible vendor name that
+   gets pulled by a developer who needed an FX helper in a hurry.
 2. Stores each artefact's package reference, version, transport,
    description, signature info, and governance metadata.
 3. **Is your DORA Article 28 sub-outsourcing register.** When the
    regulator asks *"what AI is running in your bank?"* — `arctl mcp list`
    is the answer.
 
-**What it does NOT do today (and where digest-watcher fits)**:
-runtime SHA-256 fingerprinting of the served `tools/list`. Today
-agentregistry checks signatures at registration only. The digest-watcher
-service prototypes the runtime check. That feature is on the roadmap.
+**What it does NOT do today (verified against the v0.3.x source)**:
+
+I cloned `github.com/agentregistry-dev/agentregistry` and grepped through
+the Go source. agentregistry today does NOT:
+
+- contain any MCP **client** code — no `tools/list`, no `ListTools`, no
+  outbound MCP protocol calls. The catalog plane never connects to a
+  running MCP server. (`pkg/api/v1alpha1/registries/oci.go` only pulls
+  the image config to read its labels.)
+- verify cosign / sigstore signatures. Zero hits for `cosign` or
+  `sigstore` in the Go source. The project's own CNCF self-assessment
+  lists *"Image signing — Container images are not signed with
+  cosign/sigstore"* as a planned-but-unshipped gap (see
+  `docs/governance/cncf/technical-review.md` in their repo).
+- run any periodic reconciler or controller-runtime loop polling
+  registered artefacts.
+- compute SHA-256 over the served tool definitions at runtime.
+
+**What the maintainers explicitly say** (from `security-self-assessment.md`):
+
+> *"agentregistry is a registry and deployment tool, **not a runtime
+> security agent**. Runtime policy enforcement is delegated to components
+> like the agentgateway, service meshes, or Kubernetes network policies."*
+
+So **digest-watcher's job is genuinely not in agentregistry today and is
+explicitly out of scope for that component.** This isn't "Solo's
+roadmap will absorb it" — it's "the registry's deliberate boundary is at
+registration time; runtime monitoring belongs in a separate component."
+digest-watcher *is* that separate component, just prototyped here.
 
 ### agentgateway — the data plane
 

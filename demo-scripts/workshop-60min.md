@@ -7,7 +7,7 @@
 
 - Docker Desktop (16 GB RAM, 8 CPUs allocated)
 - macOS or Linux
-- These CLIs: `kubectl`, `helm`, `kind`, `istioctl`, `cosign`, `jq`, `pandoc`
+- These CLIs: `kubectl`, `helm`, `kind`, `istioctl`, `jq`, `pandoc`
 - An Anthropic API key
 - A clone of `tjorourke/solo-demo-agentic-dora` from GitHub
 

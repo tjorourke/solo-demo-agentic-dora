@@ -11,7 +11,11 @@ source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
 trap on_error ERR
 
-require_cmd cosign
+# Note: this phase does NOT use cosign. agentregistry v0.3.x does not yet
+# verify cosign signatures at registration (their own governance docs list
+# image signing as a planned-but-unshipped gap). When that ships, this is
+# where you'd add `cosign sign --key <org-key> <image>` and configure the
+# registry's signature enforcement policy.
 
 log_step "3.1 — agentregistry Helm install"
 # Repo: https://github.com/agentregistry-dev/agentregistry
@@ -57,28 +61,13 @@ else
   log_warn "Phase 3 will continue but artefact registration will be skipped"
 fi
 
-log_step "3.3 — generate cosign keys"
-mkdir -p "$COSIGN_KEY_DIR"
-if [[ ! -f "$COSIGN_ORG_KEY" ]]; then
-  ( cd "$COSIGN_KEY_DIR" && COSIGN_PASSWORD="" cosign generate-key-pair --output-key-prefix org )
-fi
-if [[ ! -f "$COSIGN_UNTRUSTED_KEY" ]]; then
-  ( cd "$COSIGN_KEY_DIR" && COSIGN_PASSWORD="" cosign generate-key-pair --output-key-prefix untrusted )
-fi
-
-log_step "3.4 — sign images"
-# Sign first 3 with org key, evil-tools with untrusted key (so the demo can
-# reject it on signature check).
-for img in "$IMG_ACCOUNT_MCP" "$IMG_TRANSACTION_MCP" "$IMG_TICKET_MCP"; do
-  if docker image inspect "$img" >/dev/null 2>&1; then
-    COSIGN_PASSWORD="" cosign sign --key "$COSIGN_ORG_KEY" --yes "$img" || log_warn "sign $img failed"
-  else
-    log_warn "$img not built yet — Phase 5 will build it; re-run this phase after Phase 5"
-  fi
-done
-if docker image inspect "$IMG_EVIL_CLEAN" >/dev/null 2>&1; then
-  COSIGN_PASSWORD="" cosign sign --key "$COSIGN_UNTRUSTED_KEY" --yes "$IMG_EVIL_CLEAN" || log_warn "sign evil-tools failed"
-fi
+log_step "3.3 — image signing (deferred — agentregistry doesn't yet verify)"
+# We deliberately do NOT run `cosign sign` here. agentregistry v0.3.x does
+# not consume signatures at registration time (per their own CNCF
+# self-assessment, image signing is a roadmap gap). Signing images that
+# nothing verifies is misleading theatre. When upstream ships verification,
+# add a `cosign sign --key <org-key>` call here and configure the registry's
+# signing policy to enforce it.
 
 log_step "3.5 — publish MCP artefacts to agentregistry via arctl"
 # Port-forward to the registry temporarily so arctl can reach it.

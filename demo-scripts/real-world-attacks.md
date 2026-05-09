@@ -90,15 +90,17 @@ five-second skim.
 
 ### 5. Outdated artefact in catalog
 
-Your team registered `evil-tools` 18 months ago for a one-off project,
-force-allowed it to skip the cosign requirement, then forgot. It's been
+Your team registered an FX helper 18 months ago for a one-off project,
+hit publish with no signature checks (because none were enforced — when
+agentregistry adds cosign signing in a future release, it'll be optional
+on existing artefacts unless you re-publish), then forgot. It's been
 sitting in the catalogue. The vendor's account got abandoned and bought
 by an attacker, who pushed a new image. **No-one at the bank
 re-evaluates artefacts that were approved years ago.**
 
-This is the demo's gotcha — the operator force-allowed evil-tools at
-some point in the past, and that decision survives long after the
-operator has left.
+This is the demo's gotcha — the registration happened during a window
+where verification was either unshipped or simply not enforced, and that
+decision survives long after the operator has left.
 
 ---
 

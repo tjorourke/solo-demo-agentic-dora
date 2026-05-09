@@ -9,7 +9,7 @@ Step-by-step. Read this before walking into a customer demo.
 Install:
 
 ```bash
-brew install kubectl helm kind istioctl cosign jq pandoc
+brew install kubectl helm kind istioctl jq pandoc
 ```
 
 Plus optionally:

@@ -56,7 +56,7 @@ where it's going.
 
 | Component | What it is | Who made it |
 |---|---|---|
-| **agentregistry** | Catalogue of every MCP server / agent / skill, with cosign signatures and metadata. The DORA Art. 28 sub-outsourcing register. | **Solo** (open source) |
+| **agentregistry** | Catalogue of every MCP server / agent / skill with package metadata. Validates the OCI image's `io.modelcontextprotocol.server.name` label at registration. The DORA Art. 28 sub-outsourcing register. (Note: cosign / sigstore signing is on the project's roadmap, not yet shipped — see governance docs in their repo.) | **Solo** (open source) |
 | **agentgateway** | Data plane that proxies all MCP / A2A traffic. Logs every tool call. Supports JWT, tool-allowlist (CEL), prompt-guard, rate-limit. | **Solo** (open source) |
 | **kagent** | Agent runtime — Agent / ModelConfig / RemoteMCPServer CRDs, controller, UI. How the AI workloads exist on Kubernetes at all. | **Solo** (open source) |
 | **Istio Ambient** | Service mesh — ztunnel for HBONE mTLS, waypoints for L7 policy, AuthorizationPolicy for L4 deny. Zero sidecars. | upstream Istio |
@@ -68,17 +68,32 @@ where it's going.
 
 ### Why digest-watcher is custom and not Solo
 
-agentregistry today verifies cosign signatures **at registration**. It does
-not yet recompute SHA-256 over the served tool definitions at runtime — so
-a "rug-pull" (push the same image tag with mutated content) gets through.
+I went and read agentregistry v0.3.x's source code so I could state this
+precisely:
 
-digest-watcher fills that gap as a **prototype** so the demo can show the
-control end-to-end. In the customer pitch:
+- agentregistry catalogues artefacts and validates OCI image labels at
+  registration (`pkg/api/v1alpha1/registries/oci.go` → `ValidateOCI`).
+- It does **not** include any MCP client — it never connects out to a
+  running MCP server to poll `tools/list`. (Verified: zero hits for
+  `tools/list`, `ListTools`, `InitializeRequest` in the Go source.)
+- It does **not** sign or verify images with cosign / sigstore today.
+  The maintainers explicitly list "Image signing — Container images are
+  not signed with cosign/sigstore" as a planned-but-unshipped gap in
+  `docs/governance/cncf/technical-review.md`.
+- Their CNCF self-assessment is explicit: *"agentregistry is a registry
+  and deployment tool, not a runtime security agent. Runtime policy
+  enforcement is delegated to components like the agentgateway, service
+  meshes, or Kubernetes network policies."*
 
-> *"This is a 200-line Python service we built for the demo. The control
-> is real and the alert pipeline is real. Solo's roadmap moves it into
-> agentregistry's catalog plane so it happens at pull time, not at runtime
-> — but the security guarantee is the same."*
+So digest-watcher's job — *runtime fingerprinting of the served
+`tools/list` payload* — is genuinely not in agentregistry today and is
+explicitly out of scope for that component. It's a complementary
+runtime-monitoring service. That's why it's custom for the demo.
+
+> *"The runtime fingerprint check is a separate control from the
+> catalogue. agentregistry tells you what was approved; digest-watcher
+> tells you when something approved no longer matches what it was. You
+> need both, in different parts of the platform."*
 
 ---
 

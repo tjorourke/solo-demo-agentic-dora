@@ -192,8 +192,8 @@ Solo's pitch is **three planes**, each with its own product:
 
 A REST registry with a CLI (`arctl`). It catalogues every MCP server,
 agent, and skill in your estate. Each artefact has a package reference,
-version, transport, description, cosign signature info, and governance
-metadata.
+version, transport, description, and governance metadata. (Image signing
+via cosign is on agentregistry's published roadmap.)
 
 This is your DORA Article 28 sub-outsourcing register. When the
 regulator asks *"what AI is running in your bank?"* — `arctl mcp list`
@@ -240,12 +240,23 @@ It polls each MCP server every 30 seconds, hashes the served
 check that catches a rug-pull when an attacker pushes a new image at
 the same tag.
 
-agentregistry v0.3.x verifies cosign signatures **at registration**.
-It doesn't yet recompute SHA-256 over the served tool definitions at
-runtime. The runtime check is on the catalog plane's roadmap. I built
-digest-watcher in 200 lines of Python so the demo can show the control
-end to end — the alert pipeline is real, only the placement is
-provisional. In the future this lives in agentregistry.
+agentregistry v0.3.x catalogues artefacts and validates the OCI image's
+`io.modelcontextprotocol.server.name` label at registration. I checked
+the source — it does **not** verify cosign signatures (image signing is
+listed as a planned-but-unshipped gap in their CNCF self-assessment),
+and it does **not** recompute SHA-256 over the served tool definitions at
+runtime (no MCP client code in the registry).
+
+In fact, the maintainers are explicit: *"agentregistry is a registry and
+deployment tool, not a runtime security agent. Runtime policy enforcement
+is delegated to components like the agentgateway, service meshes, or
+Kubernetes network policies."* Runtime fingerprinting is **deliberately
+out of scope** for agentregistry. It belongs in a separate component.
+
+I built digest-watcher in 200 lines of Python so the demo can show that
+separate runtime-monitoring component end to end. The alert pipeline is
+real; what's provisional is which Solo product (or new component) will
+eventually own it in production.
 
 I'm explicit about this because **the customer pitch has to be
 honest**: Solo's platform protects the actual data flow today via

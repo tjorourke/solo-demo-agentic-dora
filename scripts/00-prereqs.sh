@@ -16,7 +16,7 @@ REQUIRED=(kubectl helm docker curl python3 jq)
 [[ "$CLUSTER_KIND" == "eks" ]]  && REQUIRED+=(eksctl aws)
 require_cmd "${REQUIRED[@]}"
 
-OPTIONAL=(istioctl arctl kagent cosign)
+OPTIONAL=(istioctl arctl kagent)
 for c in "${OPTIONAL[@]}"; do
   if command -v "$c" >/dev/null 2>&1; then
     log_ok "$c: $($c version 2>&1 | head -1 || echo present)"
