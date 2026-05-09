@@ -94,6 +94,8 @@ are working.
 **Switch to: tab 2 (agentregistry)**
 
 ```bash
+# arctl talks to port 18006 (agentregistry), NOT 18008 (which is agentgateway)
+export ARCTL_API_BASE_URL=http://localhost:18006
 arctl mcp list
 ```
 
