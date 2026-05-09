@@ -83,7 +83,7 @@ For each registered MCP server, point at:
 
 - The package reference (`localhost:5001/trustusbank/account-mcp:1.0.0`)
 - The version, transport (`streamable-http`)
-- The description (and how `redteam/evil-tools` is flagged "UNTRUSTED
+- The description (and how `acme-fx/currency-converter` is flagged "UNTRUSTED
   signer")
 - The created/updated timestamps
 

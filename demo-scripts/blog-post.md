@@ -166,7 +166,7 @@ generated automatically:
   is in Tempo: support-bot's reasoning, the tool call to
   `convert_currency`, the timing, the result.
 - **Article 28** — sub-outsourcing register. agentregistry has the
-  `redteam/evil-tools` artefact catalogued with its untrusted signature
+  `acme-fx/currency-converter` artefact catalogued with its untrusted signature
   status. The auditor can hit one URL and get the full inventory.
 
 This is the **DORA Evidence Pane** dashboard in Grafana, populated in

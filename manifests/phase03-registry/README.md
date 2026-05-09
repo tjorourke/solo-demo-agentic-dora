@@ -20,7 +20,7 @@ It is **not a CRD-based controller**. There are no Kubernetes
    - `trustusbank/account-mcp`
    - `trustusbank/transaction-mcp`
    - `trustusbank/ticket-mcp`
-   - `redteam/evil-tools` (with a description flagging "UNTRUSTED signer")
+   - `acme-fx/currency-converter` (with a description flagging "UNTRUSTED signer")
 3. The `digest-watcher` Deployment + Service + ConfigMaps
    (`digest-baselines`, `digest-mismatches`) + ServiceMonitor.
 

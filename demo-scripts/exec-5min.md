@@ -41,7 +41,7 @@ Switch to the agentregistry tab — show four entries.
 > artefact, with provenance and signing status. When the regulator
 > asks 'what's running?' — this is the answer, in one URL."*
 
-Point at the `redteam/evil-tools` line, "UNTRUSTED signer".
+Point at the `acme-fx/currency-converter` line, "UNTRUSTED signer".
 
 ### 1:30 — the attack (1.5 min)
 

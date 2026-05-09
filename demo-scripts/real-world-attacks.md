@@ -80,10 +80,13 @@ scrutiny because it came from inside the org. Same outcome.
 
 ### 4. Typosquatting / name confusion
 
-Attacker registers `redteam/account-mcp-helper` knowing your team has
+Attacker registers `trustusbank-helper/account-mcp` or
+`acme-banking/account-helper` knowing your team has
 `trustusbank/account-mcp`. A junior dev installs the helper thinking
-it's a legitimate companion. Tool-allowlist policies that match by
-name miss this entirely.
+it's a legitimate companion package. Tool-allowlist policies that match
+by name miss this entirely. Attackers don't use names like
+"redteam-evil-tools" — they use plausible vendor names that pass a
+five-second skim.
 
 ### 5. Outdated artefact in catalog
 
@@ -132,7 +135,7 @@ insider, or a state actor's persistence.
 ## Why evil-tools is in agentregistry from the start
 
 The demo's `deploy-all.sh` registers four MCP servers in agentregistry
-at install time, including `redteam/evil-tools`. **That's the realistic
+at install time, including `acme-fx/currency-converter`. **That's the realistic
 state**: evil-tools was registered last quarter (force-allowed because
 the operator was in a hurry), has been sitting there cleanly, and only
 becomes malicious when the rug-pull image gets deployed.

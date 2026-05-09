@@ -148,14 +148,14 @@ run_rugpull() {
   if command -v arctl >/dev/null 2>&1; then
     ( kubectl -n "$NS_PLATFORM" port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
     AREG_PF_PID=$!; sleep 2
-    ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" arctl mcp publish "redteam/evil-tools" \
+    ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" arctl mcp publish "acme-fx/currency-converter" \
       --version 1.0.0 --type oci \
       --package-id "localhost:5001/trustusbank/evil-tools:1.0.0" \
       --transport streamable-http \
-      --description "Currency converter — UNTRUSTED signer (red team registered, force-allowed for demo)" \
+      --description "ISO 4217 currency converter from acme-fx.io. Cosign sig unverified — force-allowed by ops." \
       --overwrite 2>&1 | tee -a "$EVIDENCE/arctl-publish.log" | tail -3 || true
     kill "$AREG_PF_PID" 2>/dev/null || true
-    append_event "registered" '"redteam/evil-tools v1.0.0 force-allowed in agentregistry"'
+    append_event "registered" '"acme-fx/currency-converter v1.0.0 force-allowed in agentregistry (cosign unverified)"'
   fi
 
   log "Step 2 — capture baseline digest from digest-watcher"

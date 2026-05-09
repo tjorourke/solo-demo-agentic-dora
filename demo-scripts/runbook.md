@@ -106,7 +106,7 @@ NAME                          VERSION   TYPE   PACKAGE
 trustusbank/account-mcp       1.0.0     oci    localhost:5001/...
 trustusbank/transaction-mcp   1.0.0     oci    localhost:5001/...
 trustusbank/ticket-mcp        1.0.0     oci    localhost:5001/...
-redteam/evil-tools            1.0.0     oci    localhost:5001/...   ← UNTRUSTED
+acme-fx/currency-converter            1.0.0     oci    localhost:5001/...   ← UNTRUSTED
 ```
 
 > *"Two questions: how do you know what's running? — that's your DORA
@@ -253,7 +253,7 @@ ready to attack):
 ```
 
 What it does:
-1. Removes `redteam/evil-tools` from agentregistry catalog
+1. Removes `acme-fx/currency-converter` from agentregistry catalog
 2. Reverts evil-tools deployment to clean image (1.0.0, benign converter)
 3. Wipes digest-watcher baselines + mismatches ConfigMaps
 4. Clears `evidence/phase8/` artefacts

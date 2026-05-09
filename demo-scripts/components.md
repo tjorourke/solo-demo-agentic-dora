@@ -80,8 +80,13 @@ estate.
 The catalogue is at `arctl mcp list` (or use the GraphQL/REST API directly).
 
 **What it actually does in this demo**:
-1. Lists the four MCP servers — three under `trustusbank/` namespace,
-   one (the malicious one) under `redteam/` flagged "UNTRUSTED signer".
+1. Lists the registered MCP servers — three under `trustusbank/` (the bank's
+   own tools, signed by org key) and (after the attack registers it)
+   `acme-fx/currency-converter` (a third-party tool, signature unverified,
+   force-allowed by ops). The naming is deliberately innocuous — a real
+   attacker doesn't ship under "redteam" or "evil"; they ship under a
+   plausible vendor name that gets pulled by a developer who needed an FX
+   helper in a hurry.
 2. Stores each artefact's package reference, version, transport,
    description, signature info, and governance metadata.
 3. **Is your DORA Article 28 sub-outsourcing register.** When the

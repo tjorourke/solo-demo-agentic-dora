@@ -34,14 +34,18 @@ done
 
 log_step "Resetting demo to clean baseline"
 
-# 1. Drop redteam/evil-tools from agentregistry
-log "1/5 — removing redteam/evil-tools from agentregistry"
+# 1. Drop the acme-fx/currency-converter (the malicious 3rd-party tool)
+#    plus the legacy redteam/evil-tools name in case someone has an old
+#    state from before the rename.
+log "1/5 — removing acme-fx/currency-converter from agentregistry"
 if command -v arctl >/dev/null 2>&1; then
   ( kubectl -n "$NS_PLATFORM" port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
   AREG_PF_PID=$!; sleep 2
-  ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
-    arctl mcp delete redteam/evil-tools --version 1.0.0 2>&1 \
-    | sed 's/^/    /' || log_warn "    (was not registered, OK)"
+  for entry in acme-fx/currency-converter redteam/evil-tools; do
+    ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
+      arctl mcp delete "$entry" --version 1.0.0 2>&1 \
+      | sed 's/^/    /' || true
+  done
   kill "$AREG_PF_PID" 2>/dev/null || true
 else
   log_warn "    arctl not installed — skipping registry cleanup"
