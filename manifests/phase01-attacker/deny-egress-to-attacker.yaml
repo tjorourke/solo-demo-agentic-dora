@@ -14,9 +14,10 @@ spec:
   rules:
     - from:
         - source:
+            # Wildcard match across every bank-side namespace + the platform.
+            # Stronger than an explicit list because new namespaces added
+            # later automatically inherit the protection (no policy churn
+            # required when an extra MCP namespace shows up).
             namespaces:
-              - trustusbank-bank-evil
-              - trustusbank-bank-mcp
-              - trustusbank-bank-agents
-              - trustusbank-bank-frontend
-              - trustusbank-platform
+              - "trustusbank-bank-*"
+              - "trustusbank-platform"

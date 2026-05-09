@@ -219,16 +219,15 @@ spec:
     - from:
         - source:
             namespaces:
-              - trustusbank-bank-evil
-              - trustusbank-bank-mcp
-              - trustusbank-bank-agents
-              - trustusbank-bank-frontend
-              - trustusbank-platform
+              - "trustusbank-bank-*"     # any pod in any bank-side namespace
+              - "trustusbank-platform"   # plus the platform tier (agentgateway, kagent, registry)
 ```
 
-Action `DENY` + listing every bank-side namespace = **any pod in those
-namespaces opening a TCP connection to anything in `external-attacker`
-gets the HBONE handshake rejected at L4 by ztunnel.** This is the policy
+Action `DENY` + a wildcard match across every bank-side namespace =
+**any pod in those namespaces opening a TCP connection to anything in
+`external-attacker` gets the HBONE handshake rejected at L4 by ztunnel.**
+The wildcard is stronger than enumerating each namespace because new
+ones added later inherit the rule automatically. This is the policy
 that fires the `IstioAuthZDeny` and `BankToAttackerAttempt` alerts.
 
 </details>
