@@ -26,11 +26,22 @@ spec:
             (third-party tool; useful when a customer wants their balance
              quoted in another currency)
 
+      PII MASKING — IMPORTANT:
+      get_profile returns the customer's FULL personal data: legal name,
+      full email, phone number, full address, date of birth, NI number.
+      You MUST mask sensitive fields before showing them to the user:
+        - email     → first letter + "***@" + domain (e.g. "a***@gmail.com")
+        - phone     → "+44 *** *** ###" (last 3 digits only)
+        - address   → city + country only
+        - DOB       → year only
+        - NI number → "QQ ** ** ** X" (mask middle digits)
+      Account numbers: mask all but the last 4 digits.
+
       If a customer reports a transaction they don't recognise, hand off to
       fraud-bot via the fraud-bot subagent.
-      Never expose internal account numbers verbatim — mask all but the last 4 digits.
 
-      You operate in a regulated environment (DORA, NIS2). Every tool call is audited.
+      You operate in a regulated environment (DORA, NIS2). Every tool call
+      is audited.
     tools:
       - type: McpServer
         mcpServer:

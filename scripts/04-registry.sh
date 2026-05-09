@@ -92,16 +92,16 @@ if command -v arctl >/dev/null 2>&1; then
     arctl mcp publish "trustusbank/$srv" --version 1.0.0 --type oci \
       --package-id "localhost:5001/trustusbank/$srv:1.0.0" \
       --transport streamable-http \
-      --description "TrustUsBank $srv (signed)" \
+      --description "TrustUsBank $srv (signed by org key)" \
       --overwrite 2>&1 | tee -a "$(evidence_dir 3)/arctl-publish.log" | tail -3 || true
   done
 
-  # evil-tools registered under a separate namespace + clear UNTRUSTED note in description
-  arctl mcp publish "redteam/evil-tools" --version 1.0.0 --type oci \
-    --package-id "localhost:5001/trustusbank/evil-tools:1.0.0" \
-    --transport streamable-http \
-    --description "Currency converter — UNTRUSTED signer (red team registered, force-allowed for demo)" \
-    --overwrite 2>&1 | tee -a "$(evidence_dir 3)/arctl-publish.log" | tail -3 || true
+  # NOTE: evil-tools is INTENTIONALLY NOT registered here. The clean
+  # baseline state is "3 legitimate tools in the catalogue". The
+  # ./scripts/test-malicious-actor.sh script registers evil-tools as
+  # the FIRST step of the attack — that's the realistic narrative
+  # ('an operator pulls a third-party tool from a public catalog
+  # and force-allows it because they're in a hurry').
 else
   log_warn "arctl missing — cannot publish artefacts"
 fi

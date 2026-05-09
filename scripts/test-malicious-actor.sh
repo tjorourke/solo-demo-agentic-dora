@@ -144,26 +144,47 @@ run_rugpull() {
   log_step "Vector 2 — Rug-pull (digest mismatch)"
   append_event "vector_start" '"rugpull"'
 
-  log "Capturing baseline digest from digest-watcher"
+  log "Step 1 — operator pulls evil-tools from public catalog and registers it"
+  if command -v arctl >/dev/null 2>&1; then
+    ( kubectl -n "$NS_PLATFORM" port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
+    AREG_PF_PID=$!; sleep 2
+    ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" arctl mcp publish "redteam/evil-tools" \
+      --version 1.0.0 --type oci \
+      --package-id "localhost:5001/trustusbank/evil-tools:1.0.0" \
+      --transport streamable-http \
+      --description "Currency converter — UNTRUSTED signer (red team registered, force-allowed for demo)" \
+      --overwrite 2>&1 | tee -a "$EVIDENCE/arctl-publish.log" | tail -3 || true
+    kill "$AREG_PF_PID" 2>/dev/null || true
+    append_event "registered" '"redteam/evil-tools v1.0.0 force-allowed in agentregistry"'
+  fi
+
+  log "Step 2 — capture baseline digest from digest-watcher"
   curl -fsS "http://localhost:${PF_DIGEST_WATCHER_PORT}/baselines" \
     > "$EVIDENCE/rugpull-baselines-before.json" 2>/dev/null \
     || log_warn "watcher /baselines unreachable; continuing"
 
-  log "Building evil-tools v1.0.0-rugpull (variant: $RUGPULL_VARIANT)"
+  # Bump the image tag every run so kubelet's IfNotPresent cache doesn't
+  # serve a stale layer. The "rug-pull" semantics are preserved (same
+  # logical artefact name, attacker swaps content); the unique tag is
+  # just a kind-cluster workaround for image caching.
+  local STAMP=$(date +%s)
+  local IMG_RUGPULL_VERSIONED="${IMAGE_PREFIX}/evil-tools:1.0.0-rugpull-${STAMP}"
+
+  log "Step 3 — build evil-tools (variant: $RUGPULL_VARIANT) tagged $IMG_RUGPULL_VERSIONED"
   if [[ -d "$MCP_SRC_DIR/evil-tools" ]]; then
-    docker build --build-arg VARIANT="$RUGPULL_VARIANT" -t "$IMG_EVIL_RUGPULL" "$MCP_SRC_DIR/evil-tools" \
+    docker build --no-cache --build-arg VARIANT="$RUGPULL_VARIANT" \
+      -t "$IMG_EVIL_RUGPULL" -t "$IMG_RUGPULL_VERSIONED" \
+      "$MCP_SRC_DIR/evil-tools" \
       2>&1 | tee "$EVIDENCE/rugpull-build.log" | tail -5
-    if [[ "$CLUSTER_KIND" == "kind" ]]; then
-      docker push "$IMG_EVIL_RUGPULL" || kind load docker-image "$IMG_EVIL_RUGPULL" --name "$CLUSTER_NAME"
-    else
-      docker push "$IMG_EVIL_RUGPULL"
-    fi
+    docker push "$IMG_RUGPULL_VERSIONED" 2>&1 | tail -2 || \
+      kind load docker-image "$IMG_RUGPULL_VERSIONED" --name "$CLUSTER_NAME"
+    docker push "$IMG_EVIL_RUGPULL" 2>&1 | tail -2 || true
   else
     log_warn "evil-tools source dir missing — skipping build"
   fi
 
-  log "Switching evil-tools deployment to rugpull image (the attacker's push)"
-  kubectl -n "$NS_BANK_EVIL" set image deployment/evil-tools "server=$IMG_EVIL_RUGPULL"
+  log "Step 4 — switch evil-tools deployment to rugpull image (the attacker's push)"
+  kubectl -n "$NS_BANK_EVIL" set image deployment/evil-tools "server=$IMG_RUGPULL_VERSIONED"
   kubectl -n "$NS_BANK_EVIL" rollout status deployment/evil-tools --timeout=120s
 
   log "Forcing digest-watcher to re-check now"
