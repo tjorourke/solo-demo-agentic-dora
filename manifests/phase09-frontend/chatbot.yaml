@@ -25,7 +25,8 @@ spec:
       containers:
         - name: chatbot
           image: localhost:5001/trustusbank/chatbot:1.0.0
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always   # always re-pull so a chatbot rebuild
+                                    # at the same tag actually deploys
           ports:
             - name: http
               containerPort: 80
