@@ -283,8 +283,19 @@ fire. (kube-prometheus-stack uses CRD discovery, not the
 </details>
 
 **Show tab 6 (MailHog inbox):** two alert emails landed within 30s of the
-attack. Click one — body has the offending pod's SPIFFE ID, the dashboard
-deep-link, and the `kubectl scale --replicas=0` quarantine command.
+attack — `BankToAttackerAttempt` AND `IstioAuthZDeny`. Click one — body
+has the offending pod's SPIFFE ID, the dashboard deep-link, and the
+`kubectl scale --replicas=0` quarantine command.
+
+> ⚠️ **Demo nuance worth narrating** — `BankToAttackerAttempt` ALSO
+> fires in Act 2 (Solo OFF), because by then evil-tools is succeeding
+> at exfiltrating data and the underlying counter is incrementing. The
+> alert is telling the truth: a bank pod is talking to external-attacker.
+> The audience-facing point: *detection without enforcement is post-mortem.*
+> Two emails fire in Act 3: same detection plus a new "we physically
+> blocked it" signal (`IstioAuthZDeny`). That contrast — same alert
+> visibility but the bytes don't leave the cluster — IS the demo's
+> punchline.
 
 <details>
 <summary>📄 MailHog deployment + AlertmanagerConfig route (click to expand)</summary>
@@ -737,6 +748,7 @@ clean them up. Run their per-demo reset commands as well.
 | **A2A 503 / "upstream connect error"** | AuthZ allow-platform-to-agents missing kagent-controller or waypoint SA | Verify: `kubectl -n trustusbank-bank-agents get authorizationpolicy allow-platform-to-agents -o yaml \| grep -E "kagent-controller\|waypoint"`. Both should appear. |
 | ztunnel deny lines not in Loki | Default RUST_LOG=info hides denies | `02-ambient.sh` already bumps to `RUST_LOG=info,access=debug`. If you skipped it: `kubectl -n istio-system set env ds/ztunnel RUST_LOG="info,access=debug,proxy::access_log=debug"` |
 | MailHog empty after attack | Alertmanager namespace-matcher mismatch | Verify the PrometheusRule alerts have `namespace: trustusbank-observability` label (it's there in the manifest) |
+| `BankToAttackerAttempt` email arrives during Act 2 (before deploy-solo) | **Working as designed.** The alert fires on ANY bank → external-attacker connection attempt, success or fail. In Act 2 the attempt SUCCEEDS, so PII has actually left. Use this on stage: detection without enforcement is post-mortem; Act 3 adds the second alert (`IstioAuthZDeny`) PLUS the actual block. | — |
 | Prometheus alert not firing | ztunnel metrics not scraped | Check `kubectl -n trustusbank-observability get podmonitor ztunnel-metrics` — should be present |
 
 ---
