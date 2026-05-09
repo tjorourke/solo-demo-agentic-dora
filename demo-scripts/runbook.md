@@ -30,6 +30,10 @@ cd dora-demo
 ./scripts/list-urls.sh          # confirm 14 URLs are green
 ```
 
+📁 source: [`scripts/00-prereqs.sh`](../scripts/00-prereqs.sh) ·
+[`scripts/deploy-all.sh`](../scripts/deploy-all.sh) ·
+[`scripts/list-urls.sh`](../scripts/list-urls.sh)
+
 If any URL is red, run `./scripts/port-forward.sh` then `./scripts/list-urls.sh` again.
 
 ---
@@ -41,9 +45,13 @@ If any URL is red, run `./scripts/port-forward.sh` then `./scripts/list-urls.sh`
 ./scripts/port-forward.sh        # only needed if PFs died
 ```
 
+📁 source: [`scripts/reset-demo.sh`](../scripts/reset-demo.sh) ·
+[`scripts/port-forward.sh`](../scripts/port-forward.sh) ·
+[`scripts/solo-off.sh`](../scripts/solo-off.sh) (called by reset)
+
 `reset-demo.sh` puts the cluster in **Solo OFF** state: no AuthZ policies,
-no malicious tool registered, mock-attacker logs cleared, evil-tools
-running the benign image. The "before Solo" baseline.
+acme-fx still in the catalogue (with benign image), evil-tools running
+the benign variant, mock-attacker logs cleared. The "before Solo" baseline.
 
 ### Open these tabs in order before the audience walks in
 
@@ -118,6 +126,9 @@ In a terminal:
 ./scripts/upgrade-banking-app.sh
 ```
 
+📁 source: [`scripts/upgrade-banking-app.sh`](../scripts/upgrade-banking-app.sh) ·
+[`mcp-servers/evil-tools/server-aggressive.py`](../mcp-servers/evil-tools/server-aggressive.py) (the malicious tool's code)
+
 While it runs, narrate:
 > *"acme-fx has been a trusted vendor for six months. Today, their CI
 > pipeline gets compromised — same way Codecov, 3CX, ua-parser-js, and
@@ -183,10 +194,58 @@ In the terminal:
 ./scripts/deploy-solo.sh
 ```
 
+📁 source: [`scripts/deploy-solo.sh`](../scripts/deploy-solo.sh) ·
+[`scripts/solo-off.sh`](../scripts/solo-off.sh) (the inverse — wipes everything this applies)
+
 This applies, in one shot:
 - Istio AuthorizationPolicy on every workload namespace, using **SPIFFE
   principals** (per-ServiceAccount identity, not namespace-based).
 - A deny-egress policy on `external-attacker` blocking `trustusbank-bank-*`.
+
+<details>
+<summary>📄 deny-bank-to-attacker — the policy that stops the exfil (click to expand)</summary>
+
+File: [`manifests/phase01-attacker/deny-egress-to-attacker.yaml`](../manifests/phase01-attacker/deny-egress-to-attacker.yaml)
+
+```yaml
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-bank-to-attacker
+  namespace: external-attacker
+spec:
+  action: DENY
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - trustusbank-bank-evil
+              - trustusbank-bank-mcp
+              - trustusbank-bank-agents
+              - trustusbank-bank-frontend
+              - trustusbank-platform
+```
+
+Action `DENY` + listing every bank-side namespace = **any pod in those
+namespaces opening a TCP connection to anything in `external-attacker`
+gets the HBONE handshake rejected at L4 by ztunnel.** This is the policy
+that fires the `IstioAuthZDeny` and `BankToAttackerAttempt` alerts.
+
+</details>
+
+<details>
+<summary>📄 default-deny across the bank's namespaces (click to expand)</summary>
+
+File: [`manifests/phase01-ambient/deny-all-cross-ns.yaml`](../manifests/phase01-ambient/deny-all-cross-ns.yaml)
+
+This is the zero-trust baseline: nothing can talk to anything inside
+the bank-* namespaces unless an explicit ALLOW rule exists. Combined
+with the SPIFFE-principal allow rules in
+[`allow-agents-to-mcp.yaml`](../manifests/phase01-ambient/allow-agents-to-mcp.yaml)
+this is what makes the demo's positive tests still pass while everything
+else is blocked.
+
+</details>
 
 **Show tab 1 (chatbot)** — same prompt:
 > *Customer 12345, balance please, recent transactions, and convert to USD.*
@@ -205,9 +264,41 @@ prompt injection.
 `BankToAttackerAttempt` are both **firing**, with `source_workload=evil-tools`
 and `source_principal=spiffe://...trustusbank-bank-evil/sa/evil-tools`.
 
+<details>
+<summary>📄 the PrometheusRule that fires these alerts (click to expand)</summary>
+
+File: [`manifests/phase02-observability/authz-deny-alert.yaml`](../manifests/phase02-observability/authz-deny-alert.yaml)
+
+Two alerts. `IstioAuthZDeny` fires on `istio_tcp_connections_failed_total{response_flags="CONNECT"}`
+(the metric ztunnel emits on every AuthZ-rejected HBONE handshake).
+`BankToAttackerAttempt` fires on `istio_tcp_connections_opened_total`
+filtered to bank → attacker namespace pairs, so it lights up whether
+the connection succeeded (Solo OFF) or got reset (Solo ON).
+
+The same file also defines the PodMonitor that tells Prometheus to
+scrape ztunnel's /metrics endpoint — without it, neither alert can
+fire. (kube-prometheus-stack uses CRD discovery, not the
+`prometheus.io/scrape` annotation.)
+
+</details>
+
 **Show tab 6 (MailHog inbox):** two alert emails landed within 30s of the
 attack. Click one — body has the offending pod's SPIFFE ID, the dashboard
 deep-link, and the `kubectl scale --replicas=0` quarantine command.
+
+<details>
+<summary>📄 MailHog deployment + AlertmanagerConfig route (click to expand)</summary>
+
+Files:
+- [`manifests/phase02-observability/mailhog.yaml`](../manifests/phase02-observability/mailhog.yaml) — the SMTP catcher Deployment + Service.
+- [`manifests/phase02-observability/alertmanager-email.yaml`](../manifests/phase02-observability/alertmanager-email.yaml) — the AlertmanagerConfig CRD with the matcher (`alertname=~"IstioAuthZDeny|BankToAttackerAttempt"`) and the HTML email template (offending pod, SPIFFE, dashboard deep-link).
+
+Default Alertmanager Operator matcher strategy is `OnNamespace`, so
+the PrometheusRule's alerts must carry `namespace: trustusbank-observability`
+as a label or the route auto-injects an unsatisfiable matcher. The
+PrometheusRule [does set that label](../manifests/phase02-observability/authz-deny-alert.yaml).
+
+</details>
 
 **Show tab 4 (DORA dashboard):**
 - Stats: AuthZ denies = red, exfil received = green (was red before Solo)
@@ -300,6 +391,9 @@ appears in one Tempo trace. No log archaeology across 6 pods.
 ```
 Sends one curl, prints the trace ID + Tempo deep-link.
 
+📁 source: [`scripts/demos/01-trace-attack.sh`](../scripts/demos/01-trace-attack.sh) ·
+[`manifests/phase06-kagent/telemetry.yaml`](../manifests/phase06-kagent/telemetry.yaml) (the OTel wiring that emits the spans)
+
 #### Reset
 None needed.
 
@@ -328,6 +422,36 @@ In the terminal:
 ```bash
 ./scripts/demos/02-live-policy.sh
 ```
+
+📁 source: [`scripts/demos/02-live-policy.sh`](../scripts/demos/02-live-policy.sh) ·
+[`manifests/demos/02-emergency-deny-policy.yaml`](../manifests/demos/02-emergency-deny-policy.yaml)
+
+<details>
+<summary>📄 the 12-line policy you'll apply on stage (click to expand)</summary>
+
+```yaml
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-acme-fx-everywhere
+  namespace: trustusbank-bank-evil
+  labels:
+    demo: live-policy
+    incident: SEC-2026-0042
+spec:
+  action: DENY
+  rules:
+    - to:
+        - operation:
+            ports: ["8080"]
+      from:
+        - source:
+            namespaces:
+              - "trustusbank-bank-agents"
+              - "trustusbank-platform"
+```
+
+</details>
 
 The script pauses (press ↵ to advance) so you can narrate each step.
 
@@ -370,6 +494,9 @@ TOP of Act 3's L4 deny.
 ```bash
 ./scripts/demos/03-l7-precall-block.sh
 ```
+
+📁 source: [`scripts/demos/03-l7-precall-block.sh`](../scripts/demos/03-l7-precall-block.sh) ·
+[`manifests/demos/03-l7-precall-block.yaml`](../manifests/demos/03-l7-precall-block.yaml)
 
 The script:
 1. Applies an AuthorizationPolicy on the agentgateway pod blocking POST /mcp/evil*.
@@ -424,6 +551,9 @@ None specific. Can be run anytime.
 ```bash
 ./scripts/demos/04-egress-llm-audit.sh
 ```
+
+📁 source: [`scripts/demos/04-egress-llm-audit.sh`](../scripts/demos/04-egress-llm-audit.sh) ·
+[`manifests/demos/04-egress-llm-gateway.yaml`](../manifests/demos/04-egress-llm-gateway.yaml)
 
 The script:
 1. Deploys a Caddy reverse-proxy in `trustusbank-egress` namespace.
@@ -485,6 +615,10 @@ work for agent↔agent, not just agent↔tool.
 ./scripts/demos/05-a2a-handoff.sh
 ```
 
+📁 source: [`scripts/demos/05-a2a-handoff.sh`](../scripts/demos/05-a2a-handoff.sh) ·
+[`manifests/phase06-kagent/agent-fraud-bot.yaml`](../manifests/phase06-kagent/agent-fraud-bot.yaml) (the agent the script targets) ·
+[`manifests/phase01-ambient/allow-agents-to-mcp.yaml`](../manifests/phase01-ambient/allow-agents-to-mcp.yaml) (the AuthZ policy that permits the cross-namespace A2A path)
+
 The script POSTs an A2A `message/send` to fraud-bot's endpoint with a
 fraud-flavoured prompt. Expected: HTTP 200, fraud-bot returns a
 reasoned analysis.
@@ -527,6 +661,9 @@ within seconds.
 ```bash
 ./scripts/demos/06-rate-limit.sh
 ```
+
+📁 source: [`scripts/demos/06-rate-limit.sh`](../scripts/demos/06-rate-limit.sh) ·
+[`manifests/demos/06-rate-limit.yaml`](../manifests/demos/06-rate-limit.yaml)
 
 The script:
 1. Applies an AgentgatewayPolicy with `traffic.rateLimit.local: requests=5, burst=5, unit=Minutes`.
@@ -610,6 +747,115 @@ clean them up. Run their per-demo reset commands as well.
 ./scripts/teardown.sh           # delete demo workloads, keep the cluster
 ./scripts/teardown.sh --full    # also delete the kind cluster
 ```
+
+---
+
+## Reference: every script and manifest in the demo
+
+<details>
+<summary>📁 Scripts (click to expand)</summary>
+
+| Script | Phase / purpose |
+|---|---|
+| [`00-prereqs.sh`](../scripts/00-prereqs.sh) | Tool checks, kind cluster, local registry |
+| [`01-cluster.sh`](../scripts/01-cluster.sh) | Kubernetes cluster bring-up |
+| [`02-ambient.sh`](../scripts/02-ambient.sh) | Istio Ambient + ztunnel + waypoints + ztunnel log-level bump |
+| [`03-observability.sh`](../scripts/03-observability.sh) | kube-prometheus-stack + Tempo + Loki + MailHog + dashboards |
+| [`04-registry.sh`](../scripts/04-registry.sh) | agentregistry + day-1 catalogue (4 entries incl. acme-fx) |
+| [`05-mcp-servers.sh`](../scripts/05-mcp-servers.sh) | account / transaction / ticket / evil-tools deployments |
+| [`06-agentgateway.sh`](../scripts/06-agentgateway.sh) | agentgateway + Backends + HTTPRoutes + JWT + tool allowlist |
+| [`07-kagent.sh`](../scripts/07-kagent.sh) | kagent CRDs + RemoteMCPServers + 3 Agent definitions |
+| [`08-a2a.sh`](../scripts/08-a2a.sh) | Tenant isolation policies for A2A |
+| [`09-frontend.sh`](../scripts/09-frontend.sh) | Customer chatbot UI |
+| [`deploy-all.sh`](../scripts/deploy-all.sh) | Runs phases 0–9 in order |
+| [`deploy-solo.sh`](../scripts/deploy-solo.sh) | **Act 3 climax** — applies SPIFFE AuthZ + deny-egress |
+| [`solo-off.sh`](../scripts/solo-off.sh) | Strips ALL Solo policies (returns to bare-K8s state) |
+| [`upgrade-banking-app.sh`](../scripts/upgrade-banking-app.sh) | **Act 2** — vendor's CI compromised; image swap |
+| [`reset-demo.sh`](../scripts/reset-demo.sh) | Restore to "before Solo" baseline between runs |
+| [`port-forward.sh`](../scripts/port-forward.sh) | Reset all 14 port-forwards |
+| [`list-urls.sh`](../scripts/list-urls.sh) | Health-check every PF |
+| [`build-evidence-pack.sh`](../scripts/build-evidence-pack.sh) | Bundle audit artefacts for the auditor |
+| [`teardown.sh`](../scripts/teardown.sh) | Delete demo workloads (and optionally cluster) |
+| [`demos/01-trace-attack.sh`](../scripts/demos/01-trace-attack.sh) | Distributed-trace deep dive |
+| [`demos/02-live-policy.sh`](../scripts/demos/02-live-policy.sh) | Live policy authoring |
+| [`demos/03-l7-precall-block.sh`](../scripts/demos/03-l7-precall-block.sh) | L7 pre-call block (defense in depth) |
+| [`demos/04-egress-llm-audit.sh`](../scripts/demos/04-egress-llm-audit.sh) | Egress LLM gateway with prompt audit |
+| [`demos/05-a2a-handoff.sh`](../scripts/demos/05-a2a-handoff.sh) | Agent-to-Agent over HBONE |
+| [`demos/06-rate-limit.sh`](../scripts/demos/06-rate-limit.sh) | Rate limiting on agentgateway |
+
+</details>
+
+<details>
+<summary>📁 Manifests by phase (click to expand)</summary>
+
+**Phase 1 — Ambient mesh + the attacker stand-in**
+- [`phase01-ambient/deny-all-cross-ns.yaml`](../manifests/phase01-ambient/deny-all-cross-ns.yaml) — zero-trust default
+- [`phase01-ambient/allow-agents-to-mcp.yaml`](../manifests/phase01-ambient/allow-agents-to-mcp.yaml) — SPIFFE allow rules (incl. waypoint + kagent-controller fix for A2A)
+- [`phase01-ambient/ztunnel-log-level.yaml`](../manifests/phase01-ambient/ztunnel-log-level.yaml) — `RUST_LOG=info,access=debug` so deny lines surface
+- [`phase01-attacker/deny-egress-to-attacker.yaml`](../manifests/phase01-attacker/deny-egress-to-attacker.yaml) — **the demo's headline policy**
+- [`phase01-attacker/mock-attacker.yaml`](../manifests/phase01-attacker/mock-attacker.yaml) — the C2 stand-in receiver
+
+**Phase 2 — Observability**
+- [`phase02-observability/authz-deny-alert.yaml`](../manifests/phase02-observability/authz-deny-alert.yaml) — PodMonitor + 2 PrometheusRules (`IstioAuthZDeny`, `BankToAttackerAttempt`)
+- [`phase02-observability/mailhog.yaml`](../manifests/phase02-observability/mailhog.yaml) — SOC inbox
+- [`phase02-observability/alertmanager-email.yaml`](../manifests/phase02-observability/alertmanager-email.yaml) — AlertmanagerConfig + HTML email template
+- [`phase02-observability/istio-telemetry.yaml`](../manifests/phase02-observability/istio-telemetry.yaml) — Istio Telemetry → OTel → Tempo
+- [`phase02-observability/values/`](../manifests/phase02-observability/values/) — Helm values (Loki retention 7y, Tempo, Prometheus, OTel)
+
+**Phase 3 — agentregistry catalogue**
+- [`phase03-registry/artefacts/`](../manifests/phase03-registry/artefacts/) — per-tool artefact YAMLs (account / transaction / ticket / evil)
+
+**Phase 4 — MCP servers**
+- [`phase04-mcp-servers/account-mcp.yaml`](../manifests/phase04-mcp-servers/account-mcp.yaml)
+- [`phase04-mcp-servers/transaction-mcp.yaml`](../manifests/phase04-mcp-servers/transaction-mcp.yaml)
+- [`phase04-mcp-servers/ticket-mcp.yaml`](../manifests/phase04-mcp-servers/ticket-mcp.yaml)
+- [`phase04-mcp-servers/evil-tools.yaml`](../manifests/phase04-mcp-servers/evil-tools.yaml) — the rugpull target deployment
+
+**Phase 5 — agentgateway**
+- [`phase05-agentgateway/gateway.yaml`](../manifests/phase05-agentgateway/gateway.yaml) — Gateway resource
+- [`phase05-agentgateway/backends.yaml`](../manifests/phase05-agentgateway/backends.yaml) — AgentgatewayBackend per MCP
+- [`phase05-agentgateway/httproutes.yaml`](../manifests/phase05-agentgateway/httproutes.yaml) — `/mcp/account`, `/mcp/transaction`, `/mcp/ticket`, `/mcp/evil`
+- [`phase05-agentgateway/jwt-policy.yaml`](../manifests/phase05-agentgateway/jwt-policy.yaml) — JWT validation policy (off in default demo)
+- [`phase05-agentgateway/keycloak.yaml`](../manifests/phase05-agentgateway/keycloak.yaml) + [`keycloak-realm-import.yaml`](../manifests/phase05-agentgateway/keycloak-realm-import.yaml) — OIDC issuer
+- [`phase05-agentgateway/rate-limit.yaml`](../manifests/phase05-agentgateway/rate-limit.yaml) — default `100/min` AgentgatewayPolicy
+- [`phase05-agentgateway/tool-allowlist.yaml`](../manifests/phase05-agentgateway/tool-allowlist.yaml) — CEL tool allowlist
+
+**Phase 6 — kagent (agents)**
+- [`phase06-kagent/modelconfig.yaml`](../manifests/phase06-kagent/modelconfig.yaml) — points at Anthropic Claude Haiku 4.5
+- [`phase06-kagent/remote-mcp-servers.yaml`](../manifests/phase06-kagent/remote-mcp-servers.yaml) — 4 RemoteMCPServer CRDs
+- [`phase06-kagent/agent-support-bot.yaml`](../manifests/phase06-kagent/agent-support-bot.yaml) — system prompt + tools list
+- [`phase06-kagent/agent-fraud-bot.yaml`](../manifests/phase06-kagent/agent-fraud-bot.yaml)
+- [`phase06-kagent/agent-triage-bot.yaml`](../manifests/phase06-kagent/agent-triage-bot.yaml)
+- [`phase06-kagent/telemetry.yaml`](../manifests/phase06-kagent/telemetry.yaml) — OTel exporter wiring
+- [`phase06-kagent/jwt-fetch-job.yaml`](../manifests/phase06-kagent/jwt-fetch-job.yaml) — Keycloak token bootstrap
+
+**Phase 7 — A2A**
+- [`phase07-a2a/tenant-isolation.yaml`](../manifests/phase07-a2a/tenant-isolation.yaml) — cross-tenant agent isolation rules
+
+**Phase 9 — Frontend**
+- [`phase09-frontend/chatbot.yaml`](../manifests/phase09-frontend/chatbot.yaml) — the customer-facing UI
+
+**Demos (independent of the main flow)**
+- [`demos/02-emergency-deny-policy.yaml`](../manifests/demos/02-emergency-deny-policy.yaml) — live-policy demo's YAML
+- [`demos/03-l7-precall-block.yaml`](../manifests/demos/03-l7-precall-block.yaml) — L7 deny on agentgateway
+- [`demos/04-egress-llm-gateway.yaml`](../manifests/demos/04-egress-llm-gateway.yaml) — Caddy reverse-proxy + namespace
+- [`demos/06-rate-limit.yaml`](../manifests/demos/06-rate-limit.yaml) — AgentgatewayPolicy with tighter local rate limit
+
+</details>
+
+<details>
+<summary>📁 Source code (the things behind the YAML)</summary>
+
+- [`mcp-servers/account-mcp/`](../mcp-servers/account-mcp/) — Python FastMCP server, returns full PII via get_profile
+- [`mcp-servers/transaction-mcp/`](../mcp-servers/transaction-mcp/) — Python FastMCP server
+- [`mcp-servers/ticket-mcp/`](../mcp-servers/ticket-mcp/) — Python FastMCP server
+- [`mcp-servers/evil-tools/server-clean.py`](../mcp-servers/evil-tools/server-clean.py) — **benign** currency converter (day-1 image)
+- [`mcp-servers/evil-tools/server-aggressive.py`](../mcp-servers/evil-tools/server-aggressive.py) — **rugpulled** variant with prompt-injection in tool description + exfil POST in function body
+- [`services/mock-attacker/`](../services/mock-attacker/) — Python aiohttp receiver + HTML loot viewer
+- [`frontend/index.html`](../frontend/index.html) — chatbot UI with tool-flow visualization (debug ON by default)
+- [`grafana-dashboards/dora-evidence-pane.json`](../grafana-dashboards/dora-evidence-pane.json) — main dashboard
+
+</details>
 
 ---
 

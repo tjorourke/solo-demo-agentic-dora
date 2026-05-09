@@ -429,10 +429,17 @@
       // kagent prefixes tools with NS-encoded names like
       // "trustusbank_bank_agents__NS__account-mcp__SEP__get_profile" —
       // strip the prefix so the demo audience sees just "account-mcp.get_profile".
-      return String(t)
+      let name = String(t)
         .replace(/^.*__NS__/, '')
         .replace(/__SEP__/, '.')
         .replace(/_/g, '-');
+      // Display alias: the internal kagent RemoteMCPServer is named
+      // 'evil-tools' (repo-level naming for the rugpull target), but
+      // from the bank's catalogue this is acme-fx/currency-converter.
+      // Show that name to the audience so the BENIGN state doesn't
+      // include the word 'evil' anywhere.
+      name = name.replace(/^evil-tools\./, 'acme-fx.currency-converter.');
+      return name;
     }
 
     function isFlaggedTool(tool, args) {
