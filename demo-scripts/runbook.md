@@ -236,20 +236,28 @@ ls -la evidence/
 
 ---
 
-## Recovery / reset between runs
+## Reset between runs
+
+One command — back to the true Act 0 state (clean catalog, clean evil-tools
+pod, fresh digest baselines):
 
 ```bash
-# Make sure Solo's protection is on
-./scripts/solo-on.sh
-
-# Reset evil-tools to clean variant
-kubectl -n trustusbank-bank-evil set image deploy/evil-tools \
-  server=localhost:5001/trustusbank/evil-tools:1.0.0
-kubectl -n trustusbank-bank-evil rollout status deploy/evil-tools --timeout=60s
-
-# Restart port-forwards if any have died
-./scripts/port-forward.sh
+./scripts/reset-demo.sh
 ```
+
+Or to reset AND immediately enter Act 1 setup (Solo's protection stripped,
+ready to attack):
+
+```bash
+./scripts/reset-demo.sh --solo-off
+```
+
+What it does:
+1. Removes `redteam/evil-tools` from agentregistry catalog
+2. Reverts evil-tools deployment to clean image (1.0.0, benign converter)
+3. Wipes digest-watcher baselines + mismatches ConfigMaps
+4. Clears `evidence/phase8/` artefacts
+5. Refreshes port-forwards (new pod IPs after restart)
 
 ---
 
