@@ -1,0 +1,37 @@
+# agentgateway → OTel collector → Tempo tracing wiring.
+#
+# The OSS agentgateway emits OpenTelemetry traces via its frontend
+# tracing policy. Without this manifest, traces from agentgateway
+# never reach Tempo (only the MCP server pods' own SDK traces do),
+# so 'service.name=trustusbank-agentgw' searches return empty.
+#
+# 100% sampling for the demo so every chat request shows up in Tempo.
+# In production you'd dial that down (e.g. randomSampling: "0.05" for
+# 5%) or use head-based sampling at the OTel collector.
+
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: agentgw-otel-tracing
+  namespace: trustusbank-platform
+  labels:
+    component: tracing
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: trustusbank-agentgw
+  frontend:
+    tracing:
+      protocol: GRPC
+      backendRef:
+        kind: Service
+        name: otel-collector-opentelemetry-collector
+        namespace: trustusbank-observability
+        port: 4317
+      randomSampling: "1.0"   # 100% for demo
+      clientSampling: "1.0"
+      attributes:
+        add:
+          - name: service.namespace
+            expression: '"trustusbank-platform"'

@@ -588,8 +588,30 @@
       // typing indicator while we wait
       const typingEl = showTyping();
 
+      // Generate a client-side traceparent for completeness, but don't
+      // claim it's the trace ID Tempo will store — the agents and MCP
+      // servers each start their own OTel trace via the SDK, regardless
+      // of this header. Instead, footer becomes a deep-link to Tempo
+      // filtered by the timestamp of THIS request, so clicking surfaces
+      // the trace that actually got emitted.
       const traceId = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-      metaEl.textContent = `trace: ${traceId}`;
+      const requestTimeMs = Date.now();
+      // Tempo Explore URL: search by service.name across the last few
+      // minutes around this request. The most recent trace at the top
+      // is the one we just generated.
+      const tempoStart = Math.floor((requestTimeMs - 60_000) / 1000);
+      const tempoEnd   = Math.floor((requestTimeMs + 60_000) / 1000);
+      const tempoQuery = encodeURIComponent('{resource.service.name="currency-converter"}');
+      const tempoLink  = `${location.origin.replace(/:1800\d/, ':18001')}/explore?` +
+        `schemaVersion=1&panes=` + encodeURIComponent(JSON.stringify({
+          tempo: {
+            datasource: 'tempo',
+            queries: [{ refId: 'A', datasource: { type: 'tempo', uid: 'tempo' },
+                         queryType: 'traceql', query: '{resource.service.name="currency-converter"}' }],
+            range: { from: String(tempoStart * 1000), to: String(tempoEnd * 1000) }
+          }
+        }));
+      metaEl.innerHTML = `<a href="${tempoLink}" target="_blank" rel="noopener" style="color:#7c9bf0;text-decoration:none;">→ open this trace in Tempo</a>`;
 
       try {
         // A2A is JSON-RPC over HTTP at the base path
