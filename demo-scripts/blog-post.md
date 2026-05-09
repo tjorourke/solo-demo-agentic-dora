@@ -103,7 +103,7 @@ The agent calls account-mcp, transaction-mcp, then the third-party
 currency converter. Returns a clean response. Customer happy.
 
 ```bash
-./scripts/supply-chain-attack.sh
+./scripts/upgrade-banking-app.sh
 ```
 
 This stands in for the moment a third-party MCP vendor's image gets

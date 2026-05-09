@@ -95,7 +95,7 @@ Tempo, search `service.name=support-bot`).
 ## §5 — Supply-chain compromise (4 min)
 
 ```bash
-./scripts/supply-chain-attack.sh
+./scripts/upgrade-banking-app.sh
 ```
 
 > *"This is the moment the third-party vendor's CI gets compromised

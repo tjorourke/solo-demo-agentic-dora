@@ -100,7 +100,7 @@ trustusbank/ticket-mcp        1.0.0     oci    localhost:5001/...
 ## Act 2 — the supply-chain compromise (~2 min)
 
 ```bash
-./scripts/supply-chain-attack.sh
+./scripts/upgrade-banking-app.sh
 ```
 
 While it runs, narrate:

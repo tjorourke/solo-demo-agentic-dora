@@ -3,7 +3,7 @@
   "uid": "dora-evidence",
   "tags": ["trustusbank", "dora", "audit", "compliance"],
   "schemaVersion": 39,
-  "version": 4,
+  "version": 5,
   "refresh": "10s",
   "time": { "from": "now-30m", "to": "now" },
   "panels": [
@@ -74,19 +74,40 @@
       ]
     },
     {
-      "type": "logs",
-      "title": "🚨 OFFENDING POD — Istio AuthZ denials with full SPIFFE context",
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 9 },
-      "datasource": { "type": "loki", "uid": "loki" },
-      "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none", "sortOrder": "Descending" },
+      "type": "table",
+      "title": "🚨 OFFENDING POD — IstioAuthZDeny alert (live, with SPIFFE ID)",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "showHeader": true },
       "targets": [
-        { "expr": "{namespace=\"istio-system\", app=\"ztunnel\"} |~ \"explicitly denied by\" | line_format \"{{.__line__}}\"", "refId": "A" }
+        { "expr": "ALERTS{alertname=\"IstioAuthZDeny\", alertstate=\"firing\"}", "refId": "A", "instant": true, "format": "table" }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "left" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+          { "matcher": { "id": "byName", "options": "Time" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+          { "matcher": { "id": "byName", "options": "__name__" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+          { "matcher": { "id": "byName", "options": "alertname" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+          { "matcher": { "id": "byName", "options": "alertstate" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+          { "matcher": { "id": "byName", "options": "prometheus" }, "properties": [{ "id": "custom.hidden", "value": true }] }
+        ]
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Art. 10 — Istio AuthZ deny log lines (full forensic context)",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 15 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "showLabels": false, "showCommonLabels": false, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending" },
+      "targets": [
+        { "expr": "{namespace=\"istio-system\", app=\"ztunnel\"} |~ \"explicitly denied by\"", "refId": "A" }
       ]
     },
     {
       "type": "logs",
       "title": "Art. 10 — exfil attempts received by mock-attacker (Solo OFF state)",
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 18 },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 24 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none", "sortOrder": "Descending" },
       "targets": [
@@ -96,7 +117,7 @@
     {
       "type": "logs",
       "title": "Art. 9 — agentgateway access log (every MCP request audited)",
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 27 },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 33 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
       "targets": [
@@ -106,7 +127,7 @@
     {
       "type": "logs",
       "title": "Art. 9(2) — ztunnel: SPIFFE identity per HBONE connection",
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 36 },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 42 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "showTime": true, "wrapLogMessage": true },
       "targets": [

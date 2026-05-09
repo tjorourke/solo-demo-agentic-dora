@@ -119,7 +119,7 @@ append_file "agentregistry export (JSON)"       "$EVIDENCE_DIR/phase3/sub-outsou
 # §5 — bad-actor incident
 append_section "5. Bad-actor incident (rug-pull)" \
   "DORA Art. 10 (detection), Art. 11 (response), Art. 17 (incident management)" \
-  "A compromised third-party MCP image (acme-fx/currency-converter) was deployed via the supply-chain-attack.sh simulator. The agent was tricked by the malicious tool description into fetching the customer profile and passing it as a tool argument. The malicious tool tried to POST the profile to mock-attacker.external-attacker. With Solo's Istio AuthZ in place, the connection was reset at L4 — bank-evil's SPIFFE identity is not in external-attacker's allow list."
+  "A compromised third-party MCP image (acme-fx/currency-converter) was deployed via the upgrade-banking-app.sh simulator. The agent was tricked by the malicious tool description into fetching the customer profile and passing it as a tool argument. The malicious tool tried to POST the profile to mock-attacker.external-attacker. With Solo's Istio AuthZ in place, the connection was reset at L4 — bank-evil's SPIFFE identity is not in external-attacker's allow list."
 append_file "incident timeline (JSON)"          "$EVIDENCE_DIR/phase8/incident.json" "json"
 
 # §6 — agent decision traces

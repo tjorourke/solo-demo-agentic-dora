@@ -1,16 +1,54 @@
-# Alerts that fire when ztunnel reports an AuthZ denial OR when the
-# mock-attacker actually receives an exfiltration POST.
+# Surfaces ztunnel AuthZ denies as Prometheus metrics + alerts.
 #
-# Two alert sources:
-#  1. PrometheusRule (this file) — tracks Istio's istio_requests_total
-#     metric for response codes 403/503 from the destination side. Fires
-#     when the agentgateway data plane (which IS in the metric pipeline)
-#     denies a request.
-#  2. The DORA Evidence dashboard — counts log lines via Loki query.
-#     The Loki Ruler isn't shipped by default in kube-prometheus-stack,
-#     so dashboard panels are how we surface the L4 deny visibility. The
-#     stat panel goes red on > 0 in the last 5 minutes.
+# What's here:
+#   1. PodMonitor `ztunnel-metrics` — kube-prometheus-stack's Prometheus
+#      Operator watches PodMonitor CRDs and configures Prometheus to
+#      scrape matching pods directly. ztunnel is a DaemonSet so a
+#      PodMonitor is the cleanest fit (no need for a fronting Service).
+#      The `prometheus.io/scrape` pod annotation is the OTHER way to do
+#      this, but kube-prometheus-stack ships with CRD discovery rather
+#      than annotation discovery, so the annotation alone wouldn't be
+#      picked up here.
+#   2. PrometheusRule `trustusbank-authz-denials` with two rules:
+#       - IstioAuthZDeny: fires on the rate of failed HBONE handshakes
+#         to external-attacker. ztunnel emits this as
+#         istio_tcp_connections_failed_total{response_flags="CONNECT"}
+#         every time AuthorizationPolicy rejects a connection. Labels
+#         include source_workload + source_principal (SPIFFE) — that's
+#         your offending-pod identification.
+#       - BankToAttackerAttempt: catches BOTH allowed and denied attempts
+#         on the bank → external-attacker path, so the alert fires when
+#         Solo is OFF (attack succeeded) and stays firing through the
+#         "we just enabled Solo" transition. This is the one that lights
+#         up Prometheus Alerts UI red the moment the upgraded vendor tool
+#         tries to call out.
+#
+# Why this works where the previous istio_requests_total rule didn't:
+# istio_requests_total is L7 only. AuthZ deny rejects at L4 inside ztunnel
+# before HTTP, so the L7 metric stays at zero. ztunnel's own TCP counters
+# capture the deny.
 
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ztunnel-metrics
+  namespace: trustusbank-observability
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - istio-system
+  selector:
+    matchLabels:
+      app: ztunnel
+  podMetricsEndpoints:
+    - port: ztunnel-stats   # the named port on the ztunnel container
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+
+---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -23,10 +61,12 @@ spec:
     - name: trustusbank.authz
       interval: 15s
       rules:
+
         - alert: IstioAuthZDeny
           expr: |
-            sum by (destination_service_namespace, destination_service_name)
-              (rate(istio_requests_total{response_code=~"403|503", reporter="destination"}[2m])) > 0
+            sum by (source_workload, source_workload_namespace, source_principal,
+                    destination_service_namespace, destination_service_name)
+              (rate(istio_tcp_connections_failed_total{response_flags="CONNECT"}[2m])) > 0
           for: 0m
           labels:
             severity: critical
@@ -35,10 +75,33 @@ spec:
           annotations:
             summary: "Istio AuthZ denied a connection — possible attack in progress"
             description: |
-              ztunnel is denying connections to
-              {{ $labels.destination_service_namespace }}/{{ $labels.destination_service_name }}.
-              Pull the offending pod's identity from the ztunnel access log:
+              ztunnel rejected an HBONE handshake.
+                offending pod:    {{ $labels.source_workload }} ({{ $labels.source_workload_namespace }})
+                offending SPIFFE: {{ $labels.source_principal }}
+                target service:   {{ $labels.destination_service_name }} ({{ $labels.destination_service_namespace }})
+              Pull the deny line from ztunnel logs for full forensic context:
                 {namespace="istio-system", app="ztunnel"} |~ "explicitly denied by"
-              The deny line includes src.workload (the offending pod) and
-              src.identity (its SPIFFE ID).
             runbook: "demo-scripts/runbook.md#act-3---deploy-solo"
+
+        - alert: BankToAttackerAttempt
+          expr: |
+            sum by (source_workload, source_workload_namespace, source_principal)
+              (rate(istio_tcp_connections_opened_total{
+                source_workload_namespace=~"trustusbank-bank-.*|trustusbank-platform",
+                destination_workload_namespace="external-attacker"
+              }[2m])) > 0
+          for: 0m
+          labels:
+            severity: critical
+            dora_article: "10"
+            nis2_clause: "21(2)(b)"
+          annotations:
+            summary: "Bank workload is talking to external-attacker"
+            description: |
+              A pod inside a trustusbank-* namespace is opening connections to
+              the external-attacker namespace. Whether the connection completes
+              (Solo OFF) or is rejected (Solo ON), the attempt itself is the
+              IOC and proves the upgraded vendor tool is doing exfiltration.
+                offending pod:    {{ $labels.source_workload }} ({{ $labels.source_workload_namespace }})
+                offending SPIFFE: {{ $labels.source_principal }}
+            runbook: "demo-scripts/runbook.md"

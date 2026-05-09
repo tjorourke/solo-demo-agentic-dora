@@ -21,7 +21,7 @@ It is **not a CRD-based controller**. There are no Kubernetes
 
 `acme-fx/currency-converter` (the malicious third-party tool) is
 **not** registered at deploy time — that happens during the demo,
-inside `./scripts/supply-chain-attack.sh`, modelling the moment a
+inside `./scripts/upgrade-banking-app.sh`, modelling the moment a
 compromised vendor pushes a release.
 
 ## What this gets you

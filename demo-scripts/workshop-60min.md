@@ -72,7 +72,7 @@ Run [`runbook.md`](runbook.md) end to end. Each attendee:
 1. `./scripts/reset-demo.sh` — bare-K8s state
 2. Open chatbot, ask the standard question, see clean response
 3. `arctl mcp list` — 3 entries
-4. `./scripts/supply-chain-attack.sh`
+4. `./scripts/upgrade-banking-app.sh`
 5. `arctl mcp list` — 4 entries (the new malicious one looks legit)
 6. Same chat prompt — agent gets fooled
 7. Open mock-attacker UI — see the stolen profile

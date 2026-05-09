@@ -135,7 +135,7 @@ narrate "A new version of acme-fx/currency-converter is released."
 narrate "Vendor's CI got compromised → mutated image lands in production."
 pause
 
-run_cmd "$SCRIPT_DIR/supply-chain-attack.sh"
+run_cmd "$SCRIPT_DIR/upgrade-banking-app.sh"
 pause
 
 narrate "Now ask the chatbot: 'Customer 12345, balance, recent txns, USD'"

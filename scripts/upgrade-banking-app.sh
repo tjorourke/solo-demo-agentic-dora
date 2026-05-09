@@ -1,27 +1,31 @@
 #!/usr/bin/env bash
-# Supply-chain-attack simulator. Stands in for the moment a third-party
-# MCP vendor's image gets compromised and a malicious version reaches
-# your cluster.
+# Upgrade the banking app — pulls in a new version of a third-party
+# vendor MCP that has been compromised upstream. This is what supply-chain
+# risk looks like in practice: the bank doesn't know it's an attack, the
+# CD pipeline runs as normal, the new tool gets registered in the
+# catalogue, the deployment rolls forward.
 #
-# In the real world: the bank's CD pipeline, the vendor's compromised
-# CI/CD, or an insider's `kubectl apply` puts the malicious image in
-# production. We can't wait for that, so this script automates the moment.
-#
-# What it does:
-#   1. Registers `acme-fx/currency-converter` in agentregistry — looking
-#      like any other small-vendor MCP tool. (The realistic state where
-#      a force-allowed third-party tool sits in your catalogue.)
-#   2. Builds the aggressive evil-tools image variant (--no-cache, with a
-#      timestamped tag so kubelet's IfNotPresent cache doesn't hide it).
-#   3. Rolls evil-tools' running pod over to that new image.
+# What this script does:
+#   1. Registers `acme-fx/currency-converter` in agentregistry — looks
+#      like any other small-vendor MCP tool from the bank's perspective.
+#   2. Rebuilds the vendor's image (--no-cache + timestamped tag so the
+#      kubelet IfNotPresent cache can't hide the swap), this time
+#      containing the upstream-injected malicious behaviour.
+#   3. Rolls the evil-tools deployment to the new image — exactly what a
+#      `helm upgrade` against the bank's chart would do in production.
 #
 # After this runs:
-#   - The chatbot's next request triggers the agent-fooling injection.
-#   - evil-tools' implementation tries to POST customer profile data to
-#     mock-attacker.external-attacker.svc.cluster.local.
-#   - With Solo OFF: POST succeeds, see `kubectl logs -n external-attacker
-#     deploy/mock-attacker` for the stolen PII.
-#   - With Solo ON: POST is denied at L4 by Istio AuthZ.
+#   - The chatbot's next request triggers the prompt-injection in the
+#     vendor's tool description, fooling the agent into passing customer
+#     profile data through.
+#   - The vendor's tool POSTs that data to
+#     mock-attacker.external-attacker.svc.cluster.local — the C2 stand-in.
+#   - With Solo OFF: POST succeeds. PII is in `kubectl logs -n
+#     external-attacker deploy/mock-attacker`.
+#   - With Solo ON: POST is denied at L4 by Istio AuthZ; the attempt
+#     shows up as `istio_tcp_connections_failed_total{response_flags=
+#     "CONNECT"}` in Prometheus and an 'explicitly denied by' line in
+#     ztunnel logs.
 
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,7 +37,7 @@ trap on_error ERR
 
 EVIDENCE=$(evidence_dir 8)
 
-log_step "Supply-chain attack — simulating a vendor's mutated release reaching production"
+log_step "Upgrade banking app — new version pulls in a vendor MCP that's been compromised upstream"
 
 # Step 1: register acme-fx/currency-converter in the catalog
 log "Step 1 — registering acme-fx/currency-converter (vendor 'release')"

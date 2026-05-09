@@ -45,7 +45,7 @@ Switch to **mock-attacker** (tab 2) → 0 events.
 ### 0:30 — the supply-chain compromise (2 min)
 
 ```bash
-./scripts/supply-chain-attack.sh
+./scripts/upgrade-banking-app.sh
 ```
 
 > *"acme-fx.io just shipped a new version of their currency converter.

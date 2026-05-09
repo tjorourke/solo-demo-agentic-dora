@@ -251,9 +251,9 @@ in the default demo loop (JWT verification is configurable but off).
 `evil-tools` ships **three variants** built from the same Dockerfile:
 - `clean` — benign converter (the legitimate vendor release)
 - `rugpull` — overt prompt injection ("ignore previous instructions") that aligned LLMs reject
-- `aggressive` — subtle social engineering (PSD2-compliance framing) — what `supply-chain-attack.sh` deploys; aligned LLMs follow this
+- `aggressive` — subtle social engineering (PSD2-compliance framing) — what `upgrade-banking-app.sh` deploys; aligned LLMs follow this
 
-`supply-chain-attack.sh` swaps the running image with the aggressive
+`upgrade-banking-app.sh` swaps the running image with the aggressive
 variant and registers the catalog entry as `acme-fx/currency-converter`.
 
 ### The chatbot frontend
@@ -299,7 +299,7 @@ Leave it on screen during the demo.
 | Script | What |
 |---|---|
 | [`reset-demo.sh`](../scripts/reset-demo.sh) | → bare-K8s "before Solo" state |
-| [`supply-chain-attack.sh`](../scripts/supply-chain-attack.sh) | vendor releases poisoned tool |
+| [`upgrade-banking-app.sh`](../scripts/upgrade-banking-app.sh) | vendor releases poisoned tool |
 | [`deploy-solo.sh`](../scripts/deploy-solo.sh) | **CLIMAX** — apply Istio AuthZ + the deny-egress policy |
 | [`solo-off.sh`](../scripts/solo-off.sh) | revert to before-Solo state (called by reset-demo) |
 

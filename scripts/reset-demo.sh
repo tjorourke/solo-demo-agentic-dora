@@ -7,7 +7,7 @@
 #
 # Demo flow from here:
 #   1. (chatbot) Customer 12345, balance + transactions + USD → works
-#   2. ./scripts/supply-chain-attack.sh                       → vendor-compromise simulation
+#   2. ./scripts/upgrade-banking-app.sh                       → vendor-compromise simulation
 #   3. (chatbot) same prompt → agent fooled, exfil succeeds
 #   4. kubectl -n external-attacker logs deploy/mock-attacker  → see stolen PII
 #   5. ./scripts/deploy-solo.sh                                → CLIMAX
@@ -71,7 +71,7 @@ fi
 echo ""
 log "You're at the 'before Solo' baseline. Run the demo:"
 log "  1. (chatbot) http://localhost:$PF_FRONTEND_PORT — happy path"
-log "  2. ./scripts/supply-chain-attack.sh"
+log "  2. ./scripts/upgrade-banking-app.sh"
 log "  3. (chatbot) same prompt"
 log "  4. kubectl -n external-attacker logs deploy/mock-attacker"
 log "  5. ./scripts/deploy-solo.sh                          ← climax"

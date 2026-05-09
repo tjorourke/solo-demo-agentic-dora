@@ -24,7 +24,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 # (in chatbot at :18009) "Customer 12345, balance, transactions, convert to USD"
 arctl mcp list                             # 3 tools
 
-./scripts/supply-chain-attack.sh           # vendor releases a poisoned version
+./scripts/upgrade-banking-app.sh           # vendor releases a poisoned version
 arctl mcp list                             # 4 tools — looks normal
 # (in chatbot) same prompt — agent gets fooled
 kubectl -n external-attacker logs deploy/mock-attacker
@@ -206,7 +206,7 @@ dora-demo/
 ├── scripts/
 │   ├── deploy-all.sh                # full one-time deploy
 │   ├── reset-demo.sh                # → before-Solo state, ready for the loop
-│   ├── supply-chain-attack.sh       # vendor-compromise simulator
+│   ├── upgrade-banking-app.sh       # vendor-compromise simulator
 │   ├── deploy-solo.sh               # CLIMAX — apply protection
 │   ├── solo-off.sh                  # revert (called by reset-demo)
 │   ├── port-forward.sh, list-urls.sh
