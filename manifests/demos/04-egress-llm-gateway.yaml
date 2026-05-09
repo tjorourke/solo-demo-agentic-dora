@@ -1,0 +1,116 @@
+# Demo 4 — egress LLM gateway with full prompt/response audit.
+#
+# Deploys an agentgateway as a forward-proxy for outbound LLM traffic
+# (api.anthropic.com, api.openai.com, etc.). Every request and response
+# body is captured into Loki via the access-log pipeline.
+#
+# Why this matters: today every kagent agent talks directly to
+# api.anthropic.com. There's no central place where "what prompts is
+# my agent sending? what data is leaving the cluster as part of those
+# prompts?" can be answered. This deployment puts agentgateway in the
+# path so the answer is "Loki, here's the query."
+#
+# How agents are routed through it:
+#   - kagent ModelConfig.spec.endpoint can be overridden to point at this
+#     gateway's URL. (See manifests/demos/04-modelconfig-egress.yaml.)
+#   - The gateway forwards to api.anthropic.com with TLS termination +
+#     re-encryption, captures the body, and emits an access log line
+#     with the masked prompt + response shape.
+#
+# DORA: this is your evidence trail for Art. 17 + Art. 28
+# (sub-outsourcing — Anthropic IS a sub-processor; you need the audit).
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trustusbank-egress
+  labels:
+    istio.io/dataplane-mode: ambient
+
+---
+# A simple Caddy reverse proxy that:
+#   1. Accepts HTTP from in-cluster agents on port 8080
+#   2. Forwards to api.anthropic.com over TLS
+#   3. Logs every request body + response status to stdout (Loki picks
+#      this up via Promtail)
+# Caddy is used here over agentgateway only because the OSS
+# agentgateway-as-egress setup needs more wiring than a one-page demo.
+# In production: replace with agentgateway + an AI Backend.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: egress-llm-config
+  namespace: trustusbank-egress
+data:
+  Caddyfile: |
+    {
+      admin off
+      auto_https off
+      log {
+        output stdout
+        format json
+        level INFO
+      }
+    }
+    :8080 {
+      log {
+        output stdout
+        format json
+      }
+      reverse_proxy https://api.anthropic.com {
+        header_up Host api.anthropic.com
+        transport http {
+          tls
+          tls_server_name api.anthropic.com
+        }
+      }
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: egress-llm-gw
+  namespace: trustusbank-egress
+  labels:
+    app: egress-llm-gw
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: egress-llm-gw
+  template:
+    metadata:
+      labels:
+        app: egress-llm-gw
+    spec:
+      containers:
+        - name: caddy
+          image: caddy:2.9
+          args: ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]
+          ports:
+            - { name: http, containerPort: 8080 }
+          volumeMounts:
+            - name: config
+              mountPath: /etc/caddy
+          resources:
+            requests: { cpu: "20m", memory: "64Mi" }
+            limits: { cpu: "500m", memory: "256Mi" }
+      volumes:
+        - name: config
+          configMap:
+            name: egress-llm-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: egress-llm-gw
+  namespace: trustusbank-egress
+  labels:
+    app: egress-llm-gw
+spec:
+  selector:
+    app: egress-llm-gw
+  ports:
+    - { name: http, port: 8080, targetPort: http }

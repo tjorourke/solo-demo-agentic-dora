@@ -308,6 +308,23 @@ ls -la evidence/
 
 ---
 
+## Follow-on demos
+
+For 20-minute deep-dives after the main 5-minute story, see
+[`demos.md`](demos.md). Six standalone scripts covering:
+
+  1. Distributed trace of the attack (`scripts/demos/01-trace-attack.sh`)
+  2. Live policy authoring (`scripts/demos/02-live-policy.sh`)
+  3. **L7 pre-call blocking** — defense-in-depth on top of the L4 deny (`scripts/demos/03-l7-precall-block.sh`)
+  4. Egress LLM gateway with prompt audit (`scripts/demos/04-egress-llm-audit.sh`)
+  5. Agent-to-Agent (A2A) over HBONE (`scripts/demos/05-a2a-handoff.sh`)
+  6. Rate limiting on agentgateway (`scripts/demos/06-rate-limit.sh`)
+
+Each is independently runnable. Tailor your 20-min slot to whatever
+the room cares about.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |

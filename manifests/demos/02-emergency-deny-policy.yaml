@@ -1,0 +1,26 @@
+# Demo 2 — emergency deny policy that the platform team writes on stage.
+# Same shape as the deploy-solo.sh policies, but written explicitly to
+# block ONE specific vendor: acme-fx/currency-converter.
+#
+# Why this is the demo's punchline: every customer asks "how do I add a
+# rule?" — this is the answer. 12 lines, kubectl apply, live in ~5s.
+
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-acme-fx-everywhere
+  namespace: trustusbank-bank-evil
+  labels:
+    demo: live-policy
+    incident: SEC-2026-0042  # the ticket number the SOC opened
+spec:
+  action: DENY
+  rules:
+    - to:
+        - operation:
+            ports: ["8080"]
+      from:
+        - source:
+            namespaces:
+              - "trustusbank-bank-agents"
+              - "trustusbank-platform"

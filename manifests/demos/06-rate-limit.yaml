@@ -1,0 +1,40 @@
+# Demo 6 — local rate limit on agentgateway via native AgentgatewayPolicy.
+#
+# 5 requests / minute, burst of 5. Beyond that agentgateway returns 429
+# Too Many Requests. The values are aggressive for the demo so 429s show
+# up immediately; production values would typically be 100s of req/sec.
+#
+# Note: the cluster already ships with a per-gateway-rate-limit policy
+# (100/min) applied at deploy time. This manifest applies a TIGHTER
+# additional policy so the audience watches 429s appear within seconds
+# of an obvious burst. Both policies stack; the most restrictive wins.
+#
+# Defends against:
+#   - A bug-looped agent calling tools 10k×/min (cost runaway)
+#   - A compromised agent attempting DOS before AuthZ catches it
+#   - LLM hallucinations causing infinite tool-call retry loops
+#
+# DORA Art. 9(3) — protection against system overload.
+#
+# Native agentgateway also supports `tokens:` (LLM-token-based limits)
+# instead of `requests:` — useful when the cost driver is LLM tokens
+# rather than HTTP calls.
+
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: agentgw-rate-limit-demo
+  namespace: trustusbank-platform
+  labels:
+    demo: rate-limit
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: trustusbank-agentgw
+  traffic:
+    rateLimit:
+      local:
+        - unit: Minutes
+          requests: 5
+          burst: 5
