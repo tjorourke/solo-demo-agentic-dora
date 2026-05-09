@@ -44,6 +44,12 @@ spec:
               - "cluster.local/ns/trustusbank-bank-agents/sa/fraud-bot"
               - "cluster.local/ns/trustusbank-bank-agents/sa/triage-bot"
               - "cluster.local/ns/trustusbank-platform/sa/trustusbank-agentgw"
+              # Ambient waypoints sit in the source path between caller
+              # and target; from ztunnel's view at MCP-pod inbound, the
+              # source identity is the bank-mcp namespace's waypoint SA,
+              # not the original agent. Without this, MCP calls 503 with
+              # "allow policies exist, but none allowed".
+              - "cluster.local/ns/trustusbank-bank-mcp/sa/waypoint"
 EOF
 
 # bank-agents: chatbot + kagent UI may invoke agents; agents may A2A
@@ -66,6 +72,14 @@ spec:
               - "cluster.local/ns/trustusbank-bank-agents/sa/support-bot"
               - "cluster.local/ns/trustusbank-bank-agents/sa/fraud-bot"
               - "cluster.local/ns/trustusbank-bank-agents/sa/triage-bot"
+              # Same Ambient-with-waypoint quirk as in bank-mcp above.
+              # The bank-agents waypoint sits in front of the agent
+              # pods, so from ztunnel's view of the inbound to support-bot
+              # / fraud-bot / triage-bot, the source SA is the waypoint,
+              # not the original caller. Without this entry, A2A calls
+              # (and any chatbot→agent route that transits the waypoint)
+              # return 503 'upstream connect error'.
+              - "cluster.local/ns/trustusbank-bank-agents/sa/waypoint"
 EOF
 
 # bank-evil: only the agentgateway may proxy to evil-tools (so support-bot
