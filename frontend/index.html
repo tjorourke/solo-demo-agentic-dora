@@ -151,6 +151,20 @@
     }
     .quick button:hover { border-color: var(--tb-blue); color: var(--tb-blue); }
 
+    /* Typing/loading indicator */
+    .msg.typing { background: var(--tb-grey); padding: 14px 18px; max-width: 85px; }
+    .typing .dots { display: inline-flex; gap: 4px; }
+    .typing .dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--tb-muted);
+      animation: typing-bounce 1.2s infinite ease-in-out;
+    }
+    .typing .dot:nth-child(2) { animation-delay: 0.15s; }
+    .typing .dot:nth-child(3) { animation-delay: 0.30s; }
+    @keyframes typing-bounce {
+      0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+      30% { opacity: 1; transform: translateY(-4px); }
+    }
+
     .header-controls { display: flex; gap: 14px; align-items: center; }
     .debug-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1; cursor: pointer; user-select: none; }
     .debug-toggle input { cursor: pointer; }
@@ -162,15 +176,36 @@
     }
     .debug-block summary {
       cursor: pointer; color: var(--tb-muted); font-family: ui-monospace, monospace;
+      display: flex; align-items: center; gap: 8px;
     }
+    .debug-block summary::marker { content: ''; }
+    .debug-block summary::-webkit-details-marker { display: none; }
+    .debug-block summary::before { content: '▶ '; }
+    .debug-block[open] summary::before { content: '▼ '; }
+    .debug-toolbar {
+      display: flex; gap: 6px; margin: 6px 0 0;
+      align-items: center;
+    }
+    .debug-toolbar button {
+      background: #1e293b; color: #cbd5e1;
+      border: 1px solid #334155; border-radius: 4px;
+      padding: 3px 8px; font-size: 11px;
+      cursor: pointer; font-family: inherit;
+    }
+    .debug-toolbar button:hover { background: #334155; color: white; }
+    .debug-toolbar button.copied { background: #16a34a; color: white; }
+    .debug-toolbar .grow { flex: 1; }
     .debug-block pre {
       background: #0a2540; color: #cbd5e1;
       padding: 10px; border-radius: 6px;
-      overflow: auto; max-height: 240px;
+      overflow: auto;
       font-family: ui-monospace, monospace;
-      font-size: 11px;
-      margin: 6px 0 0;
+      margin: 0;
       white-space: pre-wrap; word-break: break-all;
+      max-height: 240px;
+    }
+    .debug-block.expanded pre {
+      max-height: none;
     }
     .agent-step {
       font-size: 12px; color: var(--tb-muted);
@@ -276,6 +311,15 @@
       return div;
     }
 
+    function showTyping() {
+      const div = document.createElement('div');
+      div.className = 'msg bot typing';
+      div.innerHTML = '<span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+      return div;
+    }
+
     // Show a tool-call step (only when debug is on)
     function addAgentStep(text) {
       if (!debugToggle.checked) return;
@@ -286,7 +330,8 @@
       log.scrollTop = log.scrollHeight;
     }
 
-    // Append a collapsible <details> with raw JSON, only when debug is on
+    // Append a collapsible <details> with raw JSON, only when debug is on.
+    // Toolbar: font-size A-/A+, expand-fullscreen, copy.
     function addDebugBlock(label, payload) {
       if (!debugToggle.checked) return;
       const det = document.createElement('details');
@@ -294,8 +339,41 @@
       const sum = document.createElement('summary');
       sum.textContent = label;
       const pre = document.createElement('pre');
-      pre.textContent = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
-      det.appendChild(sum); det.appendChild(pre);
+      let fontSize = 11;
+      pre.style.fontSize = fontSize + 'px';
+      const text = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+      pre.textContent = text;
+
+      const toolbar = document.createElement('div');
+      toolbar.className = 'debug-toolbar';
+      toolbar.innerHTML = `
+        <button data-act="smaller">A−</button>
+        <button data-act="larger">A+</button>
+        <button data-act="expand">expand</button>
+        <span class="grow"></span>
+        <button data-act="copy">📋 copy</button>
+      `;
+      toolbar.addEventListener('click', (e) => {
+        const btn = e.target.closest('button'); if (!btn) return;
+        e.preventDefault();
+        const act = btn.dataset.act;
+        if (act === 'smaller') { fontSize = Math.max(9, fontSize - 1); pre.style.fontSize = fontSize + 'px'; }
+        else if (act === 'larger') { fontSize = Math.min(24, fontSize + 1); pre.style.fontSize = fontSize + 'px'; }
+        else if (act === 'expand') {
+          det.classList.toggle('expanded');
+          btn.textContent = det.classList.contains('expanded') ? 'collapse' : 'expand';
+        }
+        else if (act === 'copy') {
+          navigator.clipboard.writeText(text).then(() => {
+            btn.classList.add('copied'); btn.textContent = '✓ copied';
+            setTimeout(() => { btn.classList.remove('copied'); btn.textContent = '📋 copy'; }, 1400);
+          });
+        }
+      });
+
+      det.appendChild(sum);
+      det.appendChild(toolbar);
+      det.appendChild(pre);
       log.appendChild(det);
       log.scrollTop = log.scrollHeight;
     }
@@ -322,6 +400,9 @@
       promptEl.value = '';
       sendBtn.disabled = true;
       add(text, 'user');
+
+      // typing indicator while we wait
+      const typingEl = showTyping();
 
       const traceId = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
       metaEl.textContent = `trace: ${traceId}`;
@@ -397,6 +478,8 @@
       } catch (e) {
         add(`(error talking to agent: ${e.message})`, 'bot', 'system');
       } finally {
+        // remove the typing indicator regardless of outcome
+        if (typingEl && typingEl.parentNode) typingEl.parentNode.removeChild(typingEl);
         sendBtn.disabled = false;
         promptEl.focus();
       }

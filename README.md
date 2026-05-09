@@ -206,6 +206,8 @@ say at each step: [`demo-scripts/runbook.md`](demo-scripts/runbook.md)
 
 Component-by-component reference: [`demo-scripts/components.md`](demo-scripts/components.md)
 
+How this attack happens for real (not via a script): [`demo-scripts/real-world-attacks.md`](demo-scripts/real-world-attacks.md)
+
 ---
 
 ## URLs
