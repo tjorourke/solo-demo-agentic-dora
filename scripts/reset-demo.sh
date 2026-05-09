@@ -1,20 +1,17 @@
 #!/usr/bin/env bash
 # Reset the demo to a clean baseline. Run this between demo runs.
 #
-# What this does:
-#   1. Removes redteam/evil-tools from agentregistry catalog
-#   2. Reverts evil-tools deployment to the clean image (1.0.0)
-#   3. Wipes digest-watcher baselines + mismatches ConfigMaps
-#   4. Cleans up evidence/phase8/ artefacts
-#   5. Restarts port-forwards
-#   6. (default) leaves Solo's protection layers ON; pass --solo-off to
-#      strip them after reset.
+# After this script you're at "the bank, before Solo": no AuthZ,
+# no acme-fx in the catalog, evil-tools running the clean variant,
+# mock-attacker has no loot.
 #
-# After this script:
-#   - agentregistry catalog has only 3 legitimate trustusbank/* MCPs
-#   - evil-tools pod is running the clean variant (benign converter)
-#   - digest-watcher baselines re-establish on its next 30s tick
-#   - You're ready to run a fresh demo from Act 0
+# Demo flow from here:
+#   1. (chatbot) Customer 12345, balance + transactions + USD → works
+#   2. ./scripts/supply-chain-attack.sh                       → vendor-compromise simulation
+#   3. (chatbot) same prompt → agent fooled, exfil succeeds
+#   4. kubectl -n external-attacker logs deploy/mock-attacker  → see stolen PII
+#   5. ./scripts/deploy-solo.sh                                → CLIMAX
+#   6. (chatbot) same prompt → agent fooled the same way, but exfil now BLOCKED
 
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,20 +21,14 @@ source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
 trap on_error ERR
 
-THEN_SOLO_OFF=0
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --solo-off) THEN_SOLO_OFF=1; shift ;;
-    *) die "unknown arg: $1" ;;
-  esac
-done
+log_step "Resetting demo to clean 'before Solo' baseline"
 
-log_step "Resetting demo to clean baseline"
+# 1. Strip Solo's protection (puts us in the bare-K8s starting state)
+log "1/5 — stripping Solo's protection layers (solo-off)"
+"$SCRIPT_DIR/solo-off.sh" 2>&1 | sed 's/^/    /'
 
-# 1. Drop the acme-fx/currency-converter (the malicious 3rd-party tool)
-#    plus the legacy redteam/evil-tools name in case someone has an old
-#    state from before the rename.
-log "1/5 — removing acme-fx/currency-converter from agentregistry"
+# 2. Remove acme-fx/currency-converter from agentregistry
+log "2/5 — removing acme-fx/currency-converter from agentregistry"
 if command -v arctl >/dev/null 2>&1; then
   ( kubectl -n "$NS_PLATFORM" port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
   AREG_PF_PID=$!; sleep 2
@@ -47,51 +38,41 @@ if command -v arctl >/dev/null 2>&1; then
       | sed 's/^/    /' || true
   done
   kill "$AREG_PF_PID" 2>/dev/null || true
-else
-  log_warn "    arctl not installed — skipping registry cleanup"
 fi
 
-# 2. Revert evil-tools deployment to the clean image
-log "2/5 — reverting evil-tools deployment to clean image"
-docker image inspect "$IMG_EVIL_CLEAN" >/dev/null 2>&1 || {
+# 3. Revert evil-tools to the clean (benign) variant
+log "3/5 — reverting evil-tools deployment to clean image"
+if ! docker image inspect "$IMG_EVIL_CLEAN" >/dev/null 2>&1; then
   log "    (clean image not local — rebuilding)"
   docker build --build-arg VARIANT=clean -t "$IMG_EVIL_CLEAN" \
     "$MCP_SRC_DIR/evil-tools" 2>&1 | tail -2
   docker push "$IMG_EVIL_CLEAN" 2>&1 | tail -1 || \
     kind load docker-image "$IMG_EVIL_CLEAN" --name "$CLUSTER_NAME"
-}
+fi
 kubectl -n "$NS_BANK_EVIL" set image deploy/evil-tools "server=$IMG_EVIL_CLEAN" 2>&1 | sed 's/^/    /'
 kubectl -n "$NS_BANK_EVIL" rollout status deploy/evil-tools --timeout=60s 2>&1 | tail -1 | sed 's/^/    /'
 
-# 3. Wipe digest-watcher state so the next baseline is taken from the
-#    clean variant (not the previous run's mutated one)
-log "3/5 — wiping digest-watcher baselines + mismatches"
-kubectl -n "$NS_PLATFORM" delete cm digest-baselines digest-mismatches \
-  --ignore-not-found 2>&1 | sed 's/^/    /' || true
-kubectl -n "$NS_PLATFORM" rollout restart deploy/digest-watcher 2>&1 | sed 's/^/    /' || true
-kubectl -n "$NS_PLATFORM" rollout status deploy/digest-watcher --timeout=60s 2>&1 | tail -1 | sed 's/^/    /' || true
-
-# 4. Clean up the previous run's evidence
-log "4/5 — clearing evidence/phase8/"
-rm -rf "$EVIDENCE_DIR/phase8" 2>/dev/null || true
+# 4. Clear mock-attacker logs (so the previous run's stolen data isn't there)
+log "4/5 — clearing mock-attacker logs"
+kubectl -n external-attacker rollout restart deploy/mock-attacker 2>&1 | sed 's/^/    /' || true
+kubectl -n external-attacker rollout status deploy/mock-attacker --timeout=30s 2>&1 | tail -1 | sed 's/^/    /' || true
 
 # 5. Refresh port-forwards (new pod IPs)
 log "5/5 — refreshing port-forwards"
-"$SCRIPT_DIR/port-forward.sh" 2>&1 | tail -1 | sed 's/^/    /' || true
+"$SCRIPT_DIR/port-forward.sh" 2>&1 | tail -1 | sed 's/^/    /'
 
-if (( THEN_SOLO_OFF == 1 )); then
-  log_step "Now running solo-off (per --solo-off flag)"
-  "$SCRIPT_DIR/solo-off.sh"
-fi
-
+# Show the clean catalog
 echo ""
-log_ok "Reset complete. Catalogue now contains only the 3 legitimate MCPs:"
+log_ok "Reset complete. Catalogue (only legitimate tools):"
 if command -v arctl >/dev/null 2>&1; then
   ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
     arctl mcp list 2>&1 | sed 's/^/    /' || true
 fi
 echo ""
-log "You're at Act 0. Open the chatbot at http://localhost:$PF_FRONTEND_PORT"
-log "Next step:"
-log "  ./scripts/solo-off.sh                                              # strip protection"
-log "  ./scripts/test-malicious-actor.sh --vector rugpull --variant aggressive  # run attack"
+log "You're at the 'before Solo' baseline. Run the demo:"
+log "  1. (chatbot) http://localhost:$PF_FRONTEND_PORT — happy path"
+log "  2. ./scripts/supply-chain-attack.sh"
+log "  3. (chatbot) same prompt"
+log "  4. kubectl -n external-attacker logs deploy/mock-attacker"
+log "  5. ./scripts/deploy-solo.sh                          ← climax"
+log "  6. (chatbot) same prompt — exfil now blocked"

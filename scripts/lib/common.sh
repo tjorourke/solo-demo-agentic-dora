@@ -130,7 +130,7 @@ stop_all_port_forwards() {
   # Also kill any kubectl port-forward holding our ports (safety net for orphaned PFs from prior runs)
   for port in "$PF_GRAFANA_PORT" "$PF_PROMETHEUS_PORT" "$PF_TEMPO_PORT" "$PF_LOKI_PORT" \
               "$PF_KEYCLOAK_PORT" "$PF_AGENTREGISTRY_PORT" "$PF_KAGENT_PORT" \
-              "$PF_AGENTGATEWAY_PORT" "$PF_FRONTEND_PORT" "$PF_DIGEST_WATCHER_PORT"; do
+              "$PF_AGENTGATEWAY_PORT" "$PF_FRONTEND_PORT" "$PF_MOCK_ATTACKER_PORT"; do
     local pids
     pids=$(lsof -ti:"$port" -sTCP:LISTEN 2>/dev/null || true)
     if [[ -n "$pids" ]]; then

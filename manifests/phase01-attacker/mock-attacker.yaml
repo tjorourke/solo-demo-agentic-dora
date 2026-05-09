@@ -1,0 +1,57 @@
+# mock-attacker lives OUTSIDE every trustusbank-* namespace. It pretends
+# to be the C2 server an attacker would set up to receive exfiltrated
+# data. The point: when the bank's compromised tool POSTs here, you can
+# see customer PII landing on this server's stdout — that's your visible
+# breach. When Solo's AuthZ is enforcing, the connection never gets here.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-attacker
+  labels:
+    # Ambient-labelled so its incoming connections can be governed by
+    # AuthorizationPolicy. (When Solo is OFF we delete the policies, so
+    # the namespace label alone doesn't enforce anything.)
+    istio.io/dataplane-mode: ambient
+    purpose: simulated-attacker
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mock-attacker
+  namespace: external-attacker
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-attacker
+  namespace: external-attacker
+  labels: { app: mock-attacker }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: mock-attacker } }
+  template:
+    metadata:
+      labels: { app: mock-attacker }
+    spec:
+      serviceAccountName: mock-attacker
+      containers:
+        - name: server
+          image: localhost:5001/trustusbank/mock-attacker:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-attacker
+  namespace: external-attacker
+  labels: { app: mock-attacker }
+spec:
+  selector: { app: mock-attacker }
+  ports:
+    - { name: http, port: 8080, targetPort: 8080 }

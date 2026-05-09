@@ -38,6 +38,19 @@ if ! kubectl -n "$SNIFFER_NS" get pod hbone-sniffer >/dev/null 2>&1; then
 fi
 log "deploy a sniffer pod and tcpdump for port 15008 to verify HBONE — see plan §1.7"
 
+log_step "1.7a — deploy mock-attacker (the demo's C2 server stand-in)"
+# This pod lives outside every trustusbank-* namespace. It's the
+# exfiltration target the malicious tool tries to reach. Solo's
+# deploy-solo.sh later applies a deny rule that blocks bank-* → here.
+MA_IMG="${IMAGE_PREFIX}/mock-attacker:1.0.0"
+if ! docker image inspect "$MA_IMG" >/dev/null 2>&1; then
+  docker build -t "$MA_IMG" "$REPO_ROOT/services/mock-attacker" 2>&1 | tail -2
+fi
+docker push "$MA_IMG" 2>&1 | tail -1 || \
+  kind load docker-image "$MA_IMG" --name "$CLUSTER_NAME"
+kubectl_apply "$MANIFESTS_DIR/phase01-attacker/mock-attacker.yaml"
+wait_for_ready deployment mock-attacker external-attacker 60s 2>/dev/null || true
+
 log_step "1.8 — evidence capture (DORA Art. 9(2))"
 P1=$(evidence_dir 1)
 kubectl -n istio-system logs ds/ztunnel --tail=200 > "$P1/ztunnel-startup.log" || true

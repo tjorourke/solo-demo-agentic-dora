@@ -253,13 +253,17 @@
         </div>
       </div>
 
-      <h3 style="margin-top: 18px">Compliance posture</h3>
-      <div style="font-size: 12px; line-height: 1.6; color: var(--tb-muted)">
-        ✓ DORA Art. 9(2) — mTLS<br>
-        ✓ DORA Art. 9(4) — JWT auth<br>
-        ✓ DORA Art. 10 — anomaly detection<br>
-        ✓ DORA Art. 17 — audit trail<br>
-        ✓ DORA Art. 28 — artefact register
+      <h3 style="margin-top: 18px">Solo controls in scope</h3>
+      <div style="font-size: 12px; line-height: 1.5; color: var(--tb-muted)">
+        <div>DORA Art. 9(2) — HBONE mTLS (Istio Ambient)</div>
+        <div>DORA Art. 9(4) — SPIFFE identity per workload</div>
+        <div>DORA Art. 10 — egress AuthZ to untrusted endpoints</div>
+        <div>DORA Art. 17 — every tool call audited (agentgateway)</div>
+        <div>DORA Art. 28 — sub-outsourcing register (agentregistry)</div>
+        <div style="margin-top: 8px; font-style: italic; color: var(--tb-muted)">
+          Whether they're <em>enforcing</em> right now depends on
+          deploy-solo / solo-off state.
+        </div>
       </div>
     </aside>
 

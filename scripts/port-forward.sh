@@ -46,9 +46,10 @@ maybe_pf "$NS_PLATFORM" "svc/keycloak"                           "$PF_KEYCLOAK_P
 maybe_pf "$NS_PLATFORM" "svc/agentregistry"                      "$PF_AGENTREGISTRY_PORT" 12121 "agentregistry"
 maybe_pf "$NS_PLATFORM" "svc/kagent-ui"                          "$PF_KAGENT_PORT"      8080 "kagent UI"
 maybe_pf "$NS_PLATFORM" "svc/trustusbank-agentgw"                "$PF_AGENTGATEWAY_PORT" 8080 "agentgateway"
-maybe_pf "$NS_PLATFORM" "svc/digest-watcher"                     "$PF_DIGEST_WATCHER_PORT" 8080 "digest-watcher (rug-pull canary)"
 # Frontend
 maybe_pf "$NS_FRONTEND" "svc/chatbot"                            "$PF_FRONTEND_PORT"    80   "Frontend chatbot"
+# External attacker (mock C2 endpoint — exfil destination for the demo)
+maybe_pf external-attacker "svc/mock-attacker"                   "$PF_MOCK_ATTACKER_PORT" 8080 "mock-attacker (C2 server)"
 
 sleep 1
 log_ok "port-forwards started; PIDs in $PF_PIDFILE, URLs in $PF_URLFILE"
