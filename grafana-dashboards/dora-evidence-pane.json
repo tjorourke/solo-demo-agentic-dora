@@ -3,8 +3,8 @@
   "uid": "dora-evidence",
   "tags": ["trustusbank", "dora", "audit", "compliance"],
   "schemaVersion": 39,
-  "version": 3,
-  "refresh": "30s",
+  "version": 4,
+  "refresh": "10s",
   "time": { "from": "now-30m", "to": "now" },
   "panels": [
     {
@@ -13,13 +13,45 @@
       "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
       "options": {
         "mode": "markdown",
-        "content": "**Auditor view of TrustUsBank's three Solo protection layers**\n\n* **Art. 9(2)** — encryption + identity in transit (mTLS coverage, SPIFFE IDs)\n* **Art. 10** — anomaly detection: blocked egress to untrusted endpoints, prompt-injection denied tool calls\n* **Art. 17** — incident management: every agent decision audited\n* **Art. 28** — sub-outsourcing register (agentregistry catalog)"
+        "content": "**Auditor view — every Solo control firing live**\n\n* **Art. 9(2)** — encryption + identity in transit (mTLS coverage, SPIFFE IDs)\n* **Art. 10** — anomaly detection: AuthZ denials at L4, exfil attempts received by mock-attacker\n* **Art. 17** — incident management: every agent decision audited\n* **Art. 28** — sub-outsourcing register (agentregistry catalog)\n\nWhen Solo is OFF, the **deny** panels are empty and the **mock-attacker exfil** panel fills with stolen PII. When Solo is ON, the inverse."
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Art. 10 — AuthZ denies (last 5m)",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        { "expr": "sum(count_over_time({namespace=\"istio-system\", app=\"ztunnel\"} |~ \"explicitly denied by\" [5m]))", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Exfil attempts received by mock-attacker (last 5m)",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        { "expr": "sum(count_over_time({namespace=\"external-attacker\", app=\"mock-attacker\"} |~ \"EXFIL RECEIVED\" [5m]))", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        }
       }
     },
     {
       "type": "stat",
       "title": "Art. 9(2) — % east-west requests with mTLS",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "expr": "100 * sum(rate(istio_requests_total{security_policy=\"mutual_tls\"}[5m])) / clamp_min(sum(rate(istio_requests_total[5m])), 0.001)", "refId": "A" }
@@ -34,47 +66,29 @@
     },
     {
       "type": "stat",
-      "title": "Art. 10 — egress denies → external-attacker (last 1h)",
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 4 },
-      "datasource": { "type": "loki", "uid": "loki" },
-      "targets": [
-        { "expr": "sum(count_over_time({namespace=\"istio-system\", app=\"ztunnel\"} |~ \"denied\" |~ \"external-attacker\" [1h]))", "refId": "A" }
-      ]
-    },
-    {
-      "type": "stat",
       "title": "Art. 17 — agent tool calls (last 1h)",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 4 },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 4 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         { "expr": "sum(count_over_time({namespace=\"trustusbank-platform\", app=\"trustusbank-agentgw\"} |~ \"mcp.method.name=tools/call\" [1h]))", "refId": "A" }
       ]
     },
     {
-      "type": "stat",
-      "title": "Art. 17 — escalations opened (last 24h)",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 4 },
+      "type": "logs",
+      "title": "🚨 OFFENDING POD — Istio AuthZ denials with full SPIFFE context",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 9 },
       "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none", "sortOrder": "Descending" },
       "targets": [
-        { "expr": "sum(count_over_time({namespace=\"trustusbank-bank-mcp\", container=\"server\"} |~ \"create_ticket\" [24h]))", "refId": "A" }
+        { "expr": "{namespace=\"istio-system\", app=\"ztunnel\"} |~ \"explicitly denied by\" | line_format \"{{.__line__}}\"", "refId": "A" }
       ]
     },
     {
       "type": "logs",
-      "title": "Art. 10 — Istio AuthZ denies (the 'lateral exfil blocked' moment)",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "title": "Art. 10 — exfil attempts received by mock-attacker (Solo OFF state)",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 18 },
       "datasource": { "type": "loki", "uid": "loki" },
-      "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
-      "targets": [
-        { "expr": "{namespace=\"istio-system\", app=\"ztunnel\"} |~ \"denied|deny\" |~ \"external-attacker|trustusbank-bank-evil\"", "refId": "A" }
-      ]
-    },
-    {
-      "type": "logs",
-      "title": "Art. 10 — exfil attempts received by mock-attacker (Solo OFF)",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "datasource": { "type": "loki", "uid": "loki" },
-      "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
+      "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none", "sortOrder": "Descending" },
       "targets": [
         { "expr": "{namespace=\"external-attacker\", app=\"mock-attacker\"} |~ \"EXFIL RECEIVED|stolen_data\"", "refId": "A" }
       ]
@@ -82,7 +96,7 @@
     {
       "type": "logs",
       "title": "Art. 9 — agentgateway access log (every MCP request audited)",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 27 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
       "targets": [
@@ -91,22 +105,12 @@
     },
     {
       "type": "logs",
-      "title": "Art. 17 — agent decision trace (kagent reasoning + tool calls)",
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 26 },
-      "datasource": { "type": "loki", "uid": "loki" },
-      "options": { "showTime": true, "wrapLogMessage": true },
-      "targets": [
-        { "expr": "{namespace=\"trustusbank-bank-agents\"} |~ \"function_call|escalat|fraud\"", "refId": "A" }
-      ]
-    },
-    {
-      "type": "logs",
       "title": "Art. 9(2) — ztunnel: SPIFFE identity per HBONE connection",
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 26 },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 36 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "showTime": true, "wrapLogMessage": true },
       "targets": [
-        { "expr": "{namespace=\"istio-system\", app=\"ztunnel\"} |~ \"spiffe://\"", "refId": "A" }
+        { "expr": "{namespace=\"istio-system\", app=\"ztunnel\"} |~ \"src.identity\\\\=\\\"spiffe\"", "refId": "A" }
       ]
     }
   ]

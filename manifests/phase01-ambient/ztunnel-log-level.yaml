@@ -1,0 +1,28 @@
+# Bump ztunnel's log level so AuthZ denies appear at error level in
+# stdout (default RUST_LOG=info hides them — only successful
+# `connection complete` lines come through).
+#
+# With access=debug, every connection (allowed AND denied) is logged
+# at info or error respectively, and Promtail/Loki picks them up. The
+# deny lines look like:
+#
+#   error  access  connection complete
+#     src.identity="spiffe://.../trustusbank-bank-evil/sa/evil-tools"
+#     dst.identity="spiffe://.../external-attacker/sa/mock-attacker"
+#     error="connection closed due to policy rejection: explicitly
+#            denied by: external-attacker/deny-bank-to-attacker"
+#
+# That single log line is your DORA Art. 9(2) + Art. 10 evidence.
+
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: ztunnel-log-tweak
+  namespace: istio-system
+spec:
+  components:
+    ztunnel:
+      k8s:
+        env:
+          - name: RUST_LOG
+            value: "info,access=debug,proxy::access_log=debug"

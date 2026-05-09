@@ -1,0 +1,44 @@
+# Alerts that fire when ztunnel reports an AuthZ denial OR when the
+# mock-attacker actually receives an exfiltration POST.
+#
+# Two alert sources:
+#  1. PrometheusRule (this file) — tracks Istio's istio_requests_total
+#     metric for response codes 403/503 from the destination side. Fires
+#     when the agentgateway data plane (which IS in the metric pipeline)
+#     denies a request.
+#  2. The DORA Evidence dashboard — counts log lines via Loki query.
+#     The Loki Ruler isn't shipped by default in kube-prometheus-stack,
+#     so dashboard panels are how we surface the L4 deny visibility. The
+#     stat panel goes red on > 0 in the last 5 minutes.
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: trustusbank-authz-denials
+  namespace: trustusbank-observability
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: trustusbank.authz
+      interval: 15s
+      rules:
+        - alert: IstioAuthZDeny
+          expr: |
+            sum by (destination_service_namespace, destination_service_name)
+              (rate(istio_requests_total{response_code=~"403|503", reporter="destination"}[2m])) > 0
+          for: 0m
+          labels:
+            severity: critical
+            dora_article: "10"
+            nis2_clause: "21(2)(b)"
+          annotations:
+            summary: "Istio AuthZ denied a connection — possible attack in progress"
+            description: |
+              ztunnel is denying connections to
+              {{ $labels.destination_service_namespace }}/{{ $labels.destination_service_name }}.
+              Pull the offending pod's identity from the ztunnel access log:
+                {namespace="istio-system", app="ztunnel"} |~ "explicitly denied by"
+              The deny line includes src.workload (the offending pod) and
+              src.identity (its SPIFFE ID).
+            runbook: "demo-scripts/runbook.md#act-3---deploy-solo"

@@ -38,6 +38,16 @@ if ! kubectl -n "$SNIFFER_NS" get pod hbone-sniffer >/dev/null 2>&1; then
 fi
 log "deploy a sniffer pod and tcpdump for port 15008 to verify HBONE — see plan §1.7"
 
+log_step "1.6a — bump ztunnel log level so AuthZ denials are visible"
+# Default ztunnel RUST_LOG=info logs only successful connections.
+# AuthZ denies are suppressed at debug level. In production you'd want
+# `access=debug` so denies surface as 'error  access  connection complete'
+# lines — that's what Promtail picks up for Loki + the DORA Evidence
+# dashboard. This is an UPSTREAM Istio Ambient default, not a Solo issue.
+kubectl -n istio-system set env ds/ztunnel \
+  RUST_LOG="info,access=debug,proxy::access_log=debug" 2>&1 | sed 's/^/    /' || true
+kubectl -n istio-system rollout status ds/ztunnel --timeout=120s 2>&1 | tail -1 | sed 's/^/    /' || true
+
 log_step "1.7a — deploy mock-attacker (the demo's C2 server stand-in)"
 # This pod lives outside every trustusbank-* namespace. It's the
 # exfiltration target the malicious tool tries to reach. Solo's
