@@ -73,9 +73,22 @@ together cover all three layers.
 ### Demo 1 — distributed trace
 
 Tempo + OTel collector are already deployed. The chatbot, kagent
-agents, agentgateway, and MCP servers all emit spans. This script
-sends one fresh attack request, captures the trace ID, and prints
-a Tempo deep-link. Open the link to see the full chain:
+agents, agentgateway, and MCP servers all emit spans.
+
+**Use the chatbot UI on-stage.** The audience needs to see both
+sides — the customer-facing chat plus the platform-side trace —
+side by side. Run this script only as a smoke test or when you
+want a single command in CI.
+
+Two-tab flow for on-stage:
+
+1. http://localhost:18009 — chatbot, debug toggled ON
+2. http://localhost:18001/explore?left=%7B%22datasource%22:%22tempo%22%7D — Tempo
+
+Send the prompt in tab 1, switch to tab 2, search for service
+`trustusbank-agentgw` or paste the trace ID from the chatbot's
+debug pane. The script wraps that into one curl invocation for
+when you don't have a human at the keyboard. Open the link to see the full chain:
 
 ```
 chatbot.send_message

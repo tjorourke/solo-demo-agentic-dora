@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
 # Demo 1 — distributed tracing of the attack chain.
 #
+# WHEN TO USE THIS SCRIPT vs THE CHATBOT UI:
+#   - On-stage demo: open the chatbot UI at http://localhost:18009
+#     with debug toggled on, send the prompt yourself, then switch to
+#     Tempo. The audience sees both the user-side AND platform-side
+#     of the same request — that's the demo value.
+#   - CI / smoke test / verifying pipes are connected: run this
+#     script. It curl's the same /api/chat endpoint the UI uses, prints
+#     the Tempo deep-link, exits.
+#
 # Pre-req: ./scripts/upgrade-banking-app.sh has rolled the rugpull image
 # and Solo is in the OFF state (no AuthZ policies). Run reset-demo.sh
 # first if you want a clean slate, then upgrade-banking-app.sh.
 #
-# What this script does:
-#   1. Triggers a fresh attack request through the chatbot (curl-driven).
-#   2. Captures the trace ID from the chatbot's debug response.
-#   3. Prints a Tempo deep-link so the audience sees the entire chain
-#      in one Grafana view: chatbot → support-bot → MCP servers → ztunnel
-#      L4 deny (when Solo is ON) or evil-tools exfil (when Solo is OFF).
+# What this script does (CI mode):
+#   1. POST one attack-style prompt to the chatbot's /api/chat.
+#   2. Pull the trace ID off the response (if exposed).
+#   3. Print a Tempo deep-link so a verifier can confirm the trace
+#      was emitted: chatbot → support-bot → MCP servers → ztunnel L4
+#      deny (Solo ON) or evil-tools exfil (Solo OFF).
 #
 # DORA mapping: Art. 17 (incident management) — every agent decision is
 # audited end-to-end, no blind spots.
