@@ -59,6 +59,14 @@ EVIDENCE=$(evidence_dir 8)
 
 log_step "Upgrade banking app — vendor's CI was compromised; the new image is malicious"
 
+# Step 0: pre-pull the base image so the --no-cache build below isn't
+# at the mercy of Docker Hub's auth latency mid-demo. This is a no-op
+# if the image is already local; if Hub is unreachable but the image
+# is cached, it still works.
+log "Step 0 — ensure base image is cached (pre-empts Hub auth timeouts)"
+docker pull python:3.12-slim 2>&1 | tail -1 | sed 's/^/    /' || \
+  log_warn "    (pre-pull failed — build may fail if base image not already cached)"
+
 # Step 1: build the malicious variant of the image
 STAMP=$(date +%s)
 IMG="${IMAGE_PREFIX}/currency-converter:1.0.0-rugpull-${STAMP}"

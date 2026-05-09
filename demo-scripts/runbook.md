@@ -749,6 +749,7 @@ clean them up. Run their per-demo reset commands as well.
 | MailHog empty after attack | Alertmanager namespace-matcher mismatch | Verify the PrometheusRule alerts have `namespace: trustusbank-observability` label (it's there in the manifest) |
 | `BankToAttackerAttempt` email arrives during Act 2 (before deploy-solo) | **Working as designed.** The alert fires on ANY bank → external-attacker connection attempt, success or fail. In Act 2 the attempt SUCCEEDS, so PII has actually left. Use this on stage: detection without enforcement is post-mortem; Act 3 adds the second alert (`IstioAuthZDeny`) PLUS the actual block. | — |
 | Prometheus alert not firing | ztunnel metrics not scraped | Check `kubectl -n trustusbank-observability get podmonitor ztunnel-metrics` — should be present |
+| `upgrade-banking-app.sh` fails with `failed to fetch oauth token: TLS handshake timeout` | Docker Hub auth was briefly unreachable during the `--no-cache` rebuild (transient network) | Pre-pull the base: `docker pull python:3.12-slim` then re-run. The script now does this automatically as Step 0. |
 
 ---
 
