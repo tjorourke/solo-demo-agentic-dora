@@ -1,0 +1,85 @@
+# AlertmanagerConfig — routes IstioAuthZDeny + BankToAttackerAttempt to
+# MailHog over plain SMTP (no auth, no TLS — it's a local catcher).
+#
+# How this gets picked up by the running Alertmanager:
+#   - The kube-prometheus-stack Alertmanager CR has
+#       alertmanagerConfigSelector: {}  (matches all)
+#       alertmanagerConfigNamespaceSelector: {}  (matches all)
+#     so any AlertmanagerConfig in any namespace is merged in.
+#   - Default matcher strategy `OnNamespace` would scope this config to
+#     alerts whose `namespace` label is `trustusbank-observability`. Our
+#     PrometheusRule lives there and the alerts inherit that label, so
+#     routing works without changing the strategy.
+#
+# Email body uses Alertmanager's Go templating, so $labels.source_workload,
+# $labels.source_principal etc. resolve to the offending pod's identity
+# at firing time.
+
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: trustusbank-soc-email
+  namespace: trustusbank-observability
+  labels:
+    release: kube-prometheus-stack
+spec:
+  # Default route is intentionally not soc-mailhog — we only want OUR
+  # security alerts (the demo's two) to reach the SOC inbox, not every
+  # platform-default alert from kube-prometheus-stack (NodeClock,
+  # KubeContainerWaiting, etc).
+  route:
+    receiver: soc-mailhog
+    groupBy: ["alertname", "source_workload_namespace"]
+    groupWait: 10s
+    groupInterval: 30s
+    repeatInterval: 2m
+    matchers:
+      - name: alertname
+        matchType: "=~"
+        value: "IstioAuthZDeny|BankToAttackerAttempt"
+  receivers:
+    - name: soc-mailhog
+      emailConfigs:
+        - to: soc@trustusbank.example
+          from: alerts@trustusbank.example
+          smarthost: mailhog.trustusbank-observability.svc.cluster.local:1025
+          requireTLS: false
+          sendResolved: true
+          headers:
+            - key: Subject
+              value: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }} — TrustUsBank SOC alert'
+          html: |
+            <!doctype html>
+            <html><body style="font-family: -apple-system, sans-serif; line-height: 1.5;">
+              <h2 style="color: {{ if eq .Status "firing" }}#c00{{ else }}#080{{ end }};">
+                {{ .Status | toUpper }} — {{ .CommonLabels.alertname }}
+              </h2>
+              <p><strong>{{ len .Alerts }} alert(s)</strong> at {{ .CommonAnnotations.summary }}</p>
+              {{ range .Alerts }}
+                <hr/>
+                <table cellpadding="4">
+                  <tr><td><strong>Offending pod</strong></td><td>{{ .Labels.source_workload }}</td></tr>
+                  <tr><td><strong>Source namespace</strong></td><td>{{ .Labels.source_workload_namespace }}</td></tr>
+                  <tr><td><strong>SPIFFE identity</strong></td><td><code>{{ .Labels.source_principal }}</code></td></tr>
+                  <tr><td><strong>Target service</strong></td><td>{{ .Labels.destination_service_name }}.{{ .Labels.destination_service_namespace }}</td></tr>
+                  <tr><td><strong>DORA Article</strong></td><td>{{ .Labels.dora_article }}</td></tr>
+                  <tr><td><strong>NIS2 clause</strong></td><td>{{ .Labels.nis2_clause }}</td></tr>
+                  <tr><td><strong>Started</strong></td><td>{{ .StartsAt }}</td></tr>
+                </table>
+                <p>{{ .Annotations.description }}</p>
+              {{ end }}
+              <hr/>
+              <p style="margin-top: 1em;">
+                <a href="http://localhost:18001/d/dora-evidence/trustusbank-dora-evidence-pane?orgId=1&refresh=10s"
+                   style="background:#1f6feb;color:white;padding:10px 16px;
+                          border-radius:6px;text-decoration:none;font-weight:600;">
+                  Open DORA Evidence Pane in Grafana
+                </a>
+              </p>
+              <p style="font-size:0.85em;color:#666;">
+                Runbook: <code>demo-scripts/runbook.md</code> §Act 3.
+                Quarantine command:
+                <code>kubectl -n {{ (index .Alerts 0).Labels.source_workload_namespace }} scale deploy/{{ (index .Alerts 0).Labels.source_workload }} --replicas=0</code>
+              </p>
+            </body></html>
+

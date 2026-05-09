@@ -41,6 +41,8 @@ maybe_pf "$NS_OBS"      "svc/kube-prometheus-stack-grafana"     "$PF_GRAFANA_POR
 maybe_pf "$NS_OBS"      "svc/kube-prometheus-stack-prometheus"  "$PF_PROMETHEUS_PORT"  9090 "Prometheus"
 maybe_pf "$NS_OBS"      "svc/tempo"                              "$PF_TEMPO_PORT"       3200 "Tempo"
 maybe_pf "$NS_OBS"      "svc/loki"                               "$PF_LOKI_PORT"        3100 "Loki"
+maybe_pf "$NS_OBS"      "svc/mailhog"                            "$PF_MAILHOG_PORT"     8025 "MailHog (SOC inbox)"
+maybe_pf "$NS_OBS"      "svc/kube-prometheus-stack-alertmanager" "$PF_ALERTMANAGER_PORT" 9093 "Alertmanager"
 # Platform
 maybe_pf "$NS_PLATFORM" "svc/keycloak"                           "$PF_KEYCLOAK_PORT"    8080 "Keycloak"
 maybe_pf "$NS_PLATFORM" "svc/agentregistry"                      "$PF_AGENTREGISTRY_PORT" 12121 "agentregistry"

@@ -42,8 +42,10 @@ Open these tabs in this order:
 | 1 | Customer chatbot | http://localhost:18009 |
 | 2 | mock-attacker (the C2 stand-in) | http://localhost:18011 |
 | 3 | agentregistry catalogue (or use `arctl mcp list` in terminal) | http://localhost:18006 |
-| 4 | Grafana — Loki Explore | http://localhost:18001/explore?left=%7B%22datasource%22:%22loki%22%7D |
-| 5 | kagent UI (for clicking into sessions) | http://localhost:18007 |
+| 4 | Grafana — DORA Evidence Pane | http://localhost:18001/d/dora-evidence |
+| 5 | Prometheus — Alerts | http://localhost:18002/alerts |
+| 6 | MailHog — SOC inbox (alert emails land here) | http://localhost:18012 |
+| 7 | kagent UI (for clicking into sessions) | http://localhost:18007 |
 
 Test the happy path once before the audience arrives:
 
@@ -226,6 +228,13 @@ log correlation needed to identify the workload.
 # 4. What the malicious deployment is actually running (image tag history)
 {namespace="trustusbank-bank-evil"} |= "evil-tools"
 ```
+
+**The SOC inbox** — open MailHog (`http://localhost:18012`) before
+running the attack. Alertmanager is wired to deliver every firing
+`IstioAuthZDeny` / `BankToAttackerAttempt` to the inbox via SMTP.
+Email body has the offending pod's SPIFFE identity, the dashboard
+deep-link, and the kubectl command to quarantine the workload —
+that's the auditor's "the SOC actually got paged" evidence.
 
 **One-click dashboard** with all of these stitched together:
 [**TrustUsBank — DORA Evidence Pane**](http://localhost:18001/d/dora-evidence).

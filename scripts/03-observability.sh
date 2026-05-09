@@ -41,6 +41,19 @@ helm_upgrade_install otel-collector open-telemetry/opentelemetry-collector \
 log_step "2.5 — Istio Telemetry → OTel"
 kubectl_apply "$MANIFESTS_DIR/phase02-observability/istio-telemetry.yaml"
 
+log_step "2.5a — MailHog (sample SMTP catcher for SOC alerts)"
+kubectl_apply "$MANIFESTS_DIR/phase02-observability/mailhog.yaml"
+wait_for_ready deployment mailhog "$NS_OBS" 60s 2>/dev/null || true
+
+log_step "2.5b — Alertmanager email routing → MailHog"
+# This applies an AlertmanagerConfig that routes IstioAuthZDeny +
+# BankToAttackerAttempt to the in-cluster MailHog. Email body has the
+# offending pod's SPIFFE identity + a deep link to the DORA Evidence
+# dashboard. The PrometheusRule itself is applied later by the Solo
+# phase, but creating the route now means it's wired up the moment
+# the alert starts firing.
+kubectl_apply "$MANIFESTS_DIR/phase02-observability/alertmanager-email.yaml"
+
 # (PrometheusRule for digest-mismatch was removed along with digest-watcher.)
 
 log_step "2.6 — Grafana dashboards"

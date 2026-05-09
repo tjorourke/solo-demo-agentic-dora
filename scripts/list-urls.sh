@@ -34,4 +34,4 @@ done < "$PF_URLFILE"
 printf '\n%sCommands:%s\n' "$C_BOLD" "$C_RESET"
 printf '  ./scripts/port-forward.sh        # restart all port-forwards\n'
 printf '  ./scripts/demo-walkthrough.sh    # narrated demo run\n'
-printf '  ./scripts/test-malicious-actor.sh # rug-pull demo\n\n'
+printf '  ./scripts/upgrade-banking-app.sh # supply-chain upgrade demo\n\n'

@@ -18,32 +18,34 @@
     },
     {
       "type": "stat",
-      "title": "Art. 10 — AuthZ denies (last 5m)",
+      "title": "Art. 10 — AuthZ denies (in selected time range)",
       "gridPos": { "h": 5, "w": 6, "x": 0, "y": 4 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "colorMode": "background", "graphMode": "area" },
       "targets": [
-        { "expr": "sum(count_over_time({namespace=\"istio-system\", app=\"ztunnel\"} |~ \"explicitly denied by\" [5m]))", "refId": "A" }
+        { "expr": "sum(count_over_time({namespace=\"istio-system\", app=\"ztunnel\"} |~ \"explicitly denied by\" [$__range]))", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "noValue": "0",
           "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
         }
       }
     },
     {
       "type": "stat",
-      "title": "Exfil attempts received by mock-attacker (last 5m)",
+      "title": "Exfil attempts received by mock-attacker (in range)",
       "gridPos": { "h": 5, "w": 6, "x": 6, "y": 4 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "colorMode": "background", "graphMode": "area" },
       "targets": [
-        { "expr": "sum(count_over_time({namespace=\"external-attacker\", app=\"mock-attacker\"} |~ \"EXFIL RECEIVED\" [5m]))", "refId": "A" }
+        { "expr": "sum(count_over_time({namespace=\"external-attacker\", app=\"mock-attacker\"} |~ \"EXFIL RECEIVED\" [$__range]))", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "noValue": "0",
           "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
         }
       }
@@ -82,7 +84,7 @@
       "options": { "showHeader": true },
       "targets": [
         {
-          "expr": "topk(20, sum by (source_workload, source_workload_namespace, source_principal, destination_service_namespace, destination_service_name) (increase(istio_tcp_connections_failed_total{response_flags=\"CONNECT\"}[$__range])))",
+          "expr": "topk(20, sum by (source_workload, source_workload_namespace, source_principal, destination_service_namespace, destination_service_name) (increase(istio_tcp_connections_failed_total{response_flags=\"CONNECT\"}[$__range]))) > 0",
           "refId": "A",
           "instant": true,
           "format": "table"

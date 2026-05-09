@@ -72,6 +72,12 @@ spec:
             severity: critical
             dora_article: "10"
             nis2_clause: "21(2)(b)"
+            # Required for AlertmanagerConfig with default OnNamespace
+            # matcher strategy — the operator auto-injects
+            # namespace=<config-ns> into routes from AlertmanagerConfig
+            # CRDs. Without this label our SOC route silently drops these
+            # alerts to the null receiver.
+            namespace: trustusbank-observability
           annotations:
             summary: "Istio AuthZ denied a connection — possible attack in progress"
             description: |
@@ -95,6 +101,12 @@ spec:
             severity: critical
             dora_article: "10"
             nis2_clause: "21(2)(b)"
+            # Required for AlertmanagerConfig with default OnNamespace
+            # matcher strategy — the operator auto-injects
+            # namespace=<config-ns> into routes from AlertmanagerConfig
+            # CRDs. Without this label our SOC route silently drops these
+            # alerts to the null receiver.
+            namespace: trustusbank-observability
           annotations:
             summary: "Bank workload is talking to external-attacker"
             description: |
