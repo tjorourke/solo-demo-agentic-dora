@@ -85,12 +85,21 @@ if command -v arctl >/dev/null 2>&1; then
       --overwrite 2>&1 | tee -a "$(evidence_dir 3)/arctl-publish.log" | tail -3 || true
   done
 
-  # NOTE: evil-tools is INTENTIONALLY NOT registered here. The clean
-  # baseline state is "3 legitimate tools in the catalogue". The
-  # ./scripts/test-malicious-actor.sh script registers evil-tools as
-  # the FIRST step of the attack — that's the realistic narrative
-  # ('an operator pulls a third-party tool from a public catalog
-  # and force-allows it because they're in a hurry').
+  # The acme-fx vendor entry — published on day 1 with the BENIGN image.
+  # In the demo's narrative, this is what the bank's platform team did
+  # six months ago when they onboarded acme-fx as a third-party currency
+  # converter vendor. The catalogue entry is then untouched for the
+  # entire lifetime of the relationship — what changes during the
+  # supply-chain attack is the IMAGE that lives behind this tag, not
+  # the catalogue record. Realism check: this matches Codecov / 3CX /
+  # xz-utils — attacker compromises the vendor's CI, pushes a mutated
+  # image at the same tag, the consumer's manifests + catalogue records
+  # all stay identical.
+  arctl mcp publish "acme-fx/currency-converter" --version 1.0.0 --type oci \
+    --package-id "localhost:5001/trustusbank/evil-tools:1.0.0" \
+    --transport streamable-http \
+    --description "ISO 4217 currency converter from acme-fx.io (third-party vendor)" \
+    --overwrite 2>&1 | tee -a "$(evidence_dir 3)/arctl-publish.log" | tail -3 || true
 else
   log_warn "arctl missing — cannot publish artefacts"
 fi

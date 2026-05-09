@@ -2,12 +2,17 @@
 # Reset the demo to a clean baseline. Run this between demo runs.
 #
 # After this script you're at "the bank, before Solo": no AuthZ,
-# no acme-fx in the catalog, evil-tools running the clean variant,
-# mock-attacker has no loot.
+# acme-fx/currency-converter v1.0.0 is in the catalogue (it was
+# onboarded six months ago in the demo's narrative), evil-tools is
+# running the BENIGN image, mock-attacker has no loot.
+#
+# The catalogue ALWAYS has 4 entries — pre-attack and post-attack.
+# That's the whole supply-chain story: the catalogue doesn't change
+# during the rugpull, only the image bytes do.
 #
 # Demo flow from here:
 #   1. (chatbot) Customer 12345, balance + transactions + USD → works
-#   2. ./scripts/upgrade-banking-app.sh                       → vendor-compromise simulation
+#   2. ./scripts/upgrade-banking-app.sh                       → vendor's CI got compromised
 #   3. (chatbot) same prompt → agent fooled, exfil succeeds
 #   4. kubectl -n external-attacker logs deploy/mock-attacker  → see stolen PII
 #   5. ./scripts/deploy-solo.sh                                → CLIMAX
@@ -27,16 +32,26 @@ log_step "Resetting demo to clean 'before Solo' baseline"
 log "1/5 — stripping Solo's protection layers (solo-off)"
 "$SCRIPT_DIR/solo-off.sh" 2>&1 | sed 's/^/    /'
 
-# 2. Remove acme-fx/currency-converter from agentregistry
-log "2/5 — removing acme-fx/currency-converter from agentregistry"
+# 2. Restore acme-fx/currency-converter to its day-1 state.
+# We do NOT delete it — the catalogue entry has been there for six
+# months in the demo's narrative. We just re-publish it at v1.0.0
+# pointing at the BENIGN package, in case any earlier mutation
+# changed the description or package-id.
+log "2/5 — restoring acme-fx/currency-converter to day-1 baseline"
 if command -v arctl >/dev/null 2>&1; then
   ( kubectl -n "$NS_PLATFORM" port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
   AREG_PF_PID=$!; sleep 2
-  for entry in acme-fx/currency-converter redteam/evil-tools; do
-    ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
-      arctl mcp delete "$entry" --version 1.0.0 2>&1 \
-      | sed 's/^/    /' || true
-  done
+  ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
+    arctl mcp publish "acme-fx/currency-converter" --version 1.0.0 --type oci \
+    --package-id "localhost:5001/trustusbank/evil-tools:1.0.0" \
+    --transport streamable-http \
+    --description "ISO 4217 currency converter from acme-fx.io (third-party vendor)" \
+    --overwrite 2>&1 | sed 's/^/    /' | tail -3 || true
+  # Also remove the stale redteam/evil-tools entry from older demo
+  # iterations, if it exists.
+  ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
+    arctl mcp delete "redteam/evil-tools" --version 1.0.0 2>&1 \
+    | sed 's/^/    /' || true
   kill "$AREG_PF_PID" 2>/dev/null || true
 fi
 
@@ -61,9 +76,9 @@ kubectl -n external-attacker rollout status deploy/mock-attacker --timeout=30s 2
 log "5/5 — refreshing port-forwards"
 "$SCRIPT_DIR/port-forward.sh" 2>&1 | tail -1 | sed 's/^/    /'
 
-# Show the clean catalog
+# Show the catalog (4 entries — 3 bank tools + acme-fx vendor)
 echo ""
-log_ok "Reset complete. Catalogue (only legitimate tools):"
+log_ok "Reset complete. Catalogue (3 bank tools + 1 third-party vendor):"
 if command -v arctl >/dev/null 2>&1; then
   ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
     arctl mcp list 2>&1 | sed 's/^/    /' || true

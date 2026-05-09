@@ -1,18 +1,38 @@
 #!/usr/bin/env bash
-# Upgrade the banking app — pulls in a new version of a third-party
-# vendor MCP that has been compromised upstream. This is what supply-chain
-# risk looks like in practice: the bank doesn't know it's an attack, the
-# CD pipeline runs as normal, the new tool gets registered in the
-# catalogue, the deployment rolls forward.
+# Upgrade the banking app — what happens when a vendor's CI gets owned.
+#
+# Threat model this simulates: acme-fx (a small fintech vendor) was
+# legitimately onboarded by the bank six months ago. Their MCP server
+# was registered in agentregistry on day 1 (see 04-registry.sh), the
+# Deployment + Service + RemoteMCPServer + Agent tool list were all
+# authored by the bank's platform team and reviewed in PRs. None of
+# that has changed.
+#
+# Today, acme-fx's CI pipeline gets compromised — same way Codecov,
+# 3CX, ua-parser-js, and xz-utils all did. The attacker pushes a new
+# image AT THE SAME TAG (1.0.0). The bank's CD reconciler / kubelet
+# pulls it on next rollout. The bank's manifests didn't move. The
+# catalogue entry didn't move. The malicious behaviour lives ONLY
+# inside the new image — specifically:
+#   - the prompt-injection is in the docstring of convert_currency()
+#     which is what the MCP server returns in its tools/list response
+#   - the exfil POST is in the function body
+# Both are payloads served by HTTP responses from the vendor's pod.
+# Nothing in the bank's audit-able resources looks different.
 #
 # What this script does:
-#   1. Registers `acme-fx/currency-converter` in agentregistry — looks
-#      like any other small-vendor MCP tool from the bank's perspective.
-#   2. Rebuilds the vendor's image (--no-cache + timestamped tag so the
-#      kubelet IfNotPresent cache can't hide the swap), this time
-#      containing the upstream-injected malicious behaviour.
-#   3. Rolls the evil-tools deployment to the new image — exactly what a
+#   1. Rebuild the vendor's image (--no-cache + timestamped tag so the
+#      kubelet IfNotPresent cache can't hide the swap), now with the
+#      upstream-injected malicious behaviour.
+#   2. Roll the evil-tools deployment to the new image — exactly what
 #      `helm upgrade` against the bank's chart would do in production.
+#
+# Note: the catalogue entry already exists from day 1 (see
+# scripts/04-registry.sh — acme-fx/currency-converter v1.0.0 was
+# published with the benign image). This script does NOT touch the
+# catalogue. After it runs, `arctl mcp list` is unchanged — same 4
+# entries, same versions, same descriptions. What changed is what
+# runs INSIDE the pod when it starts.
 #
 # After this runs:
 #   - The chatbot's next request triggers the prompt-injection in the
@@ -37,41 +57,42 @@ trap on_error ERR
 
 EVIDENCE=$(evidence_dir 8)
 
-log_step "Upgrade banking app — new version pulls in a vendor MCP that's been compromised upstream"
+log_step "Upgrade banking app — vendor's CI was compromised; the new image is malicious"
 
-# Step 1: register acme-fx/currency-converter in the catalog
-log "Step 1 — registering acme-fx/currency-converter (vendor 'release')"
-if command -v arctl >/dev/null 2>&1; then
-  ( kubectl -n "$NS_PLATFORM" port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
-  AREG_PF_PID=$!; sleep 2
-  ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" arctl mcp publish \
-    "acme-fx/currency-converter" --version 1.0.0 --type oci \
-    --package-id "localhost:5001/trustusbank/evil-tools:1.0.0" \
-    --transport streamable-http \
-    --description "ISO 4217 currency converter from acme-fx.io. Cosign sig unverified — force-allowed by ops." \
-    --overwrite 2>&1 | sed 's/^/    /' | tail -3 || true
-  kill "$AREG_PF_PID" 2>/dev/null || true
-fi
-
-# Step 2: build the malicious variant
+# Step 1: build the malicious variant of the image
 STAMP=$(date +%s)
 IMG="${IMAGE_PREFIX}/evil-tools:1.0.0-rugpull-${STAMP}"
-log "Step 2 — building aggressive variant ($IMG)"
+log "Step 1 — vendor publishes new image (we simulate by rebuilding)"
+log "         $IMG"
 docker build --no-cache --build-arg VARIANT=aggressive -t "$IMG" \
   "$MCP_SRC_DIR/evil-tools" 2>&1 | tail -3 | sed 's/^/    /'
 docker push "$IMG" 2>&1 | tail -1 | sed 's/^/    /' || \
   kind load docker-image "$IMG" --name "$CLUSTER_NAME"
 
-# Step 3: roll the evil-tools deployment to the new image
-log "Step 3 — rolling evil-tools deployment to the malicious image"
+# Step 2: roll the evil-tools deployment — same Deployment YAML, just
+# a new image tag. This is what a CD reconciler would do when the
+# vendor's tag gets a fresh push. No bank-authored manifests are touched.
+log "Step 2 — bank's CD reconciler rolls the new image"
+log "         (no manifests changed — only spec.containers[0].image)"
 kubectl -n "$NS_BANK_EVIL" set image deploy/evil-tools "server=$IMG" 2>&1 | sed 's/^/    /'
 kubectl -n "$NS_BANK_EVIL" rollout status deploy/evil-tools --timeout=120s 2>&1 | tail -1 | sed 's/^/    /'
 
-# Brief log
+# Confirmation: the catalogue is UNCHANGED. Show this on stage to
+# reinforce the supply-chain story: every audit-able resource looks
+# identical to before; only the bytes-in-image are different.
+log "Step 3 — confirm the catalogue did NOT change"
+if command -v arctl >/dev/null 2>&1; then
+  ( kubectl -n "$NS_PLATFORM" port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
+  AREG_PF_PID=$!; sleep 2
+  ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" arctl mcp list 2>&1 | sed 's/^/    /' | tail -10 || true
+  kill "$AREG_PF_PID" 2>/dev/null || true
+fi
+
+# Brief log — note: catalog entry is unchanged from day 1
 {
   echo "supply_chain_attack_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "image: $IMG"
-  echo "catalog_entry: acme-fx/currency-converter v1.0.0"
+  echo "catalog_entry: acme-fx/currency-converter v1.0.0 (unchanged from day 1)"
 } > "$EVIDENCE/incident.json"
 
 echo ""

@@ -76,7 +76,7 @@ fix that before doing anything else.
 > *"TrustUsBank. Three AI agents — support, fraud, triage — running in
 > Kubernetes. They use four MCP tool servers: account, transactions,
 > ticketing, and a third-party currency converter from a small fintech
-> vendor. Standard agent platform setup."*
+> vendor called acme-fx. Standard agent platform setup."*
 
 Type the prompt:
 > *Customer 12345, balance please, recent transactions, and convert to USD.*
@@ -92,10 +92,22 @@ Show 0 events.
 
 **Show tab 3 (agentregistry catalogue):** (or `arctl mcp list` in a terminal)
 
-Expected: 3 entries (account-mcp, transaction-mcp, ticket-mcp).
+Expected: **4 entries** (account-mcp, transaction-mcp, ticket-mcp,
+**acme-fx/currency-converter**).
 
-> *"That's your DORA Article 28 sub-outsourcing register. Three tools, all
-> from the bank itself."*
+```
+NAME                          VERSION   TYPE   PACKAGE
+acme-fx/currency-converter    1.0.0     oci    localhost:5001/trustusbank/evil-tools:1.0.0
+trustusbank/account-mcp       1.0.0     oci    localhost:5001/trustusbank/account-mcp:1.0.0
+trustusbank/transaction-mcp   1.0.0     oci    localhost:5001/trustusbank/transaction-mcp:1.0.0
+trustusbank/ticket-mcp        1.0.0     oci    localhost:5001/trustusbank/ticket-mcp:1.0.0
+```
+
+> *"That's your DORA Article 28 sub-outsourcing register. Three tools
+> the bank built itself, plus one third-party vendor — acme-fx — that
+> was onboarded six months ago. Every entry was reviewed and approved
+> by the platform team. Their Deployment, Service, RemoteMCPServer,
+> AuthorizationPolicy were all written by us, all in our git repo."*
 
 ---
 
@@ -107,24 +119,32 @@ In a terminal:
 ```
 
 While it runs, narrate:
-> *"Imagine a small fintech vendor — `acme-fx.io` — published a 'currency
-> converter' MCP tool to a public catalogue six months ago. Your platform
-> team approved it. It's been working fine ever since. Today, the vendor's
-> CI pipeline gets compromised. They push a new image at the same tag.
-> Your CD reconciler pulls it. The malicious image is now running."*
+> *"acme-fx has been a trusted vendor for six months. Today, their CI
+> pipeline gets compromised — same way Codecov, 3CX, ua-parser-js, and
+> xz-utils all did. The attacker has write access to the vendor's
+> build pipeline, but NOT to the bank's git repo. They push a new
+> image at the same `1.0.0` tag. The bank's CD reconciler picks it up
+> on the next pod rollout. None of the bank's manifests change. None
+> of the catalogue records change. The audit register still shows
+> exactly the same 4 entries it had yesterday."*
 
 Once the script finishes, **show tab 3** (re-run `arctl mcp list`):
 
 ```
 NAME                          VERSION   TYPE   PACKAGE
-acme-fx/currency-converter    1.0.0     oci    localhost:5001/...   ← NEW
+acme-fx/currency-converter    1.0.0     oci    localhost:5001/...   ← UNCHANGED
 trustusbank/account-mcp       1.0.0     oci    localhost:5001/...
 trustusbank/transaction-mcp   1.0.0     oci    localhost:5001/...
 trustusbank/ticket-mcp        1.0.0     oci    localhost:5001/...
 ```
 
-> *"Four entries now. From a catalogue perspective, indistinguishable
-> from any third-party release. Nothing flags 'this is the malicious one.'"*
+> *"Four entries — same as before. Same names, same versions, same
+> descriptions, same package references. Nothing in this list signals
+> 'something just changed.' The catalogue is what your auditor sees;
+> the catalogue says everything is fine. What did change: the bytes
+> inside the image at that tag. That's the only thing the attacker
+> mutated, and it's not visible from any audit-able resource the bank
+> controls."*
 
 **Show tab 1 (chatbot)** — toggle **debug** on. Send the same prompt:
 > *Customer 12345, balance please, recent transactions, and convert to USD.*
