@@ -23,11 +23,17 @@ build_and_load() {
     docker build -t "$image" "$ctx"
   fi
   if [[ "$CLUSTER_KIND" == "kind" ]]; then
-    # Push to local registry (kind-config maps localhost:5001)
-    docker push "$image" || {
-      log_warn "registry push failed — falling back to kind load"
-      kind load docker-image "$image" --name "$CLUSTER_NAME"
-    }
+    # Two-step push: registry FIRST (so anyone hitting localhost:5001
+    # sees the fresh digest), then `kind load` so every node's
+    # containerd has it directly. Without the second step,
+    # imagePullPolicy=IfNotPresent on already-running pods will keep
+    # serving stale layers because kubelet never re-queries the
+    # registry once the image-by-tag is cached on the node. Hit this
+    # bug on account-mcp during the get_profile-returns-masked-data
+    # debug; never again.
+    docker push "$image" || log_warn "registry push failed — kind load will still cover it"
+    kind load docker-image "$image" --name "$CLUSTER_NAME" 2>&1 \
+      | grep -E "loading|Error" | sed 's/^/    /' || true
   elif [[ "$CLUSTER_KIND" == "eks" ]]; then
     docker push "$image"
   fi
