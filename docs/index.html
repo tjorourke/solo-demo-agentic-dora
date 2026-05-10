@@ -6,19 +6,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
-    --ink: #1a1d29;          /* Solo dark heading colour */
-    --muted: #5a6373;
-    --line: #e6e8ed;
-    --bg: #ffffff;            /* clean white, Solo-style */
-    --page-bg: #f7f8fa;       /* subtle page chrome */
-    --accent: #00b39b;        /* Solo signature teal/mint */
-    --accent-dark: #008f7c;
-    --warn: #c14747;
-    --ok: #00b39b;
-    --code: #f4f6f8;
+    --ink: #e7eaf2;            /* near-white body + headings */
+    --muted: #8b95a8;          /* secondary text */
+    --line: rgba(255,255,255,0.08);
+    --bg: #0a0e1a;             /* deep navy page bg, Solo style */
+    --page-bg: #0a0e1a;
+    --accent: #1cb5d3;         /* Solo cyan */
+    --accent-dark: #0891b2;
+    --warn: #f87171;
+    --ok: #4ade80;
+    --code: #11182a;            /* slightly lighter than page for code chips */
+    --card-bg: rgba(255,255,255,0.03);
+    --card-border: rgba(255,255,255,0.09);
   }
-  body { background: var(--page-bg); }
-  main { background: var(--bg); margin-top: 32px; margin-bottom: 32px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  html, body { background: var(--bg); color: var(--ink); }
+  main { background: transparent; box-shadow: none; }
 
   * { box-sizing: border-box; }
   html, body {
@@ -27,11 +29,11 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     line-height: 1.65; font-size: 17px;
   }
-  main { max-width: 760px; margin: 0 auto; padding: 56px 24px 96px; }
-  h1 { font-size: 32px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -0.01em; }
+  main { max-width: 920px; margin: 0 auto; padding: 56px 32px 96px; }
+  h1 { font-size: 40px; line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.015em; font-weight: 700; }
   .subtitle {
-    color: var(--muted); font-size: 16px;
-    margin: 0 0 32px; padding-bottom: 24px; border-bottom: 1px solid var(--line);
+    color: var(--muted); font-size: 17px; line-height: 1.55;
+    margin: 0 0 32px; padding-bottom: 24px; border-bottom: 1px solid var(--card-border);
   }
   h2 {
     font-size: 22px; margin: 56px 0 16px; letter-spacing: -0.005em;
@@ -43,12 +45,12 @@
   p strong, li strong { color: var(--ink); }
   figure {
     margin: 28px 0; text-align: center;
-    background: white; border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+    background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; overflow: hidden;
   }
   figure img { display: block; width: 100%; height: auto; }
   figcaption {
     padding: 10px 14px; font-size: 13px; color: var(--muted);
-    background: var(--code); border-top: 1px solid var(--line); text-align: left;
+    background: rgba(255,255,255,0.02); border-top: 1px solid var(--card-border); text-align: left;
   }
   pre {
     background: #0a2540; color: #cbd5e1;
@@ -58,29 +60,30 @@
   }
   pre.terminal .ok { color: #4ade80; }
   code {
-    background: var(--code); color: var(--ink);
+    background: rgba(28,181,211,0.10); color: #b9e8f3;
     padding: 2px 6px; border-radius: 4px;
     font-family: ui-monospace, monospace; font-size: 0.92em;
+    border: 1px solid rgba(28,181,211,0.18);
   }
   .callout {
     border-left: 3px solid var(--warn);
-    background: #fef2f2; padding: 14px 18px; margin: 24px 0;
+    background: rgba(248,113,113,0.08); padding: 14px 18px; margin: 24px 0;
     border-radius: 0 6px 6px 0; font-size: 15px;
   }
-  .callout.ok { border-left-color: var(--ok); background: #f0fdf4; }
-  .callout.info { border-left-color: var(--accent); background: #eff6ff; }
+  .callout.ok { border-left-color: var(--ok); background: rgba(74,222,128,0.08); }
+  .callout.info { border-left-color: var(--accent); background: rgba(28,181,211,0.08); }
   .lede { font-size: 19px; line-height: 1.55; color: var(--ink); }
   hr { border: none; border-top: 1px solid var(--line); margin: 48px 0; }
   ul { padding-left: 22px; }
   li { margin-bottom: 6px; }
   a { color: var(--accent); }
   .meta-foot { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
-  .glossary { background: white; border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; font-size: 14px; margin: 24px 0; }
+  .glossary { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; padding: 16px 20px; font-size: 14px; margin: 24px 0; }
   .glossary dt { font-weight: 600; margin-top: 8px; }
   .glossary dd { margin: 0 0 4px 0; color: var(--muted); }
   table.flow { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
-  table.flow th, table.flow td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
-  table.flow th { background: var(--code); font-weight: 600; }
+  table.flow th, table.flow td { border: 1px solid var(--card-border); padding: 8px 12px; text-align: left; vertical-align: top; }
+  table.flow th { background: rgba(255,255,255,0.04); color: var(--ink); font-weight: 600; }
 
   /* --- §2 visual layout: static/dynamic cards + flow diagram --- */
   .sd-grid {
@@ -88,10 +91,10 @@
   }
   @media (max-width: 600px) { .sd-grid { grid-template-columns: 1fr; } }
   .sd-card {
-    background: white; border: 1px solid var(--line); border-radius: 8px;
-    padding: 16px 18px; border-top: 3px solid #94a3b8;
+    background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px;
+    padding: 16px 18px; border-top: 3px solid #5a6373;
   }
-  .sd-card.dynamic { border-top-color: var(--accent); background: #fafbff; }
+  .sd-card.dynamic { border-top-color: var(--accent); background: rgba(28,181,211,0.04); }
   .sd-card .sd-icon { font-size: 20px; line-height: 1; }
   .sd-card h4 { margin: 6px 0 2px; font-size: 15px; }
   .sd-card .sd-sub { color: var(--muted); font-size: 11px; margin: 0 0 10px;
@@ -103,10 +106,10 @@
   .flow { margin: 24px 0; display: flex; flex-direction: column; gap: 0; }
   .flow-step {
     display: grid; grid-template-columns: 36px 1fr; gap: 14px;
-    background: white; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px;
     padding: 12px 16px; align-items: center;
   }
-  .flow-step.key { border-left: 3px solid var(--accent); background: #eff6ff; }
+  .flow-step.key { border-left: 3px solid var(--accent); background: rgba(28,181,211,0.07); }
   .flow-num {
     width: 28px; height: 28px; border-radius: 50%;
     background: var(--accent); color: white;
@@ -122,7 +125,7 @@
   }
 
   details.expandable {
-    background: white; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 6px;
     margin: 18px 0; padding: 8px 14px;
   }
   details.expandable summary {
@@ -156,7 +159,7 @@
 
   .meta-row {
     display: flex; gap: 14px; align-items: center;
-    margin: 0 0 32px; padding-bottom: 24px; border-bottom: 1px solid var(--line);
+    margin: 0 0 36px; padding-bottom: 28px; border-bottom: 1px solid var(--card-border);
   }
   .author-avatar {
     width: 44px; height: 44px; border-radius: 50%;
@@ -166,7 +169,7 @@
     flex-shrink: 0;
   }
   .meta-text { display: flex; flex-direction: column; line-height: 1.35; }
-  .meta-text .author { font-weight: 600; color: var(--ink); font-size: 14.5px; }
+  .meta-text .author { font-weight: 600; color: var(--ink); font-size: 15px; }
   .meta-text .role  { color: var(--muted); font-size: 13px; }
   .meta-text .date  { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
   .meta-text .role .sep { margin: 0 6px; color: #cbd5e1; }
@@ -176,13 +179,13 @@
   }
   @media (max-width: 600px) { .next-grid { grid-template-columns: 1fr; } }
   .next-card {
-    background: white; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px;
     padding: 18px 20px; transition: border-color 0.15s, transform 0.15s;
     text-decoration: none; color: inherit; display: block;
   }
   .next-card:hover {
     border-color: var(--accent); transform: translateY(-1px);
-    box-shadow: 0 2px 12px rgba(37,99,235,0.07);
+    box-shadow: 0 2px 14px rgba(28,181,211,0.18);
   }
   .next-card .label {
     color: var(--accent); font-size: 11px; text-transform: uppercase;
@@ -194,7 +197,7 @@
 
   /* Slightly larger reading width on big screens to make room for the hero. */
   @media (min-width: 760px) {
-    main { padding: 0 40px 96px; }
+    main { padding: 64px 40px 96px; }
   }
 </style>
 </head>
