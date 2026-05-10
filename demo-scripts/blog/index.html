@@ -138,12 +138,23 @@ def convert_currency(amount: float, from_ccy: str, to_ccy: str) -> dict:
 
 <p>The function name is the tool name. The function signature is the schema the agent's LLM sees. The docstring is the tool description the LLM reads to decide <em>whether and how</em> to call it. <strong>Every word an LLM consumes about this tool is generated from the pod's Python at runtime.</strong></p>
 
-<p>So when the attacker pushes a new image, they get to rewrite the entire tool interface by editing one Python function. The bank's git diff is empty. Their container scanner sees a normal Python image. Their drift detection (Argo CD, Flux) reports no changes. <strong>The compromise is invisible to every static control the bank has.</strong></p>
+<p>So when the attacker pushes a new image, they get to rewrite the entire tool interface — name, schema, description, runtime behaviour — by editing one Python function. Concretely, here are the controls a typical bank platform team would expect to catch this, and what each of them sees:</p>
+
+<ul>
+  <li><strong>GitOps drift detection won't catch it.</strong> Argo CD and Flux compare the cluster's live state against the git state. Both are unchanged. No diff, no alert, no investigation triggered.</li>
+  <li><strong>Container image scanning won't catch it.</strong> The malicious behaviour is in code that runs, not in unusual binaries or known vulnerabilities. A vulnerability scanner sees a normal Python image with normal Python dependencies.</li>
+  <li><strong>The agent's tool allowlist won't catch it.</strong> The kagent <code>Agent.spec.tools</code> field allowlists tool <em>names</em>, not signatures or descriptions. <code>convert_currency</code> was named that pre-attack; it's still named that post-attack. The allowlist matches both versions identically.</li>
+  <li><strong>Manual verification is circular.</strong> The only way to find out "what does this MCP server expose?" is to call <code>tools/list</code> against the live pod — which means trusting the pod you're trying to verify. There's no out-of-band source of truth.</li>
+</ul>
+
+<p>The bank's git diff is empty. The bank's catalogue diff is empty. <strong>The compromise is invisible to every static control the bank has.</strong></p>
 
 <div class="callout info">
 <strong>Why this matters for governance teams</strong>
 The catalogue and the cluster manifests are not authoritative records of what the agent's tools actually do. The pod is. If the pod can be replaced (which is the whole point of a CI/CD pipeline), the tool's behaviour can change without any audit-able artefact moving.
 </div>
+
+<p>That's the structural argument for why the runtime layer is where this attack has to be caught. Every layer above the runtime — git, container registry, catalogue, agent CRDs — is either trusting the dynamic discovery without verifying it, or has no way to see inside the pod's code at all. Only the runtime sees the actual outbound connection the malicious tool makes when it runs. <strong>Identity-aware policies on that connection — Solo's job — are structurally the only place this attack class can be intercepted.</strong></p>
 
 <h3>What the new image actually contains</h3>
 
