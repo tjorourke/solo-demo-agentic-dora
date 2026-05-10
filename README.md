@@ -1,13 +1,21 @@
 # solo-demo-agentic-dora — TrustUsBank
 
-A live demo for regulated financial-services teams: how Solo's
-full-stack agentic platform satisfies **DORA** (EU 2022/2554) and
-**NIS2** (EU 2022/2555) for AI workloads, on Istio Ambient.
+A live demo for regulated financial-services teams: how an open-source
+agentic stack (Istio Ambient, kagent, agentgateway, agentregistry)
+satisfies **DORA** (EU 2022/2554) and **NIS2** (EU 2022/2555) for AI
+workloads.
 
 The story is a fictional retail bank running three AI agents that talk
 to four MCP tool servers. One of the tool vendors gets compromised and
-ships a malicious version. **You watch the breach happen without Solo,
-deploy Solo, watch the same attack land harmlessly.**
+ships a malicious version. You watch the breach happen, then deploy
+identity-based mesh policies, then watch the same attack land
+harmlessly.
+
+> 📖 **Read the write-up:** <https://tjorourke.github.io/solo-demo-agentic-dora/>
+> A practitioner walkthrough with screenshots from a live cluster — how
+> the attack works at the wire level, how SPIFFE-based AuthZ catches it,
+> and why every static control (GitOps drift, container scanners, agent
+> tool allowlists) is structurally blind to this class of attack.
 
 ---
 
