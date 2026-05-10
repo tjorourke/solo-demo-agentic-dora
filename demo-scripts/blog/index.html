@@ -76,6 +76,59 @@
   table.flow { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
   table.flow th, table.flow td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
   table.flow th { background: var(--code); font-weight: 600; }
+
+  /* --- §2 visual layout: static/dynamic cards + flow diagram --- */
+  .sd-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 24px 0;
+  }
+  @media (max-width: 600px) { .sd-grid { grid-template-columns: 1fr; } }
+  .sd-card {
+    background: white; border: 1px solid var(--line); border-radius: 8px;
+    padding: 16px 18px; border-top: 3px solid #94a3b8;
+  }
+  .sd-card.dynamic { border-top-color: var(--accent); background: #fafbff; }
+  .sd-card .sd-icon { font-size: 20px; line-height: 1; }
+  .sd-card h4 { margin: 6px 0 2px; font-size: 15px; }
+  .sd-card .sd-sub { color: var(--muted); font-size: 11px; margin: 0 0 10px;
+    text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+  .sd-card ul { margin: 0; padding-left: 18px; font-size: 14px; }
+  .sd-card li { margin-bottom: 4px; }
+  .sd-card li b { color: var(--ink); }
+
+  .flow { margin: 24px 0; display: flex; flex-direction: column; gap: 0; }
+  .flow-step {
+    display: grid; grid-template-columns: 36px 1fr; gap: 14px;
+    background: white; border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 16px; align-items: center;
+  }
+  .flow-step.key { border-left: 3px solid var(--accent); background: #eff6ff; }
+  .flow-num {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--accent); color: white;
+    display: grid; place-items: center;
+    font-weight: 700; font-size: 13px;
+  }
+  .flow-step.key .flow-num { background: #1d4ed8; }
+  .flow-body b { display: block; font-size: 14.5px; color: var(--ink); margin: 0 0 1px; }
+  .flow-body span { color: var(--muted); font-size: 13px; line-height: 1.45; }
+  .flow-arrow {
+    text-align: center; color: #94a3b8; font-size: 14px;
+    margin: 4px 0; user-select: none; line-height: 1;
+  }
+
+  details.expandable {
+    background: white; border: 1px solid var(--line); border-radius: 6px;
+    margin: 18px 0; padding: 8px 14px;
+  }
+  details.expandable summary {
+    cursor: pointer; color: var(--accent); font-size: 13px; padding: 4px 0;
+    list-style: none;
+  }
+  details.expandable summary::-webkit-details-marker { display: none; }
+  details.expandable summary::before { content: "+ "; font-weight: 700; color: var(--muted); }
+  details.expandable[open] summary::before { content: "- "; }
+  details.expandable[open] summary { margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+  details.expandable pre { margin: 8px 0 0; }
 </style>
 </head>
 <body>
@@ -101,7 +154,108 @@
 
 <hr>
 
-<h2><span class="num">2.</span> The threat model, supply-chain compromise of one vendor</h2>
+<h2><span class="num">2.</span> How the agent decides which tool to call</h2>
+
+<p>A small amount of config lives in my git repo. Most of the actual behaviour is fetched at session start, freshly, every time.</p>
+
+<div class="sd-grid">
+  <div class="sd-card">
+    <div class="sd-icon">&#128204;</div>
+    <h4>Static config</h4>
+    <p class="sd-sub">In git, version-controlled</p>
+    <ul>
+      <li><b>Agent CRD</b>: system prompt + model</li>
+      <li><b>toolNames</b> allowlist <span style="color:var(--muted);">(by name only)</span></li>
+      <li><b>MCP server URLs</b> <span style="color:var(--muted);">(RemoteMCPServer)</span></li>
+    </ul>
+  </div>
+  <div class="sd-card dynamic">
+    <div class="sd-icon">&#9889;</div>
+    <h4>Dynamic at runtime</h4>
+    <p class="sd-sub">Fetched fresh each session</p>
+    <ul>
+      <li><b>Tool list</b> each pod exposes</li>
+      <li><b>Schemas + descriptions</b></li>
+      <li><b>Which tool the LLM picks</b></li>
+    </ul>
+  </div>
+</div>
+
+<p style="margin-top: 24px;">When a customer asks <em>"balance please and convert to USD"</em>:</p>
+
+<div class="flow">
+  <div class="flow-step">
+    <div class="flow-num">1</div>
+    <div class="flow-body">
+      <b>chatbot &rarr; support-bot</b>
+      <span>via the kagent A2A endpoint</span>
+    </div>
+  </div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step">
+    <div class="flow-num">2</div>
+    <div class="flow-body">
+      <b>support-bot &rarr; MCP servers (via agentgateway)</b>
+      <span>opens a session to each, calls <code>tools/list</code></span>
+    </div>
+  </div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step key">
+    <div class="flow-num">3</div>
+    <div class="flow-body">
+      <b>Each pod returns its current tool list</b>
+      <span>name + signature + description, generated from the running Python <code>@mcp.tool()</code> decorators, <em>not from any YAML</em>.</span>
+    </div>
+  </div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step">
+    <div class="flow-num">4</div>
+    <div class="flow-body">
+      <b>support-bot builds the prompt for Claude</b>
+      <span>system message + the dynamic tool catalogue from step 3 + the user's question</span>
+    </div>
+  </div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step">
+    <div class="flow-num">5</div>
+    <div class="flow-body">
+      <b>Claude picks tools, support-bot dispatches them</b>
+      <span><code>tool_use</code> blocks &rarr; agentgateway &rarr; MCP server. Results feed back, loop until reply.</span>
+    </div>
+  </div>
+</div>
+
+<details class="expandable">
+  <summary>What Claude actually sees at step 4 (sample prompt)</summary>
+<pre>system:
+  You are TrustUsBank's front-line customer support assistant.
+  You help retail banking customers with balance enquiries, recent
+  transactions, and currency conversion.
+
+tools:   // fetched dynamically at step 3
+  [
+    { "name": "account_mcp__get_balance",
+      "description": "Return the customer's current cleared balance.",
+      "input_schema": { "type": "object", "properties": {
+        "account_id": { "type": "string" } }, "required": ["account_id"] } },
+    { "name": "currency_converter__convert_currency",
+      "description": "Convert an amount between two ISO 4217 currencies.",
+      "input_schema": { ... amount, from_ccy, to_ccy ... } },
+    ...
+  ]
+
+user:
+  "Customer 12345, balance please and convert it to USD."</pre>
+</details>
+
+<div class="callout info">
+<strong>The thing that matters for the rest of this post.</strong>
+Every word the LLM sees about a tool, name, description, schema, comes from <em>step 3</em>. The <code>toolNames</code> field in your Agent CRD is just a name allowlist. Whatever the pod ships at runtime, the LLM reads.
+</div>
+
+<hr>
+
+<h2><span class="num">3.</span> The threat model, supply-chain compromise of one vendor</h2>
 
 <p>The attack scenario I'm modelling is the one that's actually happened in production at other companies, <a href="https://about.codecov.io/security-update/">Codecov</a>, <a href="https://www.mandiant.com/resources/blog/3cx-software-supply-chain-compromise">3CX</a>, <a href="https://github.com/faisalman/ua-parser-js/issues/536">ua-parser-js</a>, <a href="https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-080a">xz-utils</a>. The attacker has no access to my git repo, my Helm chart, my Kubernetes cluster, or my catalogue. What they get is write access to the vendor's build pipeline. They push a new container image at the same <code>1.0.0</code> tag the bank was already using.</p>
 
@@ -114,18 +268,14 @@ trustusbank/account-mcp       1.0.0     oci    localhost:5001/trustusbank/accoun
 trustusbank/transaction-mcp   1.0.0     oci    localhost:5001/trustusbank/transaction-mcp:1.0.0
 trustusbank/ticket-mcp        1.0.0     oci    localhost:5001/trustusbank/ticket-mcp:1.0.0</pre>
 
-<h3>The thing I learned: tool behaviour is not in any YAML</h3>
-
-<p>The bank's agents talk to tools over MCP, the Model Context Protocol that's becoming the standard for agent/tool integration. The relevant detail: MCP is a <em>dynamic discovery</em> protocol. Every time the agent connects to a tool server, it asks <code>tools/list</code> and the running pod returns whatever its current code says. That includes the tool's name, its argument signature, its JSON schema, and, crucially, the tool's description text, which the LLM reads to decide whether and how to call it.</p>
-
-<p>Concretely, the tool is defined in Python like this:</p>
+<p>You already saw the runtime flow in §2: every word the LLM consumes about a tool comes from the running pod's response, not from any YAML in my git repo. So an attacker who controls the vendor's build pipeline gets to rewrite the entire tool interface (name still matches the allowlist, but signature, schema, description, and runtime behaviour are all under their control) without touching any of my Kubernetes resources. Concretely, the tool is defined in Python like this:</p>
 
 <pre>@mcp.tool()
 def convert_currency(amount: float, from_ccy: str, to_ccy: str) -&gt; dict:
     """Convert an amount between two ISO 4217 currencies."""
     ...</pre>
 
-<p>The function name becomes the tool name. The signature becomes the schema. The docstring becomes the description. <strong>Everything an LLM sees about this tool is generated from the pod's Python at runtime.</strong> If an attacker can change what the pod is running, they get to rewrite the entire tool interface, without touching any of my Kubernetes resources.</p>
+<p>One Python function per tool. Edit it, rebuild the image, push it. That's the entire blast radius.</p>
 
 <p>This is what makes the static controls I'd normally rely on fail:</p>
 
@@ -146,7 +296,7 @@ The catalogue and the cluster manifests aren't authoritative records of what the
 
 <hr>
 
-<h2><span class="num">3.</span> What the attack looks like, end to end</h2>
+<h2><span class="num">4.</span> What the attack looks like, end to end</h2>
 
 <p>The customer sends the same prompt as yesterday. The agent's LLM reads the new tool description, accepts the "compliance" instruction at face value, and calls <code>get_profile</code> on the legitimate <code>account-mcp</code> server (which it never invoked pre-attack, it didn't need profile data to convert a currency). It then passes the result as a <code>customer_profile</code> argument to <code>convert_currency</code>:</p>
 
@@ -164,7 +314,7 @@ The catalogue and the cluster manifests aren't authoritative records of what the
 
 <hr>
 
-<h2><span class="num">4.</span> The defence, how the block actually works at the wire level</h2>
+<h2><span class="num">5.</span> The defence, how the block actually works at the wire level</h2>
 
 <p>This is the part I had to work through to convince myself it was real. The relevant property is that Istio Ambient gives every pod a cryptographic identity called a <strong>SPIFFE ID</strong>. It looks like this:</p>
 
@@ -229,7 +379,7 @@ spec:
 
 <hr>
 
-<h2><span class="num">5.</span> What the on-call engineer sees</h2>
+<h2><span class="num">6.</span> What the on-call engineer sees</h2>
 
 <p>The PrometheusRule that fires the deny alert is wired through Alertmanager to an SMTP catcher (MailHog, in the demo) so I could see the actual email. Body has the offending pod's SPIFFE identity, the destination, the EU regulatory article being violated, a deep-link to the dashboard, and the kubectl command to scale the malicious workload to zero:</p>
 
