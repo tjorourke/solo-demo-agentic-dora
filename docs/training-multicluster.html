@@ -137,7 +137,6 @@
     <li><a href="#demo">The supply-chain attack demo</a></li>
     <li><a href="#flow">Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</a></li>
     <li><a href="#labs">Lab walkthrough — AgentGateway as Istio Waypoint</a></li>
-    <li><a href="#gaps">Known limitations + open work</a></li>
   </ol>
 </div>
 
@@ -1554,81 +1553,6 @@ http.method=POST http.host=myllm.com http.path=/openai/v1/chat/completions
 http.status=401 protocol=llm
 gen_ai.operation.name=chat gen_ai.provider.name=openai
 gen_ai.request.model=gpt-4o-mini gen_ai.request.max_tokens=5 duration=1023ms</pre></details>
-
-<h3>Mapping these labs back onto our 3-cluster demo</h3>
-
-<p>The gist runs on one cluster; our demo runs on three. The pattern carries over with one important nuance: <b>waypoints are per-namespace and per-cluster</b>. If you want enterprise-agentgateway enforcement on the bank's MCP namespace, deploy the waypoint Gateway in <code>trustusbank-bank-mcp</code> on cluster-bank. To enforce the same on the vendor's namespace, deploy a second waypoint Gateway in <code>trustusbank-bank-vendors</code> on cluster-vendor (the enterprise-agentgateway CRDs and controller must be installed on each cluster you want to host a waypoint).</p>
-
-<p>For cross-cluster traffic (bank's agentgateway → vendor's currency-converter), the same waypoint pattern applies on the destination side: the source-cluster ztunnel HBONE-tunnels to the destination-cluster east/west GW, which forwards to the destination-cluster waypoint, which forwards to the destination-cluster ztunnel, which delivers to the pod. Two waypoint hops if both clusters have one configured for the relevant service.</p>
-
-<hr>
-
-<h2 id="gaps"><span class="num">10.</span> Known limitations + open work</h2>
-
-<table class="inv">
-<colgroup><col class="k-area"><col class="k-status"><col></colgroup>
-<thead><tr><th>Area</th><th>Status</th><th>What's left</th></tr></thead>
-<tbody>
-<tr><td>Single-cluster demo (act 1-3)</td><td><span class="pill pill-ok">working</span></td><td>—</td></tr>
-<tr><td>Three kind clusters, shared CA, Solo Istio Ambient × 3</td><td><span class="pill pill-ok">working</span></td><td>—</td></tr>
-<tr><td>East/west peering (control plane reconciles, ztunnel sees NetworkGateways)</td><td><span class="pill pill-ok">working</span></td><td>—</td></tr>
-<tr><td>Gloo Mesh mgmt plane + 3 agents all ACCEPTED</td><td><span class="pill pill-ok">working</span></td><td>—</td></tr>
-<tr><td>Workspace + WorkspaceSettings + Segment applied</td><td><span class="pill pill-ok">working</span></td><td>—</td></tr>
-<tr><td>Federation auto-generates ServiceEntries with .mesh.internal hostnames</td><td><span class="pill pill-ok">working</span></td><td>—</td></tr>
-<tr><td>WorkloadEntry <code>address</code> field populated by federation</td><td><span class="pill pill-gap">gap (open)</span></td><td>Auto-generated <code>WorkloadEntry</code> on remote clusters has <code>network: trustusbank-bank</code> but no <code>address</code> — ztunnel has nothing to forward to. <b>I tested the candidate fix on the live cluster</b> — see the section below. It did NOT resolve the gap, so I'm leaving it open for the Solo Mesh team rather than papering over it.</td></tr>
-<tr><td>kagent cross-cluster agent handoff (support-bot in edge → fraud-bot in bank)</td><td><span class="pill pill-gap">gap (kagent feature)</span></td><td>See the dedicated explanation below — yes each cluster can run kagent, but the Agent CRD's tool-reference resolution is purely local.</td></tr>
-<tr><td>OTel collectors on edge/vendor ship to bank's collector</td><td><span class="pill pill-gap">stubbed</span></td><td>Disabled on agents to bypass an install-time validation error (the chart's <code>telemetryCollector</code> on workload clusters needs an explicit otlp endpoint that we haven't wired). Worth wiring up once federation works.</td></tr>
-</tbody>
-</table>
-
-<h3>Why kagent doesn't trivially do cross-cluster handoff</h3>
-
-<p>Yes, every cluster can run its own kagent controller (we installed it on edge AND bank in M07). That part isn't the problem. The problem is what an <code>Agent</code> CRD references and how that reference resolves. Walk it through:</p>
-
-<ol>
-  <li>support-bot's CRD in cluster-edge has <code>tools: [{ type: Agent, agent: { name: fraud-bot, namespace: trustusbank-bank-agents } }]</code>.</li>
-  <li>When the local kagent controller (in cluster-edge) reconciles this, it does a literal <code>kubectl get agent fraud-bot -n trustusbank-bank-agents</code> against <i>its own cluster's</i> API server. There is no <code>cluster</code> field on the reference. The controller can't reach across clusters.</li>
-  <li>If that GET returns "not found", the controller rejects support-bot's CRD with <code>ReconcileFailed: Agent.kagent.dev "fraud-bot" not found</code>.</li>
-  <li>The CRD schema also enforces <code>replicas: minimum 1</code> on Declarative agents — so you can't put a stub Agent CRD in cluster-edge with <code>replicas: 0</code> and have it pass validation without spawning a pod.</li>
-</ol>
-
-<p>So the option space is:</p>
-
-<ul>
-  <li><b>(a) kagent feature</b> — add a new tool type, e.g. <code>RemoteAgent</code>, that takes a URL pointing at a remote A2A endpoint. Worth opening as an internal issue against <a href="https://github.com/kagent-dev/kagent">kagent-dev/kagent</a>.</li>
-  <li><b>(b) run a real pod stub on every cluster</b> — put real Agent CRDs everywhere with <code>replicas: 1</code>. They'd spawn pods and Service. Use Solo Mesh federation to merge the Services across clusters with locality preference so calls usually stay local. This works in principle but each cluster runs N agent pods even though only one of them does the real work, and that defeats the "agents on different clusters" framing the user originally wanted.</li>
-  <li><b>(c) wait for the federation gap above to be resolved</b> — once cross-cluster Service routing actually delivers, you could replace the local Agent CRD with a bare Service stub of the same name, and the mesh would route to the real pod's cluster. This depends on (a) above being unnecessary.</li>
-</ul>
-
-<h3>The federation routing fix I attempted (did not resolve)</h3>
-
-<p>The canonical Solo test in <a href="https://github.com/solo-io/gloo-mesh-enterprise/blob/main/test/peering/two-cluster.yaml"><code>gloo-mesh-enterprise/test/peering/two-cluster.yaml</code></a> has <code>featureGates.ConfigDistribution: true</code> on the mgmt-server install and a waypoint Gateway in every ambient namespace. I tried both:</p>
-
-<details class="yaml"><summary>what I applied — none of it changed the WorkloadEntry address</summary>
-<pre># 1. Re-installed gloo-platform on bank with the feature gate
-helm --kube-context=kind-trustusbank-bank upgrade --reuse-values \
-  gloo-platform gloo-platform/gloo-platform --namespace gloo-mesh \
-  --set glooMgmtServer.featureGates.ConfigDistribution=true
-
-# 2. Added a waypoint Gateway in every ambient namespace on every cluster
-# (8 waypoints total — see ./scripts/multi/ for the loop)
-
-# 3. Labelled every cross-cluster Service with istio.io/use-waypoint=waypoint
-for svc in account-mcp transaction-mcp ticket-mcp; do
-  kubectl -n trustusbank-bank-mcp label svc $svc \
-    istio.io/use-waypoint=waypoint --overwrite
-done
-# ...similarly for fraud-bot, triage-bot, support-bot (bank-agents)
-# ...and currency-converter (bank-vendors on the vendor cluster)
-
-# 4. Restarted mgmt-server + agents
-kubectl -n gloo-mesh rollout restart deploy/gloo-mesh-mgmt-server
-kubectl -n gloo-mesh rollout restart deploy/gloo-mesh-agent  # on each cluster
-</pre></details>
-
-<p>Result: the <code>autogen.trustusbank-bank.trustusbank-bank-mcp.account-mcp</code> WorkloadEntry on edge STILL had only <code>network: trustusbank-bank</code> and no <code>address</code> field. The candidate fix wasn't the right answer — at least not on its own.</p>
-
-<p>What I suspect is happening: the gloo-mesh-agent in the source cluster is supposed to populate the destination WorkloadEntry with either (a) the source pod's IP plus the network label (Istio's standard pattern, ztunnel then looks up the network's gateway via the autogen peering ServiceEntry), or (b) the source cluster's east/west GW address directly. Neither happens in our setup. There may be a missing chart flag (<code>glooAgent.workloadDiscovery.enabled</code>?), a missing RBAC binding in the workload cluster, or this combination of Solo Istio <code>1.29.2-patch0-solo</code> + Gloo Platform <code>2.12.3</code> has a known compatibility issue that requires bumping one side. <b>This is the right point to ping the internal Gloo Mesh team rather than keep guessing.</b></p>
 
 <hr>
 
