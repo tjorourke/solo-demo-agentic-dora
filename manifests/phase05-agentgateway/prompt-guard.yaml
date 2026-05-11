@@ -1,0 +1,10 @@
+# Placeholder for the prompt-guard agentgateway policy — not authored yet
+# for this build of agentgateway. ConfigMap below is a no-op kubectl can
+# accept (prevents kubectl_apply's stdin-fallback from erroring out).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prompt-guard-placeholder
+  namespace: trustusbank-platform
+data:
+  note: "agentgateway prompt-guard policy not implemented yet for this build"
