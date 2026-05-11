@@ -48,10 +48,12 @@ if [[ "$MODE" == "multi" ]]; then
     die "MODE=multi requires SOLO_ISTIO_LICENSE_KEY in .env (see .env.example)"
   fi
   log_step "Dispatching to multi-cluster deploy"
-  args=()
-  [[ -n "$RESUME" ]] && args+=(--resume "$RESUME")
-  (( SKIP_PF == 1 )) && args+=(--skip-pf)
-  exec bash "$SCRIPT_DIR/multi/deploy-all.sh" "${args[@]}"
+  # Build args string carefully — bash 3.2 + set -u trips on empty array expansion.
+  multi_args=""
+  [[ -n "$RESUME" ]] && multi_args="$multi_args --resume $RESUME"
+  (( SKIP_PF == 1 )) && multi_args="$multi_args --skip-pf"
+  # shellcheck disable=SC2086
+  exec bash "$SCRIPT_DIR/multi/deploy-all.sh" $multi_args
 fi
 
 PHASES=(
