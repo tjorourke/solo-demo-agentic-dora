@@ -135,6 +135,8 @@
     <li><a href="#workspace">Gloo Mesh Workspaces &amp; Segments</a></li>
     <li><a href="#walk">Step-by-step build (M00 → M09)</a></li>
     <li><a href="#demo">The supply-chain attack demo</a></li>
+    <li><a href="#flow">Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</a></li>
+    <li><a href="#labs">Lab walkthrough — AgentGateway as Istio Waypoint</a></li>
     <li><a href="#gaps">Known limitations + open work</a></li>
   </ol>
 </div>
@@ -1019,7 +1021,507 @@ remote:
 
 <hr>
 
-<h2 id="gaps"><span class="num">8.</span> Known limitations + open work</h2>
+<hr>
+
+<h2 id="flow"><span class="num">8.</span> Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</h2>
+
+<p>The waypoint is where AgentGateway earns its keep. In ambient mesh, every L7 hop between two services in different namespaces (or with policy enforcement enabled) goes <b>pod → source-node ztunnel → waypoint → destination-node ztunnel → pod</b>. Five components, five hops, all running native HBONE. Below is the exact path a request from <code>customer-agent</code> (in <code>ai-agents</code>) to <code>inventory-mcp</code> (in <code>ai-tools</code>) takes once the waypoint is wired in.</p>
+
+<style>
+  .flow { margin: 22px 0; }
+  .flow-row { display: grid; grid-template-columns: 1fr 56px 1fr 56px 1fr 56px 1fr 56px 1fr; align-items: stretch; gap: 0; margin: 8px 0; }
+  .flow-row .node { border: 2px solid #cbd5e1; border-radius: 10px; padding: 12px 14px; background: #f8fafc; min-height: 100%; }
+  .flow-row .node.pod   { border-color: #22c55e; background: #f0fdf4; }
+  .flow-row .node.zt    { border-color: #1cb5d3; background: #ecfeff; }
+  .flow-row .node.wp    { border-color: #a855f7; background: #faf5ff; }
+  .flow-row .node h5 { margin: 0 0 4px; font-size: 13px; font-weight: 700; }
+  .flow-row .node .what { font-size: 11.5px; color: var(--muted); margin-bottom: 6px; }
+  .flow-row .node ul { margin: 0; padding-left: 16px; font-size: 11.5px; line-height: 1.45; }
+  .flow-row .node ul li { margin-bottom: 1px; }
+  .flow-row .step { display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10.5px; color: #0e7490; font-family: ui-monospace, monospace; position: relative; }
+  .flow-row .step::before { content: ""; position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: #1cb5d3; transform: translateY(-50%); }
+  .flow-row .step::after  { content: "▶"; position: absolute; top: 50%; right: 4px; transform: translateY(-50%); color: #1cb5d3; font-size: 12px; }
+  .flow-row .step span { position: relative; z-index: 1; background: #fff; border: 1px solid #1cb5d3; border-radius: 14px; padding: 3px 6px; font-weight: 700; color: #0e7490; }
+  .flow-row .step .hint { background: transparent; border: none; margin-top: 4px; font-weight: 500; color: var(--muted); padding: 0 4px; text-align: center; line-height: 1.3; }
+  @media (max-width: 1100px) { .flow-row { grid-template-columns: 1fr; } .flow-row .step::before { display: none; } .flow-row .step::after { display: none; } .flow-row .step { padding: 8px 0; } }
+</style>
+
+<div class="flow">
+  <div class="flow-row">
+    <div class="node pod">
+      <h5>customer-agent Pod</h5>
+      <div class="what">in <code>ai-agents</code> ns, no sidecar</div>
+      <ul>
+        <li>plain TCP/HTTP</li>
+        <li>SA: <code>customer-agent</code></li>
+        <li>SPIFFE: <code>spiffe://cluster.local/ns/ai-agents/sa/customer-agent</code></li>
+      </ul>
+    </div>
+    <div class="step"><span>1</span><span class="hint">CNI iptables hijack</span></div>
+    <div class="node zt">
+      <h5>ztunnel (src node)</h5>
+      <div class="what">istio-system DaemonSet</div>
+      <ul>
+        <li>catches outbound</li>
+        <li>looks up dest svc → has waypoint?</li>
+        <li>yes → wrap in HBONE</li>
+        <li>mTLS client cert = pod's SPIFFE ID</li>
+      </ul>
+    </div>
+    <div class="step"><span>2</span><span class="hint">HBONE :15008<br>mTLS</span></div>
+    <div class="node wp">
+      <h5>AgentGateway waypoint</h5>
+      <div class="what"><code>enterprise-agentgateway-waypoint</code></div>
+      <ul>
+        <li>extracts <code>source.identity</code> from mTLS</li>
+        <li>evaluates CEL authz</li>
+        <li>applies rate limit, headers, transforms</li>
+        <li>deny → 403 here (0ms)</li>
+        <li>allow → forward via HBONE</li>
+      </ul>
+    </div>
+    <div class="step"><span>3</span><span class="hint">HBONE :15008<br>mTLS</span></div>
+    <div class="node zt">
+      <h5>ztunnel (dest node)</h5>
+      <div class="what">istio-system DaemonSet</div>
+      <ul>
+        <li>terminates HBONE</li>
+        <li>delivers raw TCP to dest pod</li>
+      </ul>
+    </div>
+    <div class="step"><span>4</span><span class="hint">plain TCP</span></div>
+    <div class="node pod">
+      <h5>inventory-mcp Pod</h5>
+      <div class="what">in <code>ai-tools</code> ns, no sidecar</div>
+      <ul>
+        <li>receives the request</li>
+        <li>has no idea a waypoint exists</li>
+        <li>returns 200</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<p>Three properties worth committing to memory:</p>
+
+<ul>
+  <li><b>The pod doesn't know.</b> No sidecar, no envoy, no application change. The CNI hijack at step 1 is transparent.</li>
+  <li><b>SPIFFE identity rides the TLS, not the payload.</b> By the time the waypoint sees the request at step 3, the source identity is already cryptographically verified — the waypoint's CEL policies read it from the connection, not from any HTTP header the caller could forge.</li>
+  <li><b>Deny is free.</b> A failed authorization check returns 403 at step 3 in 0ms. The destination ztunnel and pod never see the request.</li>
+</ul>
+
+<div class="callout info"><b>Why this is different from a north-south agentgateway.</b> The north-south Gateway in <code>trustusbank-platform</code> (kind <code>Gateway</code>, gatewayClassName <code>agentgateway</code>) terminates external client traffic and routes to MCP servers — it sits at the edge of the cluster. The waypoint is <i>inside</i> the data plane: every L7 hop in the mesh goes through it. Same control plane (the AgentGateway controller in <code>agentgateway-system</code>), two different placements.</div>
+
+<hr>
+
+<h2 id="labs"><span class="num">9.</span> Lab walkthrough — AgentGateway as Istio Waypoint</h2>
+
+<p>This section follows the canonical Solo internal gist <a href="https://gist.github.com/rvennam/6cf84236bb56c1d2468f70cf035cd41b">agentgateway-as-waypoint.md</a> end-to-end. Eight labs from a clean prereqs state to a fully policy-enforced ambient mesh. Every snippet is the gist's exact YAML / shell — copy-paste runnable. The result is the canonical reference implementation; matches the demo we ship.</p>
+
+<h3>Prerequisites</h3>
+
+<p>You need a cluster with Solo Istio (Ambient) installed and Enterprise AgentGateway v2.3.0+. If you ran <a href="https://github.com/tjorourke/solo-demo-agentic-dora/blob/main/scripts/deploy-all.sh">deploy-all.sh</a>, the first piece is already done — only the second is new.</p>
+
+<details class="yaml"><summary>install Enterprise AgentGateway</summary>
+<pre>export AGENTGATEWAY_VERSION=v2.3.0
+export AGENTGATEWAY_LICENSE_KEY=&lt;YOUR_LICENSE_KEY&gt;   # same Solo enterprise license
+
+# CRDs
+helm upgrade -i enterprise-agentgateway-crds \
+  oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts/enterprise-agentgateway-crds \
+  --create-namespace --namespace agentgateway-system \
+  --version $AGENTGATEWAY_VERSION
+
+# Control plane
+helm upgrade -i enterprise-agentgateway \
+  oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts/enterprise-agentgateway \
+  -n agentgateway-system \
+  --version $AGENTGATEWAY_VERSION \
+  --set-string licensing.licenseKey=$AGENTGATEWAY_LICENSE_KEY
+
+# Verify
+kubectl get gatewayclass enterprise-agentgateway-waypoint
+kubectl get pods -n istio-system -l app=ztunnel
+kubectl get pods -n agentgateway-system -l app.kubernetes.io/name=enterprise-agentgateway</pre></details>
+
+<div class="callout"><b>If you already have OSS agentgateway installed</b> (as our demo does — the OSS controller fronts the bank's MCP wire), the enterprise-agentgateway-crds chart will fail with "ownership metadata" errors because the OSS chart owns the shared CRDs (<code>agentgatewaybackends</code>, <code>agentgatewaypolicies</code>, …). Re-annotate the conflicting CRDs to the enterprise release before retrying:
+<pre>for crd in $(helm template oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts/enterprise-agentgateway-crds \
+  --version v2.3.0 | grep "^  name:" | awk '{print $2}' | sort -u); do
+  kubectl annotate crd "$crd" \
+    meta.helm.sh/release-name=enterprise-agentgateway-crds \
+    meta.helm.sh/release-namespace=agentgateway-system --overwrite 2>/dev/null
+  kubectl label crd "$crd" app.kubernetes.io/managed-by=Helm --overwrite 2>/dev/null
+done</pre></div>
+
+<h3>Lab 1 — set up the scenario</h3>
+
+<p>Two namespaces, two agent pods, one MCP tool server, no policies. Both agents can hit the MCP directly — there's no L7 enforcement yet.</p>
+
+<details class="yaml"><summary>namespaces, MCP server, two agent pods</summary>
+<pre># Two ambient-labelled namespaces
+kubectl create ns ai-agents
+kubectl label ns ai-agents istio.io/dataplane-mode=ambient
+kubectl create ns ai-tools
+kubectl label ns ai-tools istio.io/dataplane-mode=ambient
+
+# MCP tool server
+kubectl apply -f - &lt;&lt;'EOF'
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: inventory-mcp, namespace: ai-tools }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: inventory-mcp, namespace: ai-tools }
+spec:
+  selector: { matchLabels: { app: inventory-mcp } }
+  template:
+    metadata: { labels: { app: inventory-mcp } }
+    spec:
+      serviceAccountName: inventory-mcp
+      containers:
+        - name: mcp
+          image: ghcr.io/peterj/mcp-website-fetcher:main
+          ports: [{ containerPort: 8000 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: inventory-mcp, namespace: ai-tools }
+spec:
+  selector: { app: inventory-mcp }
+  ports: [{ port: 80, targetPort: 8000 }]
+EOF
+
+# Two agent ServiceAccounts + pods — same shape, different identities
+for agent in customer-agent rogue-agent; do
+  kubectl apply -f - &lt;&lt;EOF
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: $agent, namespace: ai-agents }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: $agent, namespace: ai-agents }
+spec:
+  selector: { matchLabels: { app: $agent } }
+  template:
+    metadata: { labels: { app: $agent } }
+    spec:
+      serviceAccountName: $agent
+      containers:
+        - name: curl
+          image: curlimages/curl:latest
+          command: ["sleep", "3600"]
+EOF
+done
+
+# Baseline: both agents get 200 — no L7 enforcement yet
+kubectl exec deploy/customer-agent -n ai-agents -- \
+  curl -s -o /dev/null -w '%{http_code}\n' http://inventory-mcp.ai-tools.svc.cluster.local/sse
+kubectl exec deploy/rogue-agent    -n ai-agents -- \
+  curl -s -o /dev/null -w '%{http_code}\n' http://inventory-mcp.ai-tools.svc.cluster.local/sse
+# Both: 200</pre></details>
+
+<h3>Lab 2 — deploy AgentGateway as a waypoint</h3>
+
+<p>Create a single Gateway resource pointing at the new GatewayClass. Label the MCP Service to opt traffic in.</p>
+
+<details class="yaml"><summary>waypoint Gateway + opt-in label</summary>
+<pre>kubectl apply -f - &lt;&lt;'EOF'
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agw-waypoint
+  namespace: ai-tools
+  labels:
+    istio.io/waypoint-for: service        # waypoint scopes to service-level traffic
+spec:
+  gatewayClassName: enterprise-agentgateway-waypoint
+  listeners:
+    - name: mesh
+      protocol: HTTP
+      port: 15088                          # the waypoint listener port
+      allowedRoutes: { namespaces: { from: Same } }
+EOF
+
+# Wait for the waypoint pod to come up — single container, not the 4-container
+# north-south stack
+kubectl get gateway agw-waypoint -n ai-tools -w   # PROGRAMMED=True
+
+# Opt the MCP Service in
+kubectl label svc inventory-mcp -n ai-tools istio.io/use-waypoint=agw-waypoint
+
+# Re-test: 200 still, but now via waypoint
+kubectl exec deploy/customer-agent -n ai-agents -- \
+  curl -s -o /dev/null -w '%{http_code}\n' http://inventory-mcp.ai-tools.svc.cluster.local/sse
+
+# Waypoint log line shows the SPIFFE identity from mTLS:
+kubectl logs -n ai-tools -l gateway.networking.k8s.io/gateway-name=agw-waypoint --tail=3
+# {"http.method":"GET","http.path":"/sse","http.status":200,
+#  "source":{"identity":"spiffe://cluster.local/ns/ai-agents/sa/customer-agent"}}</pre></details>
+
+<h3>Lab 3 — identity-based authorization (CEL)</h3>
+
+<p>Now the cool part. <code>EnterpriseAgentgatewayPolicy</code> targets the waypoint Gateway. Match expressions are CEL over a request struct that includes <code>source.identity</code> — the SPIFFE identity already cryptographically verified at the TLS layer. No tokens or shared secrets needed; the mesh itself is the identity oracle.</p>
+
+<details class="yaml"><summary>allow only customer-agent</summary>
+<pre>kubectl apply -f - &lt;&lt;'EOF'
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: waypoint-authz
+  namespace: ai-tools
+spec:
+  targetRefs:
+    - { group: gateway.networking.k8s.io, kind: Gateway, name: agw-waypoint }
+  traffic:
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+          - 'source.identity.serviceAccount == "customer-agent"'
+EOF
+
+# customer-agent: 200
+# rogue-agent:    403 (denied at the waypoint, 0ms — never reaches inventory-mcp)</pre></details>
+
+<details class="yaml"><summary>CEL expression examples</summary>
+<pre># Allow by namespace
+- 'source.identity.namespace == "ai-agents"'
+
+# Combine SA + namespace
+- 'source.identity.namespace == "ai-agents" &amp;&amp; source.identity.serviceAccount == "customer-agent"'
+
+# Multiple allowed SAs (OR between expressions)
+- 'source.identity.serviceAccount == "customer-agent"'
+- 'source.identity.serviceAccount == "pricing-agent"'
+
+# Path-based — only allow specific endpoints
+- 'source.identity.serviceAccount == "customer-agent" &amp;&amp; request.path.startsWith("/v1/chat")'
+
+# Combine identity with request attributes
+- 'source.identity.serviceAccount == "customer-agent" &amp;&amp; request.method == "POST"'</pre></details>
+
+<p>Available CEL variables: <code>source.identity.serviceAccount</code>, <code>source.identity.namespace</code>, <code>source.identity.trustDomain</code>, <code>source.address</code>, <code>request.method</code>, <code>request.path</code>, <code>request.headers</code>.</p>
+
+<h3>Lab 4 — rate limiting east-west traffic</h3>
+
+<p>Local rate limiter built into the waypoint. No external rate-limit service needed. Token-based limiting works (counts LLM tokens, not just requests).</p>
+
+<details class="yaml"><summary>2 requests/minute, observe 429s</summary>
+<pre>kubectl apply -f - &lt;&lt;'EOF'
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: { name: waypoint-ratelimit, namespace: ai-tools }
+spec:
+  targetRefs:
+    - { group: gateway.networking.k8s.io, kind: Gateway, name: agw-waypoint }
+  traffic:
+    rateLimit:
+      local:
+        - requests: 2
+          unit: Minutes
+EOF
+
+for i in 1 2 3 4 5; do
+  CODE=$(kubectl exec deploy/customer-agent -n ai-agents -- \
+    curl -s -o /dev/null -w '%{http_code}' http://inventory-mcp.ai-tools.svc.cluster.local/sse)
+  echo "Request $i: $CODE"
+done
+# 200, 200, 429, 429, 429</pre></details>
+
+<details class="yaml"><summary>token-based + burst</summary>
+<pre># Per-time-unit, request count
+rateLimit:
+  local:
+    - { requests: 100, unit: Minutes }
+
+# Token-based (count LLM tokens, not requests)
+rateLimit:
+  local:
+    - { tokens: 10000, unit: Hours }
+
+# Burst allowance
+rateLimit:
+  local:
+    - { requests: 10, unit: Minutes, burst: 5 }</pre></details>
+
+<h3>Lab 5 — LLM egress with path-based multi-provider routing</h3>
+
+<p>This is the big one. Agents call a single hostname (<code>myllm.com</code>) with plain HTTP and <b>no API key</b>. The waypoint routes <code>/openai</code> to OpenAI, <code>/anthropic</code> to Anthropic. Each backend handles its own API key injection, TLS origination, and provider-specific protocol translation. The agent never sees a real provider URL or a credential.</p>
+
+<details class="yaml"><summary>ServiceEntry + 2 AgentgatewayBackends + HTTPRoute</summary>
+<pre>kubectl apply -f - &lt;&lt;'EOF'
+# Virtual hostname myllm.com — the agent's view
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: myllm
+  namespace: ai-tools
+  labels: { istio.io/use-waypoint: agw-waypoint }
+spec:
+  hosts: [myllm.com]
+  location: MESH_EXTERNAL
+  ports: [{ number: 80, name: http, protocol: HTTP }]
+  resolution: STATIC
+  endpoints: [{ address: 1.1.1.1 }]                    # placeholder; mesh-rewritten
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata: { name: openai, namespace: ai-tools }
+spec:
+  ai:
+    provider:
+      openai: { model: gpt-4o-mini }
+  policies:
+    auth: { secretRef: { name: openai-secret } }
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata: { name: anthropic, namespace: ai-tools }
+spec:
+  ai:
+    provider:
+      anthropic: { model: claude-sonnet-4-20250514 }
+  policies:
+    auth: { secretRef: { name: anthropic-secret } }
+---
+# HTTPRoute's parentRef targets the ServiceEntry (NOT the Gateway)
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: llm-routes, namespace: ai-tools }
+spec:
+  parentRefs:
+    - { group: networking.istio.io, kind: ServiceEntry, name: myllm }
+  rules:
+    - matches: [{ path: { type: PathPrefix, value: /openai } }]
+      backendRefs:
+        - { name: openai, group: agentgateway.dev, kind: AgentgatewayBackend }
+    - matches: [{ path: { type: PathPrefix, value: /anthropic } }]
+      backendRefs:
+        - { name: anthropic, group: agentgateway.dev, kind: AgentgatewayBackend }
+EOF
+
+# Agent now does this — plain HTTP, no key, virtual host:
+kubectl exec deploy/customer-agent -n ai-agents -- \
+  curl -s http://myllm.com/openai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Say hello in 5 words"}],"max_tokens":20}'
+# {"choices":[{"message":{"content":"Hello, how are you today?"}}],...}</pre></details>
+
+<div class="callout info"><b>Why this is the headline feature.</b> Every agent in the cluster gets one hostname, no API keys, no secret handling. Provider rotation is one HTTPRoute edit. Per-agent allow-list, per-tenant rate limit, prompt-guard regex — all configured at the waypoint, applied at the wire.</div>
+
+<h3>Lab 6 — combining policies</h3>
+
+<p>Stacked policies on the same Gateway are evaluated in order: <b>authorization → rate limit → header/transform</b>. A deny at authz short-circuits — the rate limiter never sees it.</p>
+
+<details class="yaml"><summary>authz + rate limit + header injection on one waypoint</summary>
+<pre>kubectl apply -f - &lt;&lt;'EOF'
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: { name: waypoint-authz, namespace: ai-tools }
+spec:
+  targetRefs: [{ group: gateway.networking.k8s.io, kind: Gateway, name: agw-waypoint }]
+  traffic:
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+          - 'source.identity.serviceAccount == "customer-agent"'
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: { name: waypoint-ratelimit, namespace: ai-tools }
+spec:
+  targetRefs: [{ group: gateway.networking.k8s.io, kind: Gateway, name: agw-waypoint }]
+  traffic:
+    rateLimit:
+      local: [{ requests: 3, unit: Minutes }]
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: { name: waypoint-headers, namespace: ai-tools }
+spec:
+  targetRefs: [{ group: gateway.networking.k8s.io, kind: Gateway, name: agw-waypoint }]
+  traffic:
+    headerModifiers:
+      request:
+        add: [{ name: x-waypoint-enforced, value: "true" }]
+EOF
+
+kubectl get enterpriseagentgatewaypolicy -n ai-tools
+# NAME                 ACCEPTED   ATTACHED
+# waypoint-authz       True       True
+# waypoint-headers     True       True
+# waypoint-ratelimit   True       True</pre></details>
+
+<h3>Lab 7 — observability</h3>
+
+<p>Every request through the waypoint generates a structured access log with the source SPIFFE identity, the destination route, the result, and any policy-enforcement reason. Plus Prometheus metrics on <code>:15020</code>, OTLP traces.</p>
+
+<details class="yaml"><summary>tail the access log + scrape Prom metrics</summary>
+<pre># Generate some traffic
+for i in 1 2 3; do
+  kubectl exec deploy/customer-agent -n ai-agents -- \
+    curl -s -o /dev/null http://inventory-mcp.ai-tools.svc.cluster.local/sse
+done
+
+# Structured logs
+kubectl logs -n ai-tools -l gateway.networking.k8s.io/gateway-name=agw-waypoint --tail=5
+
+# Each log line carries:
+#   http.method · http.path · http.status · http.host
+#   src.addr · source.identity (SPIFFE)
+#   route · endpoint · duration
+#   error · reason (e.g. "authorization failed", "rate limit exceeded")
+
+# Prometheus metrics
+kubectl port-forward -n ai-tools \
+  $(kubectl get pod -n ai-tools -l gateway.networking.k8s.io/gateway-name=agw-waypoint \
+    -o jsonpath='{.items[0].metadata.name}') 15020:15020 &amp;
+sleep 2
+curl -s http://localhost:15020/metrics | grep -E "agentgateway_" | head -20</pre></details>
+
+<h3>Lab 8 — namespace-level waypoint</h3>
+
+<p>Instead of opting each Service in individually, label the namespace and every Service in it gets waypoint enforcement automatically.</p>
+
+<details class="yaml"><summary>namespace-level opt-in</summary>
+<pre># Remove the service-level label
+kubectl label svc inventory-mcp -n ai-tools istio.io/use-waypoint-
+
+# Label the namespace instead — all services in ai-tools now use the waypoint
+kubectl label ns ai-tools istio.io/use-waypoint=agw-waypoint
+
+# Any new Service deployed to ai-tools automatically gets waypoint enforcement</pre></details>
+
+<h3>Comparison: waypoint vs north-south gateway</h3>
+
+<table class="inv">
+<colgroup><col class="k-area"><col><col></colgroup>
+<thead><tr><th>Capability</th><th>North-South Gateway</th><th>Waypoint</th></tr></thead>
+<tbody>
+<tr><td><code>gatewayClassName</code></td><td><code>enterprise-agentgateway</code></td><td><code>enterprise-agentgateway-waypoint</code></td></tr>
+<tr><td>Traffic direction</td><td>external → cluster (ingress)</td><td>pod → pod (east-west)</td></tr>
+<tr><td>Identity source</td><td>JWT claims, API keys, headers</td><td>Mesh identity (SPIFFE from mTLS)</td></tr>
+<tr><td>LLM routing</td><td>HTTPRoute → AgentgatewayBackend</td><td>HTTPRoute (parentRef: ServiceEntry) → AgentgatewayBackend</td></tr>
+<tr><td>Rate limiting</td><td>Local + global (req + token)</td><td>Local + global (req + token)</td></tr>
+<tr><td>Prompt guards</td><td>AgentgatewayPolicy on backend</td><td>AgentgatewayPolicy on backend</td></tr>
+<tr><td>Container count</td><td>4 (proxy + ext-auth + rate-limit + admin)</td><td><b>1</b> (single agentgateway process)</td></tr>
+<tr><td>HTTPRoute parentRef</td><td><code>Gateway</code></td><td><code>ServiceEntry</code></td></tr>
+<tr><td>Ambient mesh required</td><td>no</td><td><b>yes</b> — depends on ztunnel</td></tr>
+</tbody>
+</table>
+
+<h3>Mapping these labs back onto our 3-cluster demo</h3>
+
+<p>The gist runs on one cluster; our demo runs on three. The pattern carries over with one important nuance: <b>waypoints are per-namespace and per-cluster</b>. If you want enterprise-agentgateway enforcement on the bank's MCP namespace, deploy the waypoint Gateway in <code>trustusbank-bank-mcp</code> on cluster-bank. To enforce the same on the vendor's namespace, deploy a second waypoint Gateway in <code>trustusbank-bank-vendors</code> on cluster-vendor (the enterprise-agentgateway CRDs and controller must be installed on each cluster you want to host a waypoint).</p>
+
+<p>For cross-cluster traffic (bank's agentgateway → vendor's currency-converter), the same waypoint pattern applies on the destination side: the source-cluster ztunnel HBONE-tunnels to the destination-cluster east/west GW, which forwards to the destination-cluster waypoint, which forwards to the destination-cluster ztunnel, which delivers to the pod. Two waypoint hops if both clusters have one configured for the relevant service.</p>
+
+<hr>
+
+<h2 id="gaps"><span class="num">10.</span> Known limitations + open work</h2>
 
 <table class="inv">
 <colgroup><col class="k-area"><col class="k-status"><col></colgroup>
