@@ -1513,6 +1513,48 @@ kubectl label ns ai-tools istio.io/use-waypoint=agw-waypoint
 </tbody>
 </table>
 
+<h3>Live test results — all 8 labs verified</h3>
+
+<p>I ran the entire gist top to bottom on the demo's <code>trustusbank</code> cluster after installing enterprise-agentgateway v2.3.0 there. Every step's expected outcome matched the gist's documented behaviour. Here's the evidence per lab:</p>
+
+<table class="inv">
+<colgroup><col class="k-num"><col style="width: 240px"><col><col class="k-status"></colgroup>
+<thead><tr><th>Lab</th><th>What it asserts</th><th>Observed (live)</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><b>1</b></td><td>baseline — no waypoint, both agents get 200</td><td><code>customer-agent → 200</code>, <code>rogue-agent → 200</code></td><td><span class="pill pill-ok">pass</span></td></tr>
+<tr><td><b>2</b></td><td>waypoint up, traffic flows through it</td><td>Gateway PROGRAMMED=True, pod 1/1 Running, log line: <code>gateway=ai-tools/agw-waypoint listener=waypoint route=ai-tools/_waypoint-default endpoint=10.244.2.136:8000 http.status=200</code></td><td><span class="pill pill-ok">pass</span></td></tr>
+<tr><td><b>3</b></td><td>CEL authz denies rogue, allows customer</td><td><code>customer → 200</code>, <code>rogue → 403</code>; deny log: <code>http.status=403 error="authorization failed" reason=Authorization duration=32ms</code></td><td><span class="pill pill-ok">pass</span></td></tr>
+<tr><td><b>4</b></td><td>rate limit 2/min, 3rd request 429</td><td>Five requests: <code>200, 200, 429, 429, 429</code>; deny log: <code>http.status=429 error="rate limit exceeded" reason=RateLimit duration=0ms</code></td><td><span class="pill pill-ok">pass</span></td></tr>
+<tr><td><b>5</b></td><td>LLM egress — agent calls <code>myllm.com/openai</code> with no key, waypoint routes to OpenAI</td><td>Real call to OpenAI; returned <code>401 "Incorrect API key sk-place**lder"</code> — proves request reached OpenAI. Log: <code>endpoint=api.openai.com:443 protocol=llm gen_ai.provider.name=openai gen_ai.request.model=gpt-4o-mini gen_ai.request.max_tokens=5</code></td><td><span class="pill pill-ok">pass</span></td></tr>
+<tr><td><b>6</b></td><td>stacked authz + rate limit + headers</td><td>3 policies ATTACHED=True, rogue=403, customer=200,200,200,429,429</td><td><span class="pill pill-ok">pass</span></td></tr>
+<tr><td><b>7</b></td><td>structured logs + Prom metrics</td><td>Every log line: <code>gateway, listener, route, endpoint, src.addr, http.method, http.host, http.path, http.status, protocol, duration</code> (+ <code>error/reason</code> on denies, + GenAI fields on LLM calls). Prom on :15020 exposes <code>agentgateway_xds_*</code>, <code>agentgateway_tokio_*</code>.</td><td><span class="pill pill-ok">pass</span></td></tr>
+<tr><td><b>8</b></td><td>namespace-level waypoint label replaces service-level</td><td>After <code>kubectl label ns ai-tools istio.io/use-waypoint=agw-waypoint</code>: customer=200, rogue=403. Policies still apply mesh-wide.</td><td><span class="pill pill-ok">pass</span></td></tr>
+</tbody>
+</table>
+
+<details class="yaml"><summary>captured log line samples from the run</summary>
+<pre># Lab 2 — first successful request through the waypoint
+gateway=ai-tools/agw-waypoint listener=waypoint route=ai-tools/_waypoint-default
+endpoint=10.244.2.136:8000 src.addr=10.244.3.171:46246
+http.method=GET http.host=inventory-mcp.ai-tools.svc.cluster.local
+http.path=/sse http.version=HTTP/1.1 http.status=200 protocol=http duration=9906ms
+
+# Lab 3 — rogue-agent denied by CEL
+http.method=GET http.host=inventory-mcp.ai-tools.svc.cluster.local
+http.path=/sse http.status=403 protocol=http
+error="authorization failed" reason=Authorization duration=32ms
+
+# Lab 4 — rate limit kicks in
+http.status=429 error="rate limit exceeded" reason=RateLimit duration=0ms
+
+# Lab 5 — LLM egress with GenAI semantic conventions
+gateway=ai-tools/agw-waypoint listener=waypoint route=ai-tools/llm-routes
+endpoint=api.openai.com:443 src.addr=10.244.3.171:46246
+http.method=POST http.host=myllm.com http.path=/openai/v1/chat/completions
+http.status=401 protocol=llm
+gen_ai.operation.name=chat gen_ai.provider.name=openai
+gen_ai.request.model=gpt-4o-mini gen_ai.request.max_tokens=5 duration=1023ms</pre></details>
+
 <h3>Mapping these labs back onto our 3-cluster demo</h3>
 
 <p>The gist runs on one cluster; our demo runs on three. The pattern carries over with one important nuance: <b>waypoints are per-namespace and per-cluster</b>. If you want enterprise-agentgateway enforcement on the bank's MCP namespace, deploy the waypoint Gateway in <code>trustusbank-bank-mcp</code> on cluster-bank. To enforce the same on the vendor's namespace, deploy a second waypoint Gateway in <code>trustusbank-bank-vendors</code> on cluster-vendor (the enterprise-agentgateway CRDs and controller must be installed on each cluster you want to host a waypoint).</p>
