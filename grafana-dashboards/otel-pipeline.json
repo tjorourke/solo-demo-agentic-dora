@@ -1,0 +1,114 @@
+{
+  "uid": "otel-pipeline",
+  "title": "TrustUsBank — OTel Pipeline (end-to-end)",
+  "tags": ["trustusbank", "otel", "tracing"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "type": "text",
+      "title": "How OTel flows in this cluster",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Pipeline**: kagent agents + MCP servers + agentgateway → OTLP gRPC :4317 → otel-collector → **Tempo** (traces) and **Loki** (logs). Every agent reasoning step and every tool call becomes a span — agentgateway samples at 100% (`manifests/phase05-agentgateway/tracing.yaml`), MCP servers use parent-based always-on (`manifests/phase06-kagent/telemetry.yaml`).\n\nUse this dashboard top-to-bottom: **stats** prove the gateway is emitting; **rates** show which service is active; **trace tables** are the click-through into Tempo; **logs** are the stdout + ztunnel access lines from the same window. If a panel is empty after a fresh chatbot prompt, that segment of the pipeline isn't working — check the otel-collector pod first."
+      }
+    },
+
+    {
+      "type": "stat",
+      "title": "Tool calls / min (agentgateway)",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 5 },
+      "targets": [
+        { "expr": "sum(rate(agentgateway_tool_calls_total[5m])) * 60", "refId": "A" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "A2A calls / min (agentgateway)",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 5 },
+      "targets": [
+        { "expr": "sum(rate(agentgateway_a2a_calls_total[5m])) * 60", "refId": "A" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "MCP-server log lines (5m)",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 5 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "expr": "sum(count_over_time({namespace=\"trustusbank-bank-mcp\"}[5m]))", "refId": "A" }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Tool calls / sec by agent",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "targets": [
+        { "expr": "sum by (agent) (rate(agentgateway_tool_calls_total[1m]))", "refId": "A", "legendFormat": "{{agent}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "MCP-server log rate by pod (lines / sec)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "expr": "sum by (pod) (rate({namespace=\"trustusbank-bank-mcp\"}[1m]))", "refId": "A", "legendFormat": "{{pod}}" }
+      ]
+    },
+
+    {
+      "type": "table",
+      "title": "Recent agent traces (Tempo)",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 17 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{ resource.service.name =~ \"support-bot|fraud-bot|triage-bot\" }",
+          "limit": 25
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Recent MCP-server traces (Tempo)",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 17 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{ resource.service.name =~ \"account-mcp|transaction-mcp|ticket-mcp|currency-converter\" }",
+          "limit": 25
+        }
+      ]
+    },
+
+    {
+      "type": "logs",
+      "title": "MCP-server stdout — last 30m",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 27 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
+      "targets": [
+        { "expr": "{namespace=\"trustusbank-bank-mcp\"}", "refId": "A" }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "ztunnel access log — last 30m (HBONE / deny verdicts)",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 27 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
+      "targets": [
+        { "expr": "{namespace=\"istio-system\", app=\"ztunnel\"}", "refId": "A" }
+      ]
+    }
+  ]
+}
