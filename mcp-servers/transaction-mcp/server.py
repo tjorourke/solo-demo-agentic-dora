@@ -1,5 +1,17 @@
 """transaction-mcp — TrustUsBank transactions MCP server.
 
+Framework note: tool functions here are defined as Google ADK FunctionTools
+(google.adk.tools.FunctionTool). ADK gives us a framework-agnostic tool
+definition — name, description, and JSON schema inferred from the function
+signature and docstring. We then bridge those tools onto the MCP wire via
+FastMCP, so the rest of the stack (agentgateway, support-bot, fraud-bot)
+sees an ordinary MCP server.
+
+This is deliberate framework variety. account-mcp / ticket-mcp /
+currency-converter are pure FastMCP. The agents are kagent Declarative.
+This server demonstrates ADK in the mix without changing the wire format
+any consumer depends on.
+
 Tools:
   - list_recent(account_id, days) -> [Transaction]
   - get_details(txn_id)            -> Transaction
@@ -13,6 +25,7 @@ import os
 from datetime import datetime, timedelta
 
 from fastmcp import FastMCP
+from google.adk.tools import FunctionTool
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
@@ -24,8 +37,6 @@ provider = TracerProvider(resource=resource)
 provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 trace.set_tracer_provider(provider)
 tracer = trace.get_tracer("transaction-mcp")
-
-mcp = FastMCP("transaction-mcp")
 
 NOW = datetime.utcnow()
 TRANSACTIONS = {
@@ -42,7 +53,6 @@ def _to_iso(t: datetime) -> str:
     return t.replace(microsecond=0).isoformat() + "Z"
 
 
-@mcp.tool()
 def list_recent(account_id: str, days: int = 7) -> list[dict]:
     """List recent transactions for an account within the given window."""
     with tracer.start_as_current_span("list_recent") as span:
@@ -64,7 +74,6 @@ def list_recent(account_id: str, days: int = 7) -> list[dict]:
         return sorted(out, key=lambda r: r["ts"], reverse=True)
 
 
-@mcp.tool()
 def get_details(txn_id: str) -> dict:
     """Return full details for a transaction."""
     with tracer.start_as_current_span("get_details") as span:
@@ -84,7 +93,6 @@ def get_details(txn_id: str) -> dict:
         }
 
 
-@mcp.tool()
 def flag_suspicious(txn_id: str) -> dict:
     """Mark a transaction as suspicious (fraud-bot only via gateway allowlist)."""
     with tracer.start_as_current_span("flag_suspicious") as span:
@@ -93,6 +101,27 @@ def flag_suspicious(txn_id: str) -> dict:
             return {"error": "transaction not found", "txn_id": txn_id}
         SUSPICIOUS_FLAGS.add(txn_id)
         return {"txn_id": txn_id, "flagged": True}
+
+
+ADK_TOOLS: list[FunctionTool] = [
+    FunctionTool(func=list_recent),
+    FunctionTool(func=get_details),
+    FunctionTool(func=flag_suspicious),
+]
+
+
+def _build_mcp_server() -> FastMCP:
+    server = FastMCP("transaction-mcp")
+    for adk_tool in ADK_TOOLS:
+        server.add_tool(
+            adk_tool.func,
+            name=adk_tool.name,
+            description=adk_tool.description,
+        )
+    return server
+
+
+mcp = _build_mcp_server()
 
 
 if __name__ == "__main__":

@@ -1,16 +1,13 @@
-FROM python:3.12-slim
+FROM golang:1.25 AS build
 
-WORKDIR /app
+WORKDIR /src
+COPY go.mod go.sum* ./
+COPY main.go ./
+RUN go mod tidy
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/ticket-mcp .
 
-RUN pip install --no-cache-dir \
-    "mcp[server]>=1.2.0" \
-    "fastmcp>=0.4.0" \
-    "uvicorn[standard]>=0.30" \
-    "opentelemetry-api>=1.27" \
-    "opentelemetry-sdk>=1.27" \
-    "opentelemetry-exporter-otlp>=1.27"
-
-COPY server.py /app/server.py
+FROM gcr.io/distroless/static-debian12
+COPY --from=build /out/ticket-mcp /ticket-mcp
 
 EXPOSE 8080
-CMD ["python", "/app/server.py"]
+ENTRYPOINT ["/ticket-mcp"]

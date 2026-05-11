@@ -123,7 +123,7 @@ The LLM is still fooled — that's a model concern. Solo guarantees the
 | **kagent** | Agent runtime — Agent / ModelConfig / RemoteMCPServer CRDs. The agents *exist* on K8s because of kagent. | **Solo** (open source) |
 | **Istio Ambient** | Service mesh — ztunnel for HBONE mTLS, AuthorizationPolicy for SPIFFE-principal L4 deny. Zero sidecars. **This is the layer that does the actual breach prevention in Act 2.** | upstream Istio |
 | **Prom + Grafana + Tempo + Loki + Promtail + OTel** | Standard CNCF observability. | upstream CNCF |
-| **The 4 MCP servers** (account / transaction / ticket / currency-converter) | Bank's tools, Python + FastMCP. | **custom for demo** |
+| **The 4 MCP servers** (account / transaction / ticket / currency-converter) | Bank's tools. **Deliberate framework mix** to demonstrate the platform is framework-agnostic: `account-mcp` and `currency-converter` are Python + FastMCP; `transaction-mcp` is Python + [Google ADK](https://github.com/google/adk-python) (`FunctionTool`) bridged onto FastMCP; `ticket-mcp` is Go + [Google ADK Go](https://github.com/google/adk-go) (`functiontool`) bridged onto the [official MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk). All four expose the same MCP-over-streamable-HTTP wire on `:8080` so agentgateway / the agents don't know or care. | **custom for demo** |
 | **The chatbot frontend** | Bank-style chat UI, static HTML + nginx reverse-proxy. | **custom for demo** |
 | **mock-attacker** | A pod outside every trustusbank-* namespace pretending to be the attacker's C2 server. Logs every POST it receives. | **custom for demo** |
 

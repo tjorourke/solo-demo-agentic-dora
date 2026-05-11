@@ -20,6 +20,7 @@ venv/
 node_modules/
 dist/
 build/
+mcp-servers/ticket-mcp/ticket-mcp
 
 # IDE
 .vscode/
