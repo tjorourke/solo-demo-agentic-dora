@@ -46,17 +46,26 @@ cluster_context() {
 cluster_of_ns() {
   local ns="$1"
   case "$ns" in
-    "$NS_FRONTEND"|"$NS_BANK_AGENTS")
-      # frontend + support-bot ServiceAccount namespace live on edge.
-      # In multi mode the fraud/triage agents move to a bank-side namespace
-      # ($NS_BANK_CORE) so this rule stays clean.
+    "$NS_FRONTEND")
       echo "$EDGE_CLUSTER" ;;
     "$NS_BANK_VENDORS"|external-attacker)
       echo "$VENDOR_CLUSTER" ;;
-    "$NS_MESH"|"$NS_PLATFORM"|"$NS_OBS"|"$NS_BANK_CORE"|"$NS_BANK_MCP")
+    "$NS_BANK_AGENTS"|"$NS_MESH"|"$NS_PLATFORM"|"$NS_OBS"|"$NS_BANK_CORE"|"$NS_BANK_MCP")
       echo "$BANK_CLUSTER" ;;
     *)
       echo "$BANK_CLUSTER" ;;
+  esac
+}
+
+# Per-agent placement: which cluster owns the running pod for each agent.
+# All three Agent CRDs are also stubbed (replicas=0) in the other clusters
+# that need to handoff to them, so mesh-routed A2A discovers a Service
+# endpoint everywhere it looks.
+cluster_of_agent() {
+  case "$1" in
+    support-bot) echo "$EDGE_CLUSTER" ;;
+    fraud-bot|triage-bot) echo "$BANK_CLUSTER" ;;
+    *) echo "$BANK_CLUSTER" ;;
   esac
 }
 
