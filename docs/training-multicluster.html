@@ -1512,6 +1512,40 @@ kubectl label ns ai-tools istio.io/use-waypoint=agw-waypoint
 </tbody>
 </table>
 
+<h3>Installing the waypoint on the multi-cluster bank cluster</h3>
+
+<p>On bank we have istiod installed with a custom <code>global.multiCluster.clusterName=trustusbank-bank</code> and <code>meshConfig.trustDomain=bank.local</code> for east/west peering. The waypoint's projected service-account token claims cluster <code>Kubernetes</code> (the kube-apiserver default), so istiod's KubeJWT authenticator rejected the cert request with <i>"client claims to be in cluster 'Kubernetes', but we only know about local cluster 'trustusbank-bank'"</i>. The fix is two helm values on istiod:</p>
+
+<details class="yaml"><summary>helm upgrade istiod on bank to match the projected token's cluster + trust domain</summary>
+<pre>helm --kube-context=kind-trustusbank-bank upgrade --install istiod \
+  oci://us-docker.pkg.dev/soloio-img/istio-helm/istiod \
+  --namespace istio-system --version 1.29.2-patch0-solo \
+  --set profile=ambient \
+  --set env.PILOT_ENABLE_IP_AUTOALLOCATE=true \
+  --set env.DISABLE_LEGACY_MULTICLUSTER=true \
+  --set env.PILOT_SKIP_VALIDATE_TRUST_DOMAIN=true \
+  --set global.multiCluster.clusterName=Kubernetes \
+  --set global.network=trustusbank-bank \
+  --set meshConfig.trustDomain=cluster.local \
+  --set platforms.peering.enabled=true \
+  --set license.value=$SOLO_ISTIO_LICENSE_KEY
+
+# ztunnel needs the same clusterName
+helm --kube-context=kind-trustusbank-bank upgrade --install ztunnel \
+  oci://us-docker.pkg.dev/soloio-img/istio-helm/ztunnel \
+  --namespace istio-system --version 1.29.2-patch0-solo \
+  --set profile=ambient \
+  --set multiCluster.clusterName=Kubernetes \
+  --set network=trustusbank-bank
+
+# Roll the data plane and the waypoint
+kubectl -n istio-system rollout restart ds/ztunnel ds/istio-cni-node
+kubectl -n ai-tools     rollout restart deploy/agw-waypoint</pre></details>
+
+<p>After this rolls out, the waypoint successfully fetches its cert (<code>spiffe://cluster.local/ns/ai-tools/sa/agw-waypoke</code>) and the gist's labs run identically to single-cluster.</p>
+
+<div class="callout info"><b>Trade-off worth knowing.</b> Setting <code>clusterName=Kubernetes</code> and <code>trustDomain=cluster.local</code> on bank means bank no longer presents itself to the east/west peers as <code>trustusbank-bank</code>/<code>bank.local</code>. The <code>network</code> stays <code>trustusbank-bank</code> so the peering chart's existing routes still match, but the federated-trust SPIFFE prefixes shift to <code>cluster.local</code>. For this demo it's the right call — the waypoint is the load-bearing component.</div>
+
 <h3>Live test results — all 8 labs verified</h3>
 
 <p>I ran the entire gist top to bottom on the demo's <code>trustusbank</code> cluster after installing enterprise-agentgateway v2.3.0 there. Every step's expected outcome matched the gist's documented behaviour. Here's the evidence per lab:</p>
