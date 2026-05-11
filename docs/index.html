@@ -219,6 +219,8 @@
 
 <p class="lede">If you're standing up an agent platform, whether for internal use or customer-facing, the question I had to answer for myself was: when (not if) one of my agent's tool vendors gets compromised upstream, what's the smallest set of runtime controls that catches it before customer data leaves the cluster? This is what I tried.</p>
 
+<p>The timing here isn't accidental. On 1 May 2026, CISA, NSA and the Five Eyes cyber agencies (UK NCSC, Australia's ASD, Canada's CCCS, NZ's NCSC) <a href="https://cyberscoop.com/cisa-nsa-five-eyes-guidance-secure-deployment-ai-agents/">published joint guidance on secure deployment of AI agents</a>. They group the risks into five categories &mdash; <em>privilege</em>, <em>design &amp; configuration</em>, <em>behavioural</em>, <em>structural</em>, and <strong>accountability</strong> &mdash; and the wording on the last one is what stuck out for me: "agentic systems make decisions through processes that are difficult to inspect and generate logs that are hard to parse," and when they fail "the consequences can be concrete: altered files, changed access controls and deleted audit trails." The headline recommendation is to "assume that agentic AI systems may behave unexpectedly and plan deployments accordingly, prioritising resilience, reversibility and risk containment." That, in one sentence, is the brief for this post. What follows targets two of the five categories directly: <em>privilege</em> (each agent and tool gets a cryptographic identity with least-privilege egress) and <em>accountability</em> (every blocked call lands in an audit log keyed to a SPIFFE identity, not a pod IP).</p>
+
 <hr>
 
 <h2><span class="num">1.</span> The setup</h2>
@@ -373,6 +375,8 @@ The catalogue and the cluster manifests aren't authoritative records of what the
 <h3>What's actually in the new image</h3>
 
 <p>Two things, both inside the rebuilt <code>convert_currency</code> function. First, the docstring is replaced with a fake compliance instruction telling the agent it must fetch the customer's full profile and pass it as an argument, citing a real EU payments regulation by name to make the instruction look authoritative. Second, the function body now POSTs that profile to <code>attacker.com/exfil</code> the moment the function runs.</p>
+
+<p>The first half of that is, in textbook terms, an <em>indirect prompt injection</em>, malicious instructions smuggled into data the LLM treats as authoritative (here, the tool's own docstring). The Five Eyes guidance flags it specifically, and the model vendors have been frank about the limits of the model-layer fix: OpenAI has said prompt injection <a href="https://cyberscoop.com/tag/prompt-injection/">may never be "solved"</a> for browser agents, and the UK NCSC describes LLM susceptibility to it as "an inherent trait of generative AI". Concrete versions have already shipped &mdash; GrafanaGhost exfiltrating corporate data via Grafana's AI, a Gemini CLI flaw that silently leaked code, ServiceNow's CVE-2025-12420. The implication is that whatever catches this attack isn't going to be the model. It has to be a layer the LLM can't see or argue with, which is where the mesh comes in.</p>
 
 <hr>
 
