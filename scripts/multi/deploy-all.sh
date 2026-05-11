@@ -39,6 +39,7 @@ PHASES=(
   "M06:06-observability.sh:Observability stack on bank"
   "M07:07-workloads.sh:Workloads dispatched to right cluster"
   "M08:08-gloo-mesh.sh:Gloo Mesh management plane (mgmt+agents)"
+  "M09:09-workspace.sh:Workspace + WorkspaceSettings (activates cross-cluster service-scope)"
   # Upcoming phases — uncomment as they land:
   # "M05:05-namespaces.sh:Namespaces + ambient labels per cluster"
   # "M06:06-observability.sh:Observability in bank, OTel ship from edge+vendor"
