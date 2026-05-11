@@ -32,9 +32,9 @@ done
 PHASES=(
   "M00:00-prereqs.sh:Multi-cluster prereqs (license, gcloud, registry pull)"
   "M01:01-clusters.sh:Three kind clusters + shared registry"
+  "M02:02-shared-ca.sh:Shared root CA + per-cluster intermediates"
+  "M03:03-solo-istio.sh:Solo Enterprise for Istio (Ambient) on each cluster"
   # Upcoming phases — uncomment as they land:
-  # "M02:02-shared-ca.sh:Shared root CA + per-cluster intermediates"
-  # "M03:03-solo-istio.sh:Solo Enterprise for Istio (Ambient) on each cluster"
   # "M04:04-peering.sh:East/west gateways + cross-cluster peering"
   # "M05:05-namespaces.sh:Namespaces + ambient labels per cluster"
   # "M06:06-observability.sh:Observability in bank, OTel ship from edge+vendor"

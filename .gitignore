@@ -8,6 +8,9 @@ kubeconfig
 *.key
 !**/*.example.key
 
+# Multi-cluster shared CA — generated per-environment, never committed
+.certs/
+
 # Evidence is generated, not source
 evidence/phase*/
 !evidence/.gitkeep
