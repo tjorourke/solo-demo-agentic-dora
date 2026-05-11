@@ -37,6 +37,8 @@ PHASES=(
   "M04:04-peering.sh:East/west gateways + cross-cluster peering"
   "M05:05-namespaces.sh:Namespaces + ambient labels per placement"
   "M06:06-observability.sh:Observability stack on bank"
+  "M07:07-workloads.sh:Workloads dispatched to right cluster"
+  "M08:08-gloo-mesh.sh:Gloo Mesh management plane (mgmt+agents)"
   # Upcoming phases — uncomment as they land:
   # "M05:05-namespaces.sh:Namespaces + ambient labels per cluster"
   # "M06:06-observability.sh:Observability in bank, OTel ship from edge+vendor"
