@@ -66,6 +66,15 @@ for cluster in "${CLUSTERS[@]}"; do
   done
 done
 
+# Gateway API experimental CRDs — required for ambient (waypoints, peering chart).
+# Same channel + version as the single-cluster path uses in phase01.
+log_step "installing Gateway API experimental CRDs ($GATEWAY_API_VERSION)"
+GW_API_YAML="https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/experimental-install.yaml"
+for cluster in "${CLUSTERS[@]}"; do
+  log "  $cluster"
+  kctx "$cluster" apply --server-side --force-conflicts -f "$GW_API_YAML" >/dev/null
+done
+
 # Helm install order matters:
 #   base       — CRDs and global resources
 #   istiod     — control plane (needs cacerts from M02)
