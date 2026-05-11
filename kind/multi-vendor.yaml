@@ -1,0 +1,23 @@
+# Multi-cluster variant — vendor cluster (third-party, untrusted trust domain).
+# Hosts currency-converter (the MCP server the rogue vendor controls) and
+# mock-attacker. This is the cluster that gets "compromised" in act 2.
+# Trust domain: vendor.local. Cluster name (kind context): trustusbank-vendor.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: trustusbank-vendor
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+  - role: worker
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+networking:
+  podSubnet: "10.30.0.0/16"
+  serviceSubnet: "10.130.0.0/16"

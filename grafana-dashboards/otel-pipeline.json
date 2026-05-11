@@ -3,40 +3,41 @@
   "title": "TrustUsBank — OTel Pipeline (end-to-end)",
   "tags": ["trustusbank", "otel", "tracing"],
   "schemaVersion": 39,
-  "version": 1,
+  "version": 3,
   "refresh": "30s",
   "time": { "from": "now-30m", "to": "now" },
   "panels": [
     {
       "type": "text",
       "title": "How OTel flows in this cluster",
-      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
       "options": {
         "mode": "markdown",
-        "content": "**Pipeline**: kagent agents + MCP servers + agentgateway → OTLP gRPC :4317 → otel-collector → **Tempo** (traces) and **Loki** (logs). Every agent reasoning step and every tool call becomes a span — agentgateway samples at 100% (`manifests/phase05-agentgateway/tracing.yaml`), MCP servers use parent-based always-on (`manifests/phase06-kagent/telemetry.yaml`).\n\nUse this dashboard top-to-bottom: **stats** prove the gateway is emitting; **rates** show which service is active; **trace tables** are the click-through into Tempo; **logs** are the stdout + ztunnel access lines from the same window. If a panel is empty after a fresh chatbot prompt, that segment of the pipeline isn't working — check the otel-collector pod first."
+        "content": "**Pipeline**: kagent agents + MCP servers + agentgateway → OTLP gRPC :4317 → otel-collector → **Tempo** (traces) + **Loki** (logs). agentgateway samples 100% (`manifests/phase05-agentgateway/tracing.yaml`).\n\n**What this dashboard proves (top to bottom):**\n\n* **Top stats**: `agentgateway_mcp_requests_total{method=\"tools/call\"}` proves the gateway is scraped by Prom (PodMonitor in `manifests/phase02-observability/agentgateway-podmonitor.yaml`). A2A is counted from kagent pod logs because A2A doesn't transit agentgateway in this setup — the chatbot calls kagent directly.\n* **Rates**: per-MCP-server tool-call rate (Prom); per-pod log rate (Loki).\n* **Traces**: agentgateway emits a span per MCP hop; each MCP server emits a span per tool call. *Direct agent-reasoning spans (`support-bot`, `fraud-bot`, `triage-bot`) are not currently in Tempo* — kagent isn't wired to the OTel SDK for its own work; that's a separate gap.\n* **Logs**: MCP stdout + ztunnel access lines for the same window — use these to correlate a request with the trace and the mesh's verdict."
       }
     },
 
     {
       "type": "stat",
       "title": "Tool calls / min (agentgateway)",
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 5 },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 6 },
       "targets": [
-        { "expr": "sum(rate(agentgateway_tool_calls_total[5m])) * 60", "refId": "A" }
+        { "expr": "sum(rate(agentgateway_mcp_requests_total{method=\"tools/call\"}[5m])) * 60", "refId": "A" }
       ]
     },
     {
       "type": "stat",
-      "title": "A2A calls / min (agentgateway)",
-      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 5 },
+      "title": "A2A calls / min (inbound POSTs on agent pods)",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 6 },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
-        { "expr": "sum(rate(agentgateway_a2a_calls_total[5m])) * 60", "refId": "A" }
+        { "expr": "sum(count_over_time({namespace=\"trustusbank-bank-agents\"} |~ `\"POST / HTTP` [5m])) / 5", "refId": "A" }
       ]
     },
     {
       "type": "stat",
       "title": "MCP-server log lines (5m)",
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 5 },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 6 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         { "expr": "sum(count_over_time({namespace=\"trustusbank-bank-mcp\"}[5m]))", "refId": "A" }
@@ -45,16 +46,16 @@
 
     {
       "type": "timeseries",
-      "title": "Tool calls / sec by agent",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "title": "Tool calls / sec by MCP server + tool (Prom)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
       "targets": [
-        { "expr": "sum by (agent) (rate(agentgateway_tool_calls_total[1m]))", "refId": "A", "legendFormat": "{{agent}}" }
+        { "expr": "sum by (server, resource) (rate(agentgateway_mcp_requests_total{method=\"tools/call\"}[1m]))", "refId": "A", "legendFormat": "{{server}}.{{resource}}" }
       ]
     },
     {
       "type": "timeseries",
       "title": "MCP-server log rate by pod (lines / sec)",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         { "expr": "sum by (pod) (rate({namespace=\"trustusbank-bank-mcp\"}[1m]))", "refId": "A", "legendFormat": "{{pod}}" }
@@ -63,14 +64,14 @@
 
     {
       "type": "table",
-      "title": "Recent agent traces (Tempo)",
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 17 },
+      "title": "Recent agentgateway hops (Tempo — proxies every MCP/A2A call)",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 18 },
       "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
           "refId": "A",
           "queryType": "traceql",
-          "query": "{ resource.service.name =~ \"support-bot|fraud-bot|triage-bot\" }",
+          "query": "{ resource.service.name = \"trustusbank-agentgw\" }",
           "limit": 25
         }
       ]
@@ -78,7 +79,7 @@
     {
       "type": "table",
       "title": "Recent MCP-server traces (Tempo)",
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 17 },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 18 },
       "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
@@ -93,7 +94,7 @@
     {
       "type": "logs",
       "title": "MCP-server stdout — last 30m",
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 27 },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 28 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
       "targets": [
@@ -103,7 +104,7 @@
     {
       "type": "logs",
       "title": "ztunnel access log — last 30m (HBONE / deny verdicts)",
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 27 },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 28 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
       "targets": [

@@ -1,0 +1,25 @@
+# Multi-cluster variant — edge cluster.
+# Hosts the customer-facing chatbot, kagent UI, and support-bot.
+# Trust domain: edge.local. Cluster name (kind context): trustusbank-edge.
+# Pod/service CIDRs are non-overlapping with the other two clusters so that
+# pod-to-pod across clusters via east/west GW NodePorts works cleanly when
+# all three clusters share the default kind docker network.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: trustusbank-edge
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+  - role: worker
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+networking:
+  podSubnet: "10.10.0.0/16"
+  serviceSubnet: "10.110.0.0/16"

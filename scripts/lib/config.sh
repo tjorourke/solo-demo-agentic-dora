@@ -2,6 +2,15 @@
 # Shared config — namespace names, ports, image refs, chart versions.
 # Source this from other scripts; do not run directly.
 
+# Load secrets / per-machine overrides from .env at repo root if present.
+# .env is gitignored — put SOLO_ISTIO_LICENSE_KEY and similar here.
+if [[ -f "${REPO_ROOT:-$(pwd)}/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "${REPO_ROOT:-$(pwd)}/.env"
+  set +a
+fi
+
 # Cluster + general
 export CLUSTER_NAME="${CLUSTER_NAME:-trustusbank}"
 export CLUSTER_KIND="${CLUSTER_KIND:-kind}"   # kind | eks

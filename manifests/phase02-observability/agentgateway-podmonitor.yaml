@@ -1,0 +1,30 @@
+# PodMonitor for the data-plane agentgateway pod (trustusbank-agentgw).
+#
+# Without this, Prometheus never scrapes the gateway's
+# :15020/stats/prometheus endpoint, so `agentgateway_mcp_requests_total`
+# and `agentgateway_requests_total` are invisible to Grafana and every
+# Prom-backed panel on the demo's dashboards shows "No data" — even
+# though the gateway is happily emitting them.
+#
+# Selects on the K8s GW data-plane pod, not the agentgateway controller.
+# Path/port match what the data-plane exposes; the controller (which
+# serves /metrics on :9092) would need a separate PodMonitor if its
+# metrics are ever needed.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: agentgateway-dataplane
+  namespace: trustusbank-observability
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - trustusbank-platform
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trustusbank-agentgw
+  podMetricsEndpoints:
+    - port: metrics
+      path: /stats/prometheus
+      interval: 15s

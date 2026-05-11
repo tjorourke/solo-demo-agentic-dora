@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Run every phase script in order, then start port-forwards.
 # Usage:
-#   ./deploy-all.sh                  # full deploy from prereqs to A2A
+#   ./deploy-all.sh                  # full deploy from prereqs to A2A (single-cluster)
 #   ./deploy-all.sh --resume 04      # skip phases before 04
 #   ./deploy-all.sh --eks            # use EKS instead of kind
 #   ./deploy-all.sh --skip-pf        # do not auto-start port-forwards at end
+#   ./deploy-all.sh --mode multi     # three-cluster variant (Solo Enterprise for Istio)
 
 set -Eeuo pipefail
 
@@ -20,18 +21,38 @@ trap on_error ERR
 
 RESUME=""
 SKIP_PF=0
+MODE_ARG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --resume) RESUME="$2"; shift 2 ;;
     --eks)    export CLUSTER_KIND=eks; shift ;;
     --kind)   export CLUSTER_KIND=kind; shift ;;
     --skip-pf) SKIP_PF=1; shift ;;
+    --mode)   MODE_ARG="$2"; shift 2 ;;
     -h|--help)
       grep '^#' "$0" | sed 's/^# \?//'
       exit 0 ;;
     *) die "unknown arg: $1" ;;
   esac
 done
+
+# Resolve topology mode (CLI flag wins over env). Single is the default and
+# leaves the existing flow untouched. Multi dispatches to scripts/multi/.
+export MODE="${MODE_ARG:-${MODE:-single}}"
+# shellcheck source=lib/topology.sh
+source "$SCRIPT_DIR/lib/topology.sh"
+print_topology
+
+if [[ "$MODE" == "multi" ]]; then
+  if [[ -z "${SOLO_ISTIO_LICENSE_KEY:-}" ]]; then
+    die "MODE=multi requires SOLO_ISTIO_LICENSE_KEY in .env (see .env.example)"
+  fi
+  log_step "Dispatching to multi-cluster deploy"
+  args=()
+  [[ -n "$RESUME" ]] && args+=(--resume "$RESUME")
+  (( SKIP_PF == 1 )) && args+=(--skip-pf)
+  exec bash "$SCRIPT_DIR/multi/deploy-all.sh" "${args[@]}"
+fi
 
 PHASES=(
   "00:00-prereqs.sh:Prerequisites"
