@@ -107,10 +107,15 @@
   .card h4 { margin-top: 0; }
   .step-num { display: inline-block; width: 32px; height: 32px; border-radius: 50%;
     background: var(--accent); color: white; text-align: center; line-height: 32px; font-weight: 700; margin-right: 10px; vertical-align: middle; }
+  .nav-back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); text-decoration: none; margin-bottom: 24px; }
+  .nav-back:hover { color: var(--accent-dark); }
+  .nav-back::before { content: "← "; }
 </style>
 </head>
 <body>
 <main>
+
+<a class="nav-back" href="index.html">Back to demo home</a>
 
 <h1>Multi-cluster Solo Istio Ambient + Gloo Mesh + kagent</h1>
 <p class="subtitle">A training walkthrough for new Solo engineers. What it took to stand up the trustusbank agentic-DORA demo on three kind clusters, what each Solo component does, how the wire actually works, and where the OOB defaults hit a wall.</p>
