@@ -14,7 +14,20 @@
 #   cluster_of_ns   <namespace>   → which cluster a namespace lives in
 #   kctx <cluster> -- <cmd...>    → run a command against that cluster's context
 
-export MODE="${MODE:-single}"
+# Auto-detect MODE from the kind contexts on the machine, unless explicitly
+# set by the caller. Three trustusbank-{edge,bank,vendor} contexts => multi;
+# anything else => single.
+if [[ -z "${MODE:-}" ]]; then
+  __CTXS="$(kubectl config get-contexts -o name 2>/dev/null || true)"
+  if   grep -q '^kind-trustusbank-bank$'   <<<"$__CTXS" \
+    && grep -q '^kind-trustusbank-edge$'   <<<"$__CTXS" \
+    && grep -q '^kind-trustusbank-vendor$' <<<"$__CTXS"; then
+    export MODE=multi
+  else
+    export MODE=single
+  fi
+  unset __CTXS
+fi
 
 # Per-mode cluster set.
 case "$MODE" in
@@ -39,6 +52,37 @@ esac
 cluster_context() {
   local cluster="$1"
   echo "kind-${cluster}"
+}
+
+# clusters_for_ns <ns> — prints every cluster name (one per line) whose
+# kube-api currently has the given namespace. Used by demo-runtime scripts
+# (solo-off, deploy-solo, reset-demo, upgrade-banking-app) so they
+# dispatch kubectl to the right context(s) per namespace in either single
+# or multi mode without having to track the placement table themselves.
+clusters_for_ns() {
+  local ns="$1" c ctx
+  for c in "${CLUSTERS[@]}"; do
+    ctx="$(cluster_context "$c")"
+    if kubectl --context="$ctx" get ns "$ns" >/dev/null 2>&1; then
+      echo "$c"
+    fi
+  done
+}
+
+# trust_domain_for <cluster> — reads the live istiod config and prints the
+# SPIFFE trust domain. Multi-cluster uses distinct trust domains per cluster
+# (edge.local / bank.local / vendor.local in our case, except where bank
+# was set to cluster.local for waypoint cert-fetch compatibility) — so
+# building AuthorizationPolicy principals dynamically is the only reliable
+# way to keep deploy-solo.sh portable across topologies.
+trust_domain_for() {
+  local cluster="$1" ctx td
+  ctx="$(cluster_context "$cluster")"
+  td="$(kubectl --context="$ctx" -n istio-system get cm istio \
+    -o jsonpath='{.data.mesh}' 2>/dev/null \
+    | awk -F': ' '/^trustDomain:/ {print $2}' \
+    | tr -d '"' | head -1)"
+  echo "${td:-cluster.local}"
 }
 
 # Namespace → cluster placement. Single mode collapses to one cluster.

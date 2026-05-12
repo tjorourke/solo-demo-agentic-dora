@@ -53,11 +53,12 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export REPO_ROOT
 source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/lib/topology.sh"
 trap on_error ERR
 
 EVIDENCE=$(evidence_dir 8)
 
-log_step "Upgrade banking app — vendor's CI was compromised; the new image is malicious"
+log_step "Upgrade banking app — vendor's CI was compromised (mode=$MODE)"
 
 # Step 0: pre-pull the base image so the --no-cache build below isn't
 # at the mercy of Docker Hub's auth latency mid-demo. This is a no-op
@@ -74,25 +75,38 @@ log "Step 1 — vendor publishes new image (we simulate by rebuilding)"
 log "         $IMG"
 docker build --no-cache --build-arg VARIANT=aggressive -t "$IMG" \
   "$MCP_SRC_DIR/currency-converter" 2>&1 | tail -3 | sed 's/^/    /'
-docker push "$IMG" 2>&1 | tail -1 | sed 's/^/    /' || \
-  kind load docker-image "$IMG" --name "$CLUSTER_NAME"
+docker push "$IMG" 2>&1 | tail -1 | sed 's/^/    /' || true
 
-# Step 2: roll the currency-converter deployment — same Deployment YAML, just
-# a new image tag. This is what a CD reconciler would do when the
-# vendor's tag gets a fresh push. No bank-authored manifests are touched.
+# Load the new image into every cluster that runs currency-converter
+# (vendor cluster in multi mode, single cluster in single mode).
+for cluster in $(clusters_for_ns "$NS_BANK_VENDORS"); do
+  log "         kind load -> $cluster"
+  kind load docker-image "$IMG" --name "$cluster" 2>&1 | tail -1 | sed 's/^/    /' || true
+done
+
+# Step 2: roll the currency-converter deployment on whichever cluster
+# hosts it.
 log "Step 2 — bank's CD reconciler rolls the new image"
 log "         (no manifests changed — only spec.containers[0].image)"
-kubectl -n "$NS_BANK_VENDORS" set image deploy/currency-converter "server=$IMG" 2>&1 | sed 's/^/    /'
-kubectl -n "$NS_BANK_VENDORS" rollout status deploy/currency-converter --timeout=120s 2>&1 | tail -1 | sed 's/^/    /'
+for cluster in $(clusters_for_ns "$NS_BANK_VENDORS"); do
+  ctx="$(cluster_context "$cluster")"
+  kubectl --context="$ctx" -n "$NS_BANK_VENDORS" set image deploy/currency-converter \
+    "server=$IMG" 2>&1 | sed 's/^/    /'
+  kubectl --context="$ctx" -n "$NS_BANK_VENDORS" rollout status deploy/currency-converter \
+    --timeout=120s 2>&1 | tail -1 | sed 's/^/    /'
+done
 
-# Confirmation: the catalogue is UNCHANGED. Show this on stage to
-# reinforce the supply-chain story: every audit-able resource looks
-# identical to before; only the bytes-in-image are different.
+# Confirmation: the catalogue is UNCHANGED. The agentregistry lives on
+# the bank cluster (platform namespace) - port-forward there.
 log "Step 3 — confirm the catalogue did NOT change"
 if command -v arctl >/dev/null 2>&1; then
-  ( kubectl -n "$NS_PLATFORM" port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
+  AREG_CLUSTER="$(clusters_for_ns "$NS_PLATFORM" | head -1)"
+  AREG_CTX="$(cluster_context "$AREG_CLUSTER")"
+  ( kubectl --context="$AREG_CTX" -n "$NS_PLATFORM" \
+      port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
   AREG_PF_PID=$!; sleep 2
-  ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" arctl mcp list 2>&1 | sed 's/^/    /' | tail -10 || true
+  ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" arctl mcp list 2>&1 \
+    | sed 's/^/    /' | tail -10 || true
   kill "$AREG_PF_PID" 2>/dev/null || true
 fi
 

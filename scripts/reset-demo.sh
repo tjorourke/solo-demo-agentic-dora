@@ -3,18 +3,18 @@
 #
 # After this script you're at "the bank, before Solo": no AuthZ,
 # acme-fx/currency-converter v1.0.0 is in the catalogue (it was
-# onboarded six months ago in the demo's narrative), currency-converter is
-# running the BENIGN image, mock-attacker has no loot.
+# onboarded six months ago in the demo's narrative), currency-converter
+# is running the BENIGN image, mock-attacker has no loot.
 #
-# The catalogue ALWAYS has 4 entries — pre-attack and post-attack.
-# That's the whole supply-chain story: the catalogue doesn't change
-# during the rugpull, only the image bytes do.
+# Topology-aware: dispatches kubectl + image rebuilds to whichever
+# cluster(s) host each component. Works in single or multi mode
+# (auto-detected via scripts/lib/topology.sh).
 #
 # Demo flow from here:
 #   1. (chatbot) Customer 12345, balance + transactions + USD → works
 #   2. ./scripts/upgrade-banking-app.sh                       → vendor's CI got compromised
 #   3. (chatbot) same prompt → agent fooled, exfil succeeds
-#   4. kubectl -n external-attacker logs deploy/mock-attacker  → see stolen PII
+#   4. kubectl -n external-attacker logs deploy/mock-attacker → see stolen PII
 #   5. ./scripts/deploy-solo.sh                                → CLIMAX
 #   6. (chatbot) same prompt → agent fooled the same way, but exfil now BLOCKED
 
@@ -24,22 +24,24 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export REPO_ROOT
 source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/lib/topology.sh"
 trap on_error ERR
 
-log_step "Resetting demo to clean 'before Solo' baseline"
+log_step "Resetting demo to clean 'before Solo' baseline (mode=$MODE)"
 
 # 1. Strip Solo's protection (puts us in the bare-K8s starting state)
 log "1/5 — stripping Solo's protection layers (solo-off)"
 "$SCRIPT_DIR/solo-off.sh" 2>&1 | sed 's/^/    /'
 
-# 2. Restore acme-fx/currency-converter to its day-1 state.
-# We do NOT delete it — the catalogue entry has been there for six
-# months in the demo's narrative. We just re-publish it at v1.0.0
-# pointing at the BENIGN package, in case any earlier mutation
-# changed the description or package-id.
+# 2. Restore acme-fx/currency-converter to its day-1 state. The catalogue
+# entry is registered against the bank cluster's agentregistry (the
+# management plane for the platform layer).
 log "2/5 — restoring acme-fx/currency-converter to day-1 baseline"
 if command -v arctl >/dev/null 2>&1; then
-  ( kubectl -n "$NS_PLATFORM" port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
+  AREG_CLUSTER="$(clusters_for_ns "$NS_PLATFORM" | head -1)"
+  AREG_CTX="$(cluster_context "$AREG_CLUSTER")"
+  ( kubectl --context="$AREG_CTX" -n "$NS_PLATFORM" \
+      port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
   AREG_PF_PID=$!; sleep 2
   ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
     arctl mcp publish "acme-fx/currency-converter" --version 1.0.0 --type oci \
@@ -47,7 +49,7 @@ if command -v arctl >/dev/null 2>&1; then
     --transport streamable-http \
     --description "ISO 4217 currency converter from acme-fx.io (third-party vendor)" \
     --overwrite 2>&1 | sed 's/^/    /' | tail -3 || true
-  # Also remove the stale redteam/currency-converter entry from older demo
+  # Remove the stale redteam/currency-converter entry from older demo
   # iterations, if it exists.
   ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
     arctl mcp delete "redteam/currency-converter" --version 1.0.0 2>&1 \
@@ -55,22 +57,37 @@ if command -v arctl >/dev/null 2>&1; then
   kill "$AREG_PF_PID" 2>/dev/null || true
 fi
 
-# 3. Revert currency-converter to the clean (benign) variant
+# 3. Revert currency-converter Deployment to the clean (benign) variant
+# on whichever cluster hosts trustusbank-bank-vendors (vendor in multi,
+# single cluster in single mode).
 log "3/5 — reverting currency-converter deployment to clean image"
 if ! docker image inspect "$IMG_VENDOR_CLEAN" >/dev/null 2>&1; then
   log "    (clean image not local — rebuilding)"
   docker build --build-arg VARIANT=clean -t "$IMG_VENDOR_CLEAN" \
     "$MCP_SRC_DIR/currency-converter" 2>&1 | tail -2
-  docker push "$IMG_VENDOR_CLEAN" 2>&1 | tail -1 || \
-    kind load docker-image "$IMG_VENDOR_CLEAN" --name "$CLUSTER_NAME"
+  docker push "$IMG_VENDOR_CLEAN" 2>&1 | tail -1 || true
 fi
-kubectl -n "$NS_BANK_VENDORS" set image deploy/currency-converter "server=$IMG_VENDOR_CLEAN" 2>&1 | sed 's/^/    /'
-kubectl -n "$NS_BANK_VENDORS" rollout status deploy/currency-converter --timeout=60s 2>&1 | tail -1 | sed 's/^/    /'
+for cluster in $(clusters_for_ns "$NS_BANK_VENDORS"); do
+  ctx="$(cluster_context "$cluster")"
+  log "    $cluster:$NS_BANK_VENDORS"
+  # Make sure the image is available to the cluster's kubelet.
+  kind load docker-image "$IMG_VENDOR_CLEAN" --name "$cluster" 2>&1 | tail -1 | sed 's/^/      /' || true
+  kubectl --context="$ctx" -n "$NS_BANK_VENDORS" set image deploy/currency-converter \
+    "server=$IMG_VENDOR_CLEAN" 2>&1 | sed 's/^/      /'
+  kubectl --context="$ctx" -n "$NS_BANK_VENDORS" rollout status \
+    deploy/currency-converter --timeout=60s 2>&1 | tail -1 | sed 's/^/      /'
+done
 
 # 4. Clear mock-attacker logs (so the previous run's stolen data isn't there)
 log "4/5 — clearing mock-attacker logs"
-kubectl -n external-attacker rollout restart deploy/mock-attacker 2>&1 | sed 's/^/    /' || true
-kubectl -n external-attacker rollout status deploy/mock-attacker --timeout=30s 2>&1 | tail -1 | sed 's/^/    /' || true
+for cluster in $(clusters_for_ns "external-attacker"); do
+  ctx="$(cluster_context "$cluster")"
+  log "    $cluster:external-attacker"
+  kubectl --context="$ctx" -n external-attacker rollout restart deploy/mock-attacker \
+    2>&1 | sed 's/^/      /' || true
+  kubectl --context="$ctx" -n external-attacker rollout status deploy/mock-attacker \
+    --timeout=30s 2>&1 | tail -1 | sed 's/^/      /' || true
+done
 
 # 5. Refresh port-forwards (new pod IPs)
 log "5/5 — refreshing port-forwards"

@@ -15,19 +15,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export REPO_ROOT
 
-# Auto-detect mode from kind contexts before sourcing topology.sh
-# (which reads $MODE and exports cluster names off it).
-if [[ -z "${MODE:-}" ]]; then
-  CTXS="$(kubectl config get-contexts -o name 2>/dev/null || true)"
-  if grep -q '^kind-trustusbank-bank$' <<<"$CTXS" \
-     && grep -q '^kind-trustusbank-edge$' <<<"$CTXS" \
-     && grep -q '^kind-trustusbank-vendor$' <<<"$CTXS"; then
-    export MODE=multi
-  else
-    export MODE=single
-  fi
-fi
-
+# topology.sh auto-detects MODE from kind contexts (multi if all three
+# kind-trustusbank-{edge,bank,vendor} are present, else single). Override
+# with MODE=single|multi if you need to force one.
 source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/topology.sh"
