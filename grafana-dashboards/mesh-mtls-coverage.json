@@ -13,6 +13,7 @@
     {
       "type": "stat",
       "title": "ztunnel pods Ready (per node)",
+      "description": "Number of ztunnel DaemonSet pods reporting Ready. Should equal the node count once the mesh is up.",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
       "targets": [
         { "expr": "kube_daemonset_status_number_ready{daemonset=\"ztunnel\",namespace=\"istio-system\"}", "refId": "A" }
@@ -21,36 +22,48 @@
     },
     {
       "type": "stat",
-      "title": "HBONE connections (last 5m)",
+      "title": "HBONE connections (live, last 5 min)",
+      "description": "Rate of mTLS-wrapped TCP connections opened across the mesh in the last 5 minutes. ztunnel exports this counter on every successful HBONE handshake. Uses connection_security_policy (the label ztunnel actually emits), not the old security_policy.",
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
       "targets": [
-        { "expr": "sum(rate(istio_tcp_connections_opened_total{security_policy=\"mutual_tls\"}[5m]))", "refId": "A" }
-      ]
+        { "expr": "sum(rate(istio_tcp_connections_opened_total{connection_security_policy=\"mutual_tls\"}[5m]))", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "noValue": "0", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } }
     },
     {
       "type": "stat",
       "title": "% requests with mTLS",
+      "description": "Share of mesh requests where ztunnel reports connection_security_policy=mutual_tls. Should be 100% in a healthy Ambient mesh - anything lower means at least one workload is talking plaintext.",
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
       "targets": [
-        { "expr": "100 * sum(rate(istio_requests_total{security_policy=\"mutual_tls\"}[5m])) / sum(rate(istio_requests_total[5m]))", "refId": "A" }
+        { "expr": "100 * sum(rate(istio_requests_total{connection_security_policy=\"mutual_tls\"}[5m])) / clamp_min(sum(rate(istio_requests_total[5m])), 0.001)", "refId": "A" }
       ],
-      "fieldConfig": { "defaults": { "unit": "percent", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "red", "value": 0 }, { "color": "yellow", "value": 99 }, { "color": "green", "value": 100 }] } } }
+      "fieldConfig": { "defaults": { "unit": "percent", "noValue": "0", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "red", "value": 0 }, { "color": "yellow", "value": 99 }, { "color": "green", "value": 100 }] } } }
     },
     {
       "type": "timeseries",
-      "title": "Cross-namespace traffic (per source ns)",
+      "title": "Cross-namespace traffic (per source ns → destination ns)",
+      "description": "Each line is one (source_namespace → destination_namespace) pair. Use this to spot unexpected cross-namespace talk (e.g. anything from trustusbank-bank-vendors talking outside its own namespace is suspect once the rugpull is in play).",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
       "targets": [
-        { "expr": "sum by (source_workload_namespace, destination_workload_namespace) (rate(istio_requests_total[1m]))", "refId": "A", "legendFormat": "{{source_workload_namespace}} → {{destination_workload_namespace}}" }
+        { "expr": "sum by (source_workload_namespace, destination_workload_namespace) (rate(istio_requests_total{source_workload_namespace!=\"unknown\",destination_workload_namespace!=\"unknown\"}[1m]))", "refId": "A", "legendFormat": "{{source_workload_namespace}} → {{destination_workload_namespace}}" }
       ]
     },
     {
       "type": "table",
-      "title": "AuthorizationPolicy denies (last 15m)",
+      "title": "AuthorizationPolicy denies (last 15 min)",
+      "description": "Real mesh-layer denies from ztunnel: connections that failed to establish because an AuthorizationPolicy rejected the HBONE handshake (response_flags=CONNECT). Excludes HTTP 403s from non-mesh sources like health probes - those aren't policy denies.",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
       "targets": [
-        { "expr": "sum by (source_principal, destination_workload, response_code) (increase(istio_requests_total{response_code=\"403\"}[15m]))", "refId": "A", "format": "table" }
-      ]
+        { "expr": "topk(20, sum by (source_workload, source_workload_namespace, source_principal, destination_service_name, destination_service_namespace) (increase(istio_tcp_connections_failed_total{response_flags=\"CONNECT\"}[15m]))) > 0", "refId": "A", "format": "table", "instant": true }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "left" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Time" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "denied attempts" }] }
+        ]
+      }
     }
   ]
 }
