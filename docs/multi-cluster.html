@@ -138,7 +138,7 @@
     <li><a href="#crds">CRD reference (every kind you'll see)</a></li>
     <li><a href="#hbone">HBONE + waypoint: how the wire works</a></li>
     <li><a href="#workspace">Solo Workspaces &amp; Segments</a></li>
-    <li><a href="#walk">Step-by-step build (M00 → M10) + operator helpers</a></li>
+    <li><a href="#walk">Step-by-step build (M00 → M11) + operator helpers</a></li>
     <li><a href="#demo">The supply-chain attack demo</a></li>
     <li><a href="#distributed">Distributing 3 agents across 3 clusters (lateral hack + federation-hijack fix)</a></li>
     <li><a href="#flow">Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</a></li>
@@ -863,7 +863,7 @@ spec: { domain: global }
 
 <hr>
 
-<h2 id="walk"><span class="num">6.</span> Step-by-step build (M00 → M10) + operator helpers</h2>
+<h2 id="walk"><span class="num">6.</span> Step-by-step build (M00 → M11) + operator helpers</h2>
 
 <p>Every step in <a href="https://github.com/tjorourke/solo-demo-agentic-dora/tree/main/scripts/multi"><code>scripts/multi/</code></a> with the actual commands. Run them via <code>./scripts/deploy-all.sh --mode multi</code> or one-by-one.</p>
 
@@ -1014,6 +1014,72 @@ remote:
 
 <h3><span class="step-num">10</span>M10 — Federation hijack fix on edge</h3>
 <p>Re-runnable cleanup that drops <code>solo.io/service-scope=global</code> from <code>trustusbank-platform</code> on cluster-edge, deletes the four <code>autogen.global.*</code> ServiceEntries that hijacked the local hostname, and bounces <code>kagent-ui</code> + <code>kagent-controller</code> so they re-enrol in ztunnel. See §8.5 below for the full root-cause walkthrough.</p>
+
+<h3><span class="step-num">11</span>M11 — Multi-cluster observability + alerting pipeline</h3>
+<p>Wires the canonical Solo telemetry pipeline so ztunnel deny counters on vendor (where the demo's deny actually fires) reach the Prometheus + AlertManager + MailHog stack on bank — and the customer-facing demo claim ("blocked, with receipts") is provable in a single Grafana dashboard.</p>
+
+<div class="diagram">vendor / edge:  ztunnel + istiod + agentgateway
+                    │
+                    │ <span class="b">gloo-telemetry-collector DaemonSet</span> scrapes locally
+                    │   (job: ambient-ztunnels, mesh-workloads, istiod-metrics, ...)
+                    ▼
+                <span class="w">OTLP gRPC :4317</span> via NodePort 30187 over kind docker network
+                <span class="w">(mTLS using relay-root-tls-secret, same CA as the mgmt-server relay)</span>
+                    ▼
+bank:           <span class="m">gloo-telemetry-gateway</span> (LB / NodePort)
+                    │
+                    │ Prometheus exporter on :9091
+                    ▼
+              <span class="b">kube-prometheus-stack Prometheus</span>
+                    │
+                    │ PrometheusRule fires:
+                    │   - IstioAuthZDeny (cluster, source_workload, source_principal)
+                    │   - BankToAttackerAttempt
+                    ▼
+              <span class="r">AlertManager</span>  ←  AlertManagerConfig route by alertname regex
+                    │
+                    │ SMTP to mailhog.trustusbank-observability:1025
+                    ▼
+              <span class="r">MailHog</span> on :18012  (SOC inbox - emails arrive in &lt; 30 s)</div>
+
+<p>Two non-default tweaks the script does beyond <code>telemetryCollector.enabled=true</code>:</p>
+
+<ol>
+  <li><b>Patch the <code>filter/min</code> metric allow-list</b> on the workload-cluster collectors. The chart's default includes <code>istio_tcp_connections_opened_total</code> but NOT <code>istio_tcp_connections_failed_total</code> — the latter is the metric ztunnel emits on every AuthZ-rejected HBONE handshake, and without it the alert query matches zero series.</li>
+  <li><b>Re-enable <code>alertmanager.enabled=true</code></b> on kube-prometheus-stack. The earlier right-sizing pass disabled it to save ~64 MB; the alert/email pipeline can't work without it. Pinned to 64 Mi / 2 h retention to keep the saving partial.</li>
+</ol>
+
+<details class="yaml"><summary>scripts/multi/11-observability-multi.sh</summary>
+<pre># Discover bank's telemetry-gateway OTLP NodePort
+BANK_IP=$(kubectl --context=kind-trustusbank-bank get nodes \
+  -l '!node-role.kubernetes.io/control-plane' \
+  -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+GATEWAY_NP=$(kubectl --context=kind-trustusbank-bank -n gloo-mesh \
+  get svc gloo-telemetry-gateway -o jsonpath='{.spec.ports[?(@.port==4317)].nodePort}')
+
+# Enable + configure the collector DaemonSet on workload clusters
+# (a) copy bank's working DS + CM
+# (b) extend the metric filter include list to add istio_tcp_connections_failed*
+# Plus expose telemetry-gateway :9091 prom port on bank, apply the
+# PodMonitor + PrometheusRule + AlertManagerConfig, re-enable AlertManager.</pre></details>
+
+<details class="yaml"><summary>PrometheusRule that fires the alert (excerpt)</summary>
+<pre>- alert: IstioAuthZDeny
+  expr: |
+    sum by (cluster, source_workload, source_workload_namespace,
+            source_principal, destination_service_namespace,
+            destination_service_name)
+      (rate(istio_tcp_connections_failed_total{response_flags="CONNECT"}[5m])) > 0
+  labels:
+    severity: critical
+    dora_article: "10"
+    namespace: trustusbank-observability    # required for AMC OnNamespace matcher
+  annotations:
+    summary: "Istio AuthZ denied a connection — possible attack in progress"
+    description: |
+      ztunnel on cluster {{ $labels.cluster }} rejected an HBONE handshake.
+        offending pod:    {{ $labels.source_workload }}
+        offending SPIFFE: {{ $labels.source_principal }}</pre></details>
 
 <h3>Operator helpers</h3>
 

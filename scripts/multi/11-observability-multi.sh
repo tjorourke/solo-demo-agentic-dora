@@ -270,7 +270,59 @@ EOF
 # Step 5 — wait for the collector pods to come up + verify metrics
 # are landing in Prometheus.
 # ─────────────────────────────────────────────────────────────────
-log "5/5 waiting for collectors + verifying"
+log "5a/5 patching collector filter so the deny counter (istio_tcp_connections_failed_total) flows"
+# The gloo-platform telemetryCollector chart ships a filter/min processor
+# with an allow-list of ~60 metric names. Those names include the *opened*
+# counter but NOT the *failed* counter (the one ztunnel emits on every
+# AuthZ-rejected HBONE handshake — exactly what we need for the
+# IstioAuthZDeny alert). Patch the live CM on each workload cluster to
+# extend the include list.
+for cluster in "$EDGE_CLUSTER" "$VENDOR_CLUSTER"; do
+  ctx="$(cluster_context "$cluster")"
+  kubectl --context="$ctx" -n gloo-mesh get cm gloo-telemetry-collector-config \
+    -o jsonpath='{.data.relay}' > /tmp/relay-$cluster.yaml
+  python3 - "$cluster" <<'PYEOF'
+import sys
+cluster = sys.argv[1]
+f = f'/tmp/relay-{cluster}.yaml'
+content = open(f).read()
+if 'istio_tcp_connections_failed' not in content:
+    content = content.replace(
+        '- istio_tcp_connections_opened_total',
+        '- istio_tcp_connections_opened_total\n          - istio_tcp_connections_failed_total\n          - istio_tcp_connections_failed',
+        1
+    )
+    open(f, 'w').write(content)
+PYEOF
+  kubectl --context="$ctx" -n gloo-mesh create cm gloo-telemetry-collector-config \
+    --from-file=relay=/tmp/relay-$cluster.yaml --dry-run=client -o yaml \
+    | kubectl --context="$ctx" -n gloo-mesh apply -f - >/dev/null 2>&1
+  rm -f "/tmp/relay-$cluster.yaml"
+  kubectl --context="$ctx" -n gloo-mesh rollout restart ds/gloo-telemetry-collector-agent >/dev/null
+  log "    $cluster — filter patched + collector restarted"
+done
+
+log "5b/5 enabling kube-prometheus-stack AlertManager (disabled during right-sizing)"
+# The right-sizing pass turned alertmanager.enabled=false to save ~64MB.
+# For the alert/email pipeline to work, we need AlertManager back. Pin
+# small resource limits so the saving isn't fully lost.
+helm --kube-context="$(cluster_context "$BANK_CLUSTER")" \
+  -n trustusbank-observability upgrade kube-prometheus-stack kube-prometheus-stack \
+  --repo https://prometheus-community.github.io/helm-charts \
+  --reuse-values \
+  --set alertmanager.enabled=true \
+  --set alertmanager.alertmanagerSpec.resources.limits.memory=64Mi \
+  --set alertmanager.alertmanagerSpec.resources.requests.memory=32Mi \
+  --set alertmanager.alertmanagerSpec.retention=2h \
+  2>&1 | tail -2 | sed 's/^/    /'
+
+# Force Prom to pick up the newly-enabled AlertManager (operator-managed
+# Prom CR adds an alerting.alertmanagers stanza but the running pod
+# needs a restart to apply).
+kctx "$BANK_CLUSTER" -n trustusbank-observability \
+  rollout restart statefulset/prometheus-kube-prometheus-stack-prometheus >/dev/null 2>&1 || true
+
+log "5c/5 waiting for collectors + Prom to roll"
 for cluster in "$EDGE_CLUSTER" "$VENDOR_CLUSTER"; do
   ctx="$(cluster_context "$cluster")"
   kubectl --context="$ctx" -n gloo-mesh rollout status \
