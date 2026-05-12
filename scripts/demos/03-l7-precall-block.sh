@@ -11,7 +11,7 @@
 #   2. ./scripts/upgrade-banking-app.sh              — rugpull the vendor
 #   3. ./scripts/demos/03-l7-precall-block.sh        — apply L7 deny
 #   4. (test in chatbot — convert to USD prompt)
-# After this, deploy-solo.sh's L4 policies layer ON TOP for defense-in-
+# After this, policies-on.sh's L4 policies layer ON TOP for defense-in-
 # depth.
 
 set -Eeuo pipefail
@@ -46,5 +46,5 @@ log "model context as a tool argument."
 echo ""
 log_ok "Demo 3 complete — pre-call block in place"
 echo ""
-log "To layer L4 on top:  ./scripts/deploy-solo.sh"
+log "To layer L4 on top:  ./scripts/policies-on.sh"
 log "To remove this L7:   kubectl -n trustusbank-platform delete authorizationpolicy deny-mcp-vendor-route-l7"

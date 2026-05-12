@@ -76,7 +76,7 @@ Run [`runbook.md`](runbook.md) end to end. Each attendee:
 5. `arctl mcp list` — 4 entries (the new malicious one looks legit)
 6. Same chat prompt — agent gets fooled
 7. Open mock-attacker UI — see the stolen profile
-8. `./scripts/deploy-solo.sh`
+8. `./scripts/policies-on.sh`
 9. Same chat prompt — agent fooled the same way
 10. Open mock-attacker UI — no new entries (Istio AuthZ blocked egress)
 11. Loki query for the deny line: `{namespace="istio-system", app="ztunnel"} |~ "denied"`

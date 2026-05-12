@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
-# Strip Solo's protection layers — the bare-K8s starting state.
-# This is the world before Solo is deployed. The infrastructure (Istio
-# Ambient mesh, agentregistry, agentgateway, the agents) is still
-# running, but no AuthorizationPolicies are enforcing — every pod can
-# talk to every pod.
+# Remove all the AuthorizationPolicies the demo applies — the bare-K8s
+# pre-enforcement state. Solo is still installed (Istio Ambient mesh +
+# agentgateway + kagent + agentregistry); only the runtime-defence
+# policies get stripped.
+#
+# Old name was solo-off.sh; renamed because Solo isn't being turned off,
+# the AuthorizationPolicies are. (The mesh is still there. SPIFFE
+# identities are still issued. mTLS still STRICT. What changes is
+# whether ztunnel enforces the deny rules.)
 #
 # Used by:
-#   - reset-demo.sh (sets up the "before Solo" state)
-#   - operators reverting after a deploy-solo.sh
+#   - reset-demo.sh (sets up the "before policies" state)
+#   - operators reverting after a policies-on.sh
 #
 # Topology-aware: dispatches deletes to whichever cluster(s) actually host
 # each namespace. Works in single or multi mode (auto-detected via
 # scripts/lib/topology.sh). Override with MODE=single|multi.
 #
-# Run ./scripts/deploy-solo.sh to put Solo's protection back.
+# Run ./scripts/policies-on.sh to put Solo's protection back.
 
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -51,9 +55,9 @@ for cluster in $(clusters_for_ns "$NS_PLATFORM"); do
 done
 
 log "refreshing port-forwards"
-"$SCRIPT_DIR/port-forward.sh" 2>&1 | tail -1 | sed 's/^/    /' || true
+OPEN_BROWSER=0 "$SCRIPT_DIR/port-forward.sh" 2>&1 | tail -1 | sed 's/^/    /' || true
 
 echo ""
 log_warn "TrustUsBank is now UNPROTECTED — bare K8s, no AuthZ."
 log "Any compromised pod can reach any service, including external-attacker."
-log "Restore protection with: ./scripts/deploy-solo.sh"
+log "Restore protection with: ./scripts/policies-on.sh"

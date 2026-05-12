@@ -38,7 +38,7 @@ arctl mcp list                             # 4 tools — looks normal
 kubectl -n external-attacker logs deploy/mock-attacker
 # 🚨 EXFIL RECEIVED ... full customer profile
 
-./scripts/deploy-solo.sh                   # APPLY SOLO
+./scripts/policies-on.sh                   # APPLY SOLO
 # (in chatbot) same prompt
 kubectl -n external-attacker logs deploy/mock-attacker
 # (no new entries — Istio AuthZ blocked egress)
@@ -215,8 +215,8 @@ dora-demo/
 │   ├── deploy-all.sh                # full one-time deploy
 │   ├── reset-demo.sh                # → before-Solo state, ready for the loop
 │   ├── upgrade-banking-app.sh       # vendor-compromise simulator
-│   ├── deploy-solo.sh               # CLIMAX — apply protection
-│   ├── solo-off.sh                  # revert (called by reset-demo)
+│   ├── policies-on.sh               # CLIMAX — apply protection
+│   ├── policies-off.sh                  # revert (called by reset-demo)
 │   ├── port-forward.sh, list-urls.sh
 │   └── …
 ├── manifests/                       # k8s YAML, one folder per phase

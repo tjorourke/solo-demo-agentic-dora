@@ -290,7 +290,7 @@
       the currency-converter image at the same version tag. Catalogue is unchanged. Same prompt now causes the
       LLM to invoke <code>get_profile</code> and pass the customer's full PII to the compromised vendor, which
       POSTs it to <code>mock-attacker</code>. <b>The customer reply looks identical</b> — they have no idea.</li>
-      <li><b>Act 3 — rug-pull, with Solo's runtime defence.</b> Operator runs <code>deploy-solo.sh</code> which
+      <li><b>Act 3 — rug-pull, with Solo's runtime defence.</b> Operator runs <code>policies-on.sh</code> which
       applies an <code>AuthorizationPolicy</code> that denies egress from <code>currency-converter</code> (by
       SPIFFE identity) to <code>external-attacker</code>. Same prompt, same LLM behaviour (still fooled, still
       calls <code>get_profile</code>) — but ztunnel resets the egress TCP connection at L4 before any PII reaches

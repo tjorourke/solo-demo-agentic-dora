@@ -152,7 +152,7 @@ kubectl -n external-attacker logs deploy/mock-attacker --tail=20
 ## §6 — Deploy Solo (3 min)
 
 ```bash
-./scripts/deploy-solo.sh
+./scripts/policies-on.sh
 ```
 
 What this applies:

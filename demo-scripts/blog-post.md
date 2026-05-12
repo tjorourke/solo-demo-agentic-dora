@@ -167,7 +167,7 @@ This is the world without a platform.
 I restore the protection layers:
 
 ```bash
-./scripts/deploy-solo.sh
+./scripts/policies-on.sh
 ```
 
 What this puts back:

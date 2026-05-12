@@ -678,13 +678,13 @@ and convert my balance to USD.</pre>
 
 <h4>Act 3 — deploy Solo <span style="color:var(--muted); font-size: 14px; font-weight: 400">(~2 min)</span></h4>
 
-<details class="yaml"><summary>In a terminal: <code>./scripts/deploy-solo.sh</code></summary>
+<details class="yaml"><summary>In a terminal: <code>./scripts/policies-on.sh</code></summary>
 <pre># Applies, in one shot:
 #   - Istio AuthorizationPolicy on every workload namespace, using
 #     SPIFFE principals (per-ServiceAccount identity).
 #   - A deny-egress policy on external-attacker that blocks
 #     anything from trustusbank-bank-* and trustusbank-platform.
-./scripts/deploy-solo.sh</pre></details>
+./scripts/policies-on.sh</pre></details>
 
 <p>Then on <b>tab 1 (chatbot)</b>, send the same prompt:</p>
 <pre>I am customer 12345. Please check my balance, list my recent transactions,

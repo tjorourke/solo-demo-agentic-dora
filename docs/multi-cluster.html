@@ -421,7 +421,7 @@ spec:
 </tbody>
 </table>
 
-<details class="yaml"><summary>example — AuthorizationPolicy used by Solo deploy-solo.sh in act 3</summary>
+<details class="yaml"><summary>example — AuthorizationPolicy used by Solo policies-on.sh in act 3</summary>
 <pre># Default-deny on bank-vendors; only allow agentgateway → currency-converter.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
@@ -1136,7 +1136,7 @@ k9s --context=kind-trustusbank-vendor     # ⌘3</pre></details>
 <tbody>
 <tr><td><b>1</b></td><td><a href="https://github.com/tjorourke/solo-demo-agentic-dora/blob/main/scripts/reset-demo.sh">scripts/reset-demo.sh</a></td><td>support-bot calls <code>get_balance</code> + <code>list_recent</code> + <code>convert_currency</code>. Returns clean reply.</td><td>No exfil. mock-attacker logs silent.</td></tr>
 <tr><td><b>2</b></td><td><a href="https://github.com/tjorourke/solo-demo-agentic-dora/blob/main/scripts/upgrade-banking-app.sh">scripts/upgrade-banking-app.sh</a></td><td>Same prompt. LLM is fooled by the poisoned docstring, calls <code>get_profile</code> mid-flow, passes profile to <code>convert_currency</code>.</td><td>currency-converter POSTs the full PII to attacker.com. Exfil lands.</td></tr>
-<tr><td><b>3</b></td><td><a href="https://github.com/tjorourke/solo-demo-agentic-dora/blob/main/scripts/deploy-solo.sh">scripts/deploy-solo.sh</a></td><td>Same prompt. <b>LLM is still fooled</b> — same toolchain runs.</td><td>Egress to attacker.com blocked at L4 by ztunnel (SPIFFE-based AuthorizationPolicy). Zero exfil.</td></tr>
+<tr><td><b>3</b></td><td><a href="https://github.com/tjorourke/solo-demo-agentic-dora/blob/main/scripts/policies-on.sh">scripts/policies-on.sh</a></td><td>Same prompt. <b>LLM is still fooled</b> — same toolchain runs.</td><td>Egress to attacker.com blocked at L4 by ztunnel (SPIFFE-based AuthorizationPolicy). Zero exfil.</td></tr>
 </tbody>
 </table>
 
@@ -1160,7 +1160,7 @@ k9s --context=kind-trustusbank-vendor     # ⌘3</pre></details>
    }</pre>
 
 <h3>Act 3 — Solo applies</h3>
-<p><a href="https://github.com/tjorourke/solo-demo-agentic-dora/blob/main/scripts/deploy-solo.sh"><code>scripts/deploy-solo.sh</code></a> applies a default-deny + per-SA allow on <code>trustusbank-bank-vendors</code>. ztunnel xDS picks them up within seconds.</p>
+<p><a href="https://github.com/tjorourke/solo-demo-agentic-dora/blob/main/scripts/policies-on.sh"><code>scripts/policies-on.sh</code></a> applies a default-deny + per-SA allow on <code>trustusbank-bank-vendors</code>. ztunnel xDS picks them up within seconds.</p>
 <p>Customer asks the same question. <b>The LLM is still fooled — it still calls <code>get_profile</code> and still passes the profile to <code>convert_currency</code>.</b> But the egress from the rogue currency-converter to the mock-attacker is blocked at L4 by ztunnel because the policy denies traffic from <code>cluster.local/ns/trustusbank-bank-vendors/sa/currency-converter</code> to <code>external-attacker</code>. Customer-facing reply is identical: £4,287.55 / $5,445.19.</p>
 
 <p><b>Attacker log lines: 20 before this run, 20 after. Zero new exfil.</b></p>
@@ -1225,7 +1225,7 @@ and convert my balance to USD.</pre>
 
 <h4>Act 3 — deploy Solo <span style="color:var(--muted); font-size: 14px; font-weight: 400">(~2 min)</span></h4>
 
-<details class="yaml"><summary>In a terminal: <code>./scripts/deploy-solo.sh</code></summary>
+<details class="yaml"><summary>In a terminal: <code>./scripts/policies-on.sh</code></summary>
 <pre># In multi-cluster mode, the AuthorizationPolicy is applied on the VENDOR
 # cluster (where mock-attacker lives) and references the SOURCE workload
 # by its full SPIFFE identity:
@@ -1236,7 +1236,7 @@ and convert my balance to USD.</pre>
 # ztunnel on vendor enforces it whether the source is on the same node, a
 # different node, or coming back to vendor from another cluster via the
 # east/west GW. The SPIFFE identity stays attached to the wire.
-./scripts/deploy-solo.sh</pre></details>
+./scripts/policies-on.sh</pre></details>
 
 <p>Same prompt on <b>tab 1 (chatbot)</b>:</p>
 

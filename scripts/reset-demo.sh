@@ -15,7 +15,7 @@
 #   2. ./scripts/upgrade-banking-app.sh                       → vendor's CI got compromised
 #   3. (chatbot) same prompt → agent fooled, exfil succeeds
 #   4. kubectl -n external-attacker logs deploy/mock-attacker → see stolen PII
-#   5. ./scripts/deploy-solo.sh                                → CLIMAX
+#   5. ./scripts/policies-on.sh                                → CLIMAX
 #   6. (chatbot) same prompt → agent fooled the same way, but exfil now BLOCKED
 
 set -Eeuo pipefail
@@ -30,8 +30,8 @@ trap on_error ERR
 log_step "Resetting demo to clean 'before Solo' baseline (mode=$MODE)"
 
 # 1. Strip Solo's protection (puts us in the bare-K8s starting state)
-log "1/5 — stripping Solo's protection layers (solo-off)"
-"$SCRIPT_DIR/solo-off.sh" 2>&1 | sed 's/^/    /'
+log "1/5 — stripping Solo's protection layers (policies-off)"
+OPEN_BROWSER=0 "$SCRIPT_DIR/policies-off.sh" 2>&1 | sed 's/^/    /'
 
 # 2. Restore acme-fx/currency-converter to its day-1 state. The catalogue
 # entry is registered against the bank cluster's agentregistry (the
@@ -91,7 +91,7 @@ done
 
 # 5. Refresh port-forwards (new pod IPs)
 log "5/5 — refreshing port-forwards"
-"$SCRIPT_DIR/port-forward.sh" 2>&1 | tail -1 | sed 's/^/    /'
+OPEN_BROWSER=0 "$SCRIPT_DIR/port-forward.sh" 2>&1 | tail -1 | sed 's/^/    /'
 
 # Show the catalog (4 entries — 3 bank tools + acme-fx vendor)
 echo ""
@@ -106,5 +106,5 @@ log "  1. (chatbot) http://localhost:$PF_FRONTEND_PORT — happy path"
 log "  2. ./scripts/upgrade-banking-app.sh"
 log "  3. (chatbot) same prompt"
 log "  4. kubectl -n external-attacker logs deploy/mock-attacker"
-log "  5. ./scripts/deploy-solo.sh                          ← climax"
+log "  5. ./scripts/policies-on.sh                          ← climax"
 log "  6. (chatbot) same prompt — exfil now blocked"

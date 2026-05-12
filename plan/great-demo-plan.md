@@ -12,7 +12,7 @@
 > - [`demo-scripts/blog-post.md`](../demo-scripts/blog-post.md) — long-form story version
 >
 > **Key deviations from the original plan:**
-> - The two-act `solo-off.sh` / `solo-on.sh` framing replaced the linear
+> - The two-act `policies-off.sh` / `solo-on.sh` framing replaced the linear
 >   "deploy then attack" walkthrough — much clearer for customers.
 > - JWT validation + agentgateway tool-allowlist are **configurable but
 >   not enforced** in the default demo (the JWT path needs more work to be

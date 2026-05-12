@@ -1,6 +1,6 @@
 # Deny all incoming traffic to mock-attacker from the bank's namespaces.
-# This is what's APPLIED by ./scripts/deploy-solo.sh and REMOVED by
-# ./scripts/solo-off.sh. Without it, currency-converter' lateral exfil to
+# This is what's APPLIED by ./scripts/policies-on.sh and REMOVED by
+# ./scripts/policies-off.sh. Without it, currency-converter' lateral exfil to
 # mock-attacker succeeds (Act 1). With it, ztunnel resets the
 # connection at L4 and customer data never leaves the cluster (Act 2).
 

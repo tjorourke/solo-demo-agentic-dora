@@ -78,7 +78,7 @@ Switch to **mock-attacker** (tab 2) — wait 1-2s for the page to refresh.
 ### 2:30 — deploy Solo (2 min)
 
 ```bash
-./scripts/deploy-solo.sh
+./scripts/policies-on.sh
 ```
 
 > *"Same architecture, same agents, same compromised tool. The only

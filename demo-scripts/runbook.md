@@ -47,7 +47,7 @@ If any URL is red, run `./scripts/port-forward.sh` then `./scripts/list-urls.sh`
 
 📁 source: [`scripts/reset-demo.sh`](../scripts/reset-demo.sh) ·
 [`scripts/port-forward.sh`](../scripts/port-forward.sh) ·
-[`scripts/solo-off.sh`](../scripts/solo-off.sh) (called by reset)
+[`scripts/policies-off.sh`](../scripts/policies-off.sh) (called by reset)
 
 `reset-demo.sh` puts the cluster in **Solo OFF** state: no AuthZ policies,
 acme-fx still in the catalogue (with benign image), currency-converter running
@@ -191,11 +191,11 @@ invisible to the user.**
 
 In the terminal:
 ```bash
-./scripts/deploy-solo.sh
+./scripts/policies-on.sh
 ```
 
-📁 source: [`scripts/deploy-solo.sh`](../scripts/deploy-solo.sh) ·
-[`scripts/solo-off.sh`](../scripts/solo-off.sh) (the inverse — wipes everything this applies)
+📁 source: [`scripts/policies-on.sh`](../scripts/policies-on.sh) ·
+[`scripts/policies-off.sh`](../scripts/policies-off.sh) (the inverse — wipes everything this applies)
 
 This applies, in one shot:
 - Istio AuthorizationPolicy on every workload namespace, using **SPIFFE
@@ -612,7 +612,7 @@ Istio mTLS with SPIFFE identities on both sides — same Solo controls
 work for agent↔agent, not just agent↔tool.
 
 #### Pre-state
-- Solo ON (deploy-solo.sh has run) — needed because the demo proves the
+- Solo ON (policies-on.sh has run) — needed because the demo proves the
   cross-namespace AuthZ is correctly permitting the A2A path
 - The cluster's allow-platform-to-agents AuthZ must include both
   kagent-controller AND the bank-agents waypoint SA. This was a fix in
@@ -780,8 +780,8 @@ clean them up. Run their per-demo reset commands as well.
 | [`08-a2a.sh`](../scripts/08-a2a.sh) | Tenant isolation policies for A2A |
 | [`09-frontend.sh`](../scripts/09-frontend.sh) | Customer chatbot UI |
 | [`deploy-all.sh`](../scripts/deploy-all.sh) | Runs phases 0–9 in order |
-| [`deploy-solo.sh`](../scripts/deploy-solo.sh) | **Act 3 climax** — applies SPIFFE AuthZ + deny-egress |
-| [`solo-off.sh`](../scripts/solo-off.sh) | Strips ALL Solo policies (returns to bare-K8s state) |
+| [`policies-on.sh`](../scripts/policies-on.sh) | **Act 3 climax** — applies SPIFFE AuthZ + deny-egress |
+| [`policies-off.sh`](../scripts/policies-off.sh) | Strips ALL Solo policies (returns to bare-K8s state) |
 | [`upgrade-banking-app.sh`](../scripts/upgrade-banking-app.sh) | **Act 2** — vendor's CI compromised; image swap |
 | [`reset-demo.sh`](../scripts/reset-demo.sh) | Restore to "before Solo" baseline between runs |
 | [`port-forward.sh`](../scripts/port-forward.sh) | Reset all 14 port-forwards |

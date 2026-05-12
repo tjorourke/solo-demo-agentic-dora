@@ -91,7 +91,7 @@ first_cluster_for_ns() {
 # (edge.local / bank.local / vendor.local in our case, except where bank
 # was set to cluster.local for waypoint cert-fetch compatibility) — so
 # building AuthorizationPolicy principals dynamically is the only reliable
-# way to keep deploy-solo.sh portable across topologies.
+# way to keep policies-on.sh portable across topologies.
 trust_domain_for() {
   local cluster="$1" ctx td
   ctx="$(cluster_context "$cluster")"

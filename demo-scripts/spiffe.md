@@ -182,7 +182,7 @@ rules:
             - "cluster.local/ns/<dest-ns>/sa/waypoint"  # for waypoint-mediated paths
 ```
 
-This is exactly what `manifests/phase01-ambient/allow-agents-to-mcp.yaml` and `scripts/deploy-solo.sh`'s allow rules do. **Two failure modes both manifest as `503 upstream connect error`** — see §8.
+This is exactly what `manifests/phase01-ambient/allow-agents-to-mcp.yaml` and `scripts/policies-on.sh`'s allow rules do. **Two failure modes both manifest as `503 upstream connect error`** — see §8.
 
 ---
 
@@ -223,7 +223,7 @@ account-mcp pod (sa/account-mcp in trustusbank-bank-mcp)
 
 When Solo is OFF (no AuthZ): every hop is still mTLS, but ANY pod could connect anywhere. Identity is recorded in logs but not enforced.
 
-When Solo is ON (`./scripts/deploy-solo.sh`): each hop's destination ztunnel checks the source's SPIFFE against an ALLOW rule. **One missing entry = 503 across the entire chain.**
+When Solo is ON (`./scripts/policies-on.sh`): each hop's destination ztunnel checks the source's SPIFFE against an ALLOW rule. **One missing entry = 503 across the entire chain.**
 
 ---
 
@@ -376,7 +376,7 @@ Every SPIFFE-using artefact in the codebase:
 - [`manifests/phase01-ambient/deny-all-cross-ns.yaml`](../manifests/phase01-ambient/deny-all-cross-ns.yaml) — the default-deny that gates every bank namespace.
 - [`manifests/phase01-ambient/allow-agents-to-mcp.yaml`](../manifests/phase01-ambient/allow-agents-to-mcp.yaml) — the looser allow rule applied at deploy-all time. Includes the waypoint SAs for both bank-agents and bank-mcp.
 - [`manifests/phase01-attacker/deny-egress-to-attacker.yaml`](../manifests/phase01-attacker/deny-egress-to-attacker.yaml) — the wildcard egress block (the demo's punchline policy).
-- [`scripts/deploy-solo.sh`](../scripts/deploy-solo.sh) — the **strict-mode** SPIFFE-principal allow rules. Replaces the looser allow-agents-to-mcp with one that lists each SA explicitly. **This is the policy set the audience sees applied during Act 3.**
+- [`scripts/policies-on.sh`](../scripts/policies-on.sh) — the **strict-mode** SPIFFE-principal allow rules. Replaces the looser allow-agents-to-mcp with one that lists each SA explicitly. **This is the policy set the audience sees applied during Act 3.**
 - [`manifests/phase06-kagent/agent-*.yaml`](../manifests/phase06-kagent/) — each Agent's `spec.declarative.tools[]` references a RemoteMCPServer. The pod underneath gets a SPIFFE based on the `serviceAccountName` field on its kagent-managed Deployment.
 - [`scripts/test-colocated-attacker.sh`](../scripts/test-colocated-attacker.sh) — a sanity-check that proves SPIFFE-based AuthZ defends even when an attacker pod is co-located in a trusted namespace (because the SA-level identity, not namespace-level, is what's being checked).
 

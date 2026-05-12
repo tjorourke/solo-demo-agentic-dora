@@ -1,5 +1,5 @@
 # Demo 2 — emergency deny policy that the platform team writes on stage.
-# Same shape as the deploy-solo.sh policies, but written explicitly to
+# Same shape as the policies-on.sh policies, but written explicitly to
 # block ONE specific vendor: acme-fx/currency-converter.
 #
 # Why this is the demo's punchline: every customer asks "how do I add a

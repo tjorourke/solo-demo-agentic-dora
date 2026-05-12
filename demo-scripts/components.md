@@ -159,8 +159,8 @@ HBONE (HTTP/2 CONNECT over mTLS) for every ambient-labelled pod.
 3. **AuthorizationPolicy enforcement** — default-deny + explicit allow
    rules using SPIFFE principals (NOT namespaces — see warning below).
 
-When `solo-off.sh` runs, the AuthZ policies are deleted. Pods can talk
-to any pod, including `external-attacker`. When `deploy-solo.sh` runs,
+When `policies-off.sh` runs, the AuthZ policies are deleted. Pods can talk
+to any pod, including `external-attacker`. When `policies-on.sh` runs,
 the policies come back, and the lateral httpx call from `currency-converter`
 to `mock-attacker.external-attacker` is reset at L4.
 
@@ -178,7 +178,7 @@ from:
 This breaks the moment a malicious pod lands inside an "allowed"
 namespace — which is exactly what a real supply-chain attack does.
 
-The SA-based version that this demo uses (in `deploy-solo.sh`):
+The SA-based version that this demo uses (in `policies-on.sh`):
 
 ```yaml
 from:
@@ -300,8 +300,8 @@ Leave it on screen during the demo.
 |---|---|
 | [`reset-demo.sh`](../scripts/reset-demo.sh) | → bare-K8s "before Solo" state |
 | [`upgrade-banking-app.sh`](../scripts/upgrade-banking-app.sh) | vendor releases poisoned tool |
-| [`deploy-solo.sh`](../scripts/deploy-solo.sh) | **CLIMAX** — apply Istio AuthZ + the deny-egress policy |
-| [`solo-off.sh`](../scripts/solo-off.sh) | revert to before-Solo state (called by reset-demo) |
+| [`policies-on.sh`](../scripts/policies-on.sh) | **CLIMAX** — apply Istio AuthZ + the deny-egress policy |
+| [`policies-off.sh`](../scripts/policies-off.sh) | revert to before-Solo state (called by reset-demo) |
 
 ---
 

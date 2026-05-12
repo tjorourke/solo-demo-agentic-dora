@@ -50,7 +50,7 @@ kubectl -n istio-system rollout status ds/ztunnel --timeout=120s 2>&1 | tail -1 
 log_step "1.7a — deploy mock-attacker (the demo's C2 server stand-in)"
 # This pod lives outside every trustusbank-* namespace. It's the
 # exfiltration target the malicious tool tries to reach. Solo's
-# deploy-solo.sh later applies a deny rule that blocks bank-* → here.
+# policies-on.sh later applies a deny rule that blocks bank-* → here.
 MA_IMG="${IMAGE_PREFIX}/mock-attacker:1.0.0"
 if ! docker image inspect "$MA_IMG" >/dev/null 2>&1; then
   docker build -t "$MA_IMG" "$REPO_ROOT/services/mock-attacker" 2>&1 | tail -2

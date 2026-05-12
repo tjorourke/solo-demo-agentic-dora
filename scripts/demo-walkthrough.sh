@@ -150,7 +150,7 @@ open_url "http://localhost:${PF_MOCK_ATTACKER_PORT}" "mock-attacker UI — see t
 pause
 
 narrate "═══ §7 — Deploy Solo (climax) ═══"
-run_cmd "$SCRIPT_DIR/deploy-solo.sh"
+run_cmd "$SCRIPT_DIR/policies-on.sh"
 pause
 
 narrate "Re-run the same chat prompt. Same agent, same fooled LLM."

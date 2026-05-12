@@ -487,7 +487,7 @@ spec:
 <p>None of this is novel, Istio has had identity-based AuthZ for years. What's new is the supply-chain attack surface that AI agents create (tool descriptions as instruction channels, MCP's dynamic discovery, third-party tools as the natural deployment pattern). The defence stack I used is all open source: Istio Ambient + ztunnel for the mesh, agentgateway for MCP routing, agentregistry for the catalogue, kagent for the agents, plus the standard kube-prometheus-stack / Loki / Tempo observability layer. One Helm chart, one AuthorizationPolicy, one PrometheusRule.</p>
 
 <div class="callout ok">
-<strong>Try it yourself.</strong> The full demo is open source: <code>./scripts/deploy-all.sh</code>, <code>./scripts/upgrade-banking-app.sh</code>, <code>./scripts/deploy-solo.sh</code>. About 25 minutes to deploy on a laptop with kind.<br>
+<strong>Try it yourself.</strong> The full demo is open source: <code>./scripts/deploy-all.sh</code>, <code>./scripts/upgrade-banking-app.sh</code>, <code>./scripts/policies-on.sh</code>. About 25 minutes to deploy on a laptop with kind.<br>
 Repo: <a href="https://github.com/tjorourke/solo-demo-agentic-dora">tjorourke/solo-demo-agentic-dora</a>
 </div>
 
