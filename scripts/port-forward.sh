@@ -84,6 +84,11 @@ maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/dex"                     "$PF_DEX_PORT"
 # Service name retains the gloo-mesh-* identifier from the previous brand.
 if [[ "$MODE" == "multi" ]]; then
   maybe_pfc "$BANK_CLUSTER" gloo-mesh "svc/gloo-mesh-ui" 18015 8090 "Solo mgmt plane UI"
+  # Edge cluster runs OSS kagent 0.9.2 (no SSO) — its UI hosts support-bot.
+  # Bank cluster's kagent-ui only shows fraud-bot/triage-bot since each
+  # cluster has its own kagent control plane. Different port so both UIs
+  # can be open simultaneously.
+  maybe_pfc "$EDGE_CLUSTER" "$NS_PLATFORM" "svc/kagent-ui" "$PF_KAGENT_EDGE_PORT" 8080 "kagent UI (edge / support-bot)"
 fi
 
 # Frontend (edge cluster in multi mode)
