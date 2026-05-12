@@ -69,6 +69,23 @@ clusters_for_ns() {
   done
 }
 
+# first_cluster_for_ns <ns> — same idea but returns only the first match.
+# Use this instead of `clusters_for_ns ... | head -1` from a command
+# substitution: piping to `head -1` closes the upstream pipe early,
+# SIGPIPEs kubectl in clusters_for_ns, and under `set -o pipefail` the
+# whole assignment fails with exit 141.
+first_cluster_for_ns() {
+  local ns="$1" c ctx
+  for c in "${CLUSTERS[@]}"; do
+    ctx="$(cluster_context "$c")"
+    if kubectl --context="$ctx" get ns "$ns" >/dev/null 2>&1; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # trust_domain_for <cluster> — reads the live istiod config and prints the
 # SPIFFE trust domain. Multi-cluster uses distinct trust domains per cluster
 # (edge.local / bank.local / vendor.local in our case, except where bank

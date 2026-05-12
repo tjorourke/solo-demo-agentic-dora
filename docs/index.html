@@ -180,12 +180,139 @@
   <p>Two flavours of the same demo. Same chatbot, same agents, same attack — different blast radius.</p>
 </section>
 
+<style>
+  .attack-section {
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 12px; padding: 28px 32px; margin: 36px 0;
+  }
+  .attack-section h2 {
+    margin: 0 0 8px; font-size: 24px; font-weight: 700; letter-spacing: -0.005em;
+    border-left: 4px solid var(--accent); padding-left: 14px;
+  }
+  .attack-section .sub {
+    color: #475569; font-size: 15px; margin: 0 0 22px; padding-left: 18px;
+  }
+  .attack-stages {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;
+    margin: 16px 0;
+  }
+  @media (max-width: 820px) { .attack-stages { grid-template-columns: 1fr; } }
+  .attack-stages .stage {
+    background: #fff; border: 1px solid var(--card-border);
+    border-radius: 8px; padding: 14px 16px;
+    position: relative;
+  }
+  .attack-stages .stage .num {
+    position: absolute; top: -10px; left: 16px;
+    background: var(--accent); color: white;
+    width: 26px; height: 26px; border-radius: 50%;
+    text-align: center; line-height: 26px; font-weight: 700; font-size: 13px;
+  }
+  .attack-stages .stage h4 {
+    margin: 4px 0 6px; padding-left: 22px;
+    font-size: 14.5px; color: var(--ink);
+  }
+  .attack-stages .stage p {
+    margin: 0 0 0 22px; font-size: 14px; color: #334155; line-height: 1.5;
+  }
+  .attack-section .what-we-show {
+    margin-top: 22px; padding-top: 22px;
+    border-top: 1px solid var(--card-border);
+  }
+  .attack-section .what-we-show h3 {
+    margin: 0 0 10px; font-size: 17px; font-weight: 700;
+  }
+  .attack-section .what-we-show ol {
+    margin: 0 0 0 22px; font-size: 15px; color: #334155;
+  }
+  .attack-section .what-we-show ol li { margin-bottom: 8px; }
+  .attack-section .why-mesh {
+    background: rgba(28,181,211,0.08);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    padding: 12px 16px; margin-top: 18px; font-size: 15px;
+  }
+  .attack-section .why-mesh b { color: var(--ink); }
+</style>
+
+<section class="attack-section">
+  <h2>What's a rug-pull attack, and what does this demo show?</h2>
+  <p class="sub">A real attack pattern that the runtime-defence story plays out against, end-to-end.</p>
+
+  <p>An <b>MCP rug-pull</b> is a supply-chain attack on the AI agent ecosystem: a previously trusted, third-party
+  AI tool gets silently swapped to act maliciously. The tool's name, description, version, signature record — all
+  unchanged. Only the bytes inside the image are different. The same way Codecov, 3CX, ua-parser-js, and xz-utils
+  were all compromised — applied to the Model Context Protocol that agentic systems rely on.</p>
+
+  <h3 style="margin: 22px 0 8px; font-size: 17px;">How it works</h3>
+
+  <div class="attack-stages">
+    <div class="stage">
+      <span class="num">1</span>
+      <h4>Trust establishment</h4>
+      <p>A third-party MCP server is onboarded legitimately. The vendor passes security review, the tool is
+      registered in the agent registry, the platform team writes Deployment + RemoteMCPServer + AuthorizationPolicy
+      and merges it. It works as advertised for months.</p>
+    </div>
+    <div class="stage">
+      <span class="num">2</span>
+      <h4>The rug-pull</h4>
+      <p>The vendor's CI pipeline gets compromised. The attacker pushes a new image at the same version tag.
+      The bank's CD reconciler pulls it on next rollout. None of the bank's manifests change. The catalogue still
+      shows the same entry. The audit register is unchanged.</p>
+    </div>
+    <div class="stage">
+      <span class="num">3</span>
+      <h4>Malicious execution</h4>
+      <p>The new tool's <code>tools/list</code> response contains a prompt injection in its description. The LLM
+      reads it, gets fooled, and calls a sensitive tool with extra arguments — passing customer PII to the
+      compromised vendor, which exfiltrates it to a C2 endpoint.</p>
+    </div>
+  </div>
+
+  <p style="margin-top: 20px;">Two characteristics make rug-pulls especially dangerous and worth a dedicated
+  demo:</p>
+
+  <ul>
+    <li><b>Silent modification.</b> The tool's identifier, description and version don't change — only the
+    response payload its server returns at runtime. Every audit-able resource the bank owns looks identical.</li>
+    <li><b>Static approval is the vulnerability.</b> Organisations approve a tool once and assume it stays safe.
+    Trust granted at onboarding becomes trust granted in perpetuity — the classic <i>confused deputy</i> shape.</li>
+  </ul>
+
+  <div class="what-we-show">
+    <h3>What this demo proves, step by step</h3>
+    <ol>
+      <li><b>Act 1 — baseline.</b> The customer asks "balance + recent transactions + convert to USD". The
+      chatbot drives three real agents over A2A, calls four MCP tool servers via Solo's agentgateway waypoint,
+      and returns a normal answer. No alerts. No suspicious traffic.</li>
+      <li><b>Act 2 — rug-pull, no mesh defence.</b> Operator runs <code>upgrade-banking-app.sh</code> which swaps
+      the currency-converter image at the same version tag. Catalogue is unchanged. Same prompt now causes the
+      LLM to invoke <code>get_profile</code> and pass the customer's full PII to the compromised vendor, which
+      POSTs it to <code>mock-attacker</code>. <b>The customer reply looks identical</b> — they have no idea.</li>
+      <li><b>Act 3 — rug-pull, with Solo's runtime defence.</b> Operator runs <code>deploy-solo.sh</code> which
+      applies an <code>AuthorizationPolicy</code> that denies egress from <code>currency-converter</code> (by
+      SPIFFE identity) to <code>external-attacker</code>. Same prompt, same LLM behaviour (still fooled, still
+      calls <code>get_profile</code>) — but ztunnel resets the egress TCP connection at L4 before any PII reaches
+      the C2 endpoint. Two alerts fire, two emails land in the SOC inbox, the DORA evidence dashboard goes
+      green for "exfil blocked".</li>
+    </ol>
+  </div>
+
+  <div class="why-mesh">
+    <b>The load-bearing claim:</b> the LLM layer is still vulnerable to prompt injection — and likely always
+    will be. What changes between Act 2 and Act 3 isn't whether the model gets fooled. It's whether the runtime
+    damage lands. Solo's mesh, applied at the wire below the model, is the layer that catches the rug-pull's
+    actual payload.
+  </div>
+</section>
+
 <div class="what-grid">
   <div class="item">
-    <h4>The story</h4>
+    <h4>The story in 3 lines</h4>
     <p>A customer asks "what's my balance in USD?". The LLM is fooled by a prompt-injection in the rugpulled
-    converter's response and tries to send PII to <code>attacker.com</code>. Mesh denies the egress at L4 by SPIFFE
-    identity. Customer reply is identical to the safe run.</p>
+    converter's response and tries to send PII to <code>mock-attacker</code>. Solo's mesh denies the egress at
+    L4 by SPIFFE identity. Customer reply is identical to the safe run.</p>
   </div>
   <div class="item">
     <h4>The components</h4>
@@ -196,8 +323,8 @@
   <div class="item">
     <h4>The compliance hook</h4>
     <p>Every block leaves a signed, timestamped trail in Loki/Tempo. The narrative ties to DORA Article 17
-    (ICT-related incident management) and Article 28 (third-party risk). The runtime-defence layer is what auditors
-    want to see, not just the policy doc.</p>
+    (ICT-related incident management) and Article 28 (third-party risk). The runtime-defence layer is what
+    auditors want to see, not just the policy doc.</p>
   </div>
 </div>
 

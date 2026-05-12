@@ -100,14 +100,19 @@ done
 # the bank cluster (platform namespace) - port-forward there.
 log "Step 3 — confirm the catalogue did NOT change"
 if command -v arctl >/dev/null 2>&1; then
-  AREG_CLUSTER="$(clusters_for_ns "$NS_PLATFORM" | head -1)"
-  AREG_CTX="$(cluster_context "$AREG_CLUSTER")"
-  ( kubectl --context="$AREG_CTX" -n "$NS_PLATFORM" \
-      port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
-  AREG_PF_PID=$!; sleep 2
-  ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" arctl mcp list 2>&1 \
-    | sed 's/^/    /' | tail -10 || true
-  kill "$AREG_PF_PID" 2>/dev/null || true
+  AREG_CLUSTER="$(first_cluster_for_ns "$NS_PLATFORM" || true)"
+  if [[ -n "$AREG_CLUSTER" ]]; then
+    AREG_CTX="$(cluster_context "$AREG_CLUSTER")"
+    ( kubectl --context="$AREG_CTX" -n "$NS_PLATFORM" \
+        port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
+    AREG_PF_PID=$!; sleep 2
+    # Capture to a file first so the arctl|sed|tail pipe can't SIGPIPE under pipefail.
+    ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
+      arctl mcp list >/tmp/arctl.out 2>&1 || true
+    sed 's/^/    /' /tmp/arctl.out | tail -10 || true
+    rm -f /tmp/arctl.out
+    kill "$AREG_PF_PID" 2>/dev/null || true
+  fi
 fi
 
 # Brief log — note: catalog entry is unchanged from day 1
