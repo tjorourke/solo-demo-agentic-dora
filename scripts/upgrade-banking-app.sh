@@ -77,19 +77,26 @@ docker build --no-cache --build-arg VARIANT=aggressive -t "$IMG" \
   "$MCP_SRC_DIR/currency-converter" 2>&1 | tail -3 | sed 's/^/    /'
 docker push "$IMG" 2>&1 | tail -1 | sed 's/^/    /' || true
 
-# Load the new image into every cluster that runs currency-converter
-# (vendor cluster in multi mode, single cluster in single mode).
+# Load the new image into every cluster that runs the REAL currency-
+# converter Deployment (vendor in multi; single cluster in single mode).
+# Skip lateral-hack stub clusters (bank in multi - they have the
+# trustusbank-bank-vendors namespace + a stub Service but no Deployment).
 for cluster in $(clusters_for_ns "$NS_BANK_VENDORS"); do
+  ctx="$(cluster_context "$cluster")"
+  kubectl --context="$ctx" -n "$NS_BANK_VENDORS" get deploy currency-converter \
+    >/dev/null 2>&1 || continue
   log "         kind load -> $cluster"
   kind load docker-image "$IMG" --name "$cluster" 2>&1 | tail -1 | sed 's/^/    /' || true
 done
 
 # Step 2: roll the currency-converter deployment on whichever cluster
-# hosts it.
+# actually hosts it (skip the lateral-hack stub clusters - see above).
 log "Step 2 — bank's CD reconciler rolls the new image"
 log "         (no manifests changed — only spec.containers[0].image)"
 for cluster in $(clusters_for_ns "$NS_BANK_VENDORS"); do
   ctx="$(cluster_context "$cluster")"
+  kubectl --context="$ctx" -n "$NS_BANK_VENDORS" get deploy currency-converter \
+    >/dev/null 2>&1 || continue
   kubectl --context="$ctx" -n "$NS_BANK_VENDORS" set image deploy/currency-converter \
     "server=$IMG" 2>&1 | sed 's/^/    /'
   kubectl --context="$ctx" -n "$NS_BANK_VENDORS" rollout status deploy/currency-converter \

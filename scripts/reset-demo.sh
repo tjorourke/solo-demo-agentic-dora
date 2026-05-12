@@ -38,23 +38,30 @@ OPEN_BROWSER=0 "$SCRIPT_DIR/policies-off.sh" 2>&1 | sed 's/^/    /'
 # management plane for the platform layer).
 log "2/5 — restoring acme-fx/currency-converter to day-1 baseline"
 if command -v arctl >/dev/null 2>&1; then
-  AREG_CLUSTER="$(clusters_for_ns "$NS_PLATFORM" | head -1)"
-  AREG_CTX="$(cluster_context "$AREG_CLUSTER")"
-  ( kubectl --context="$AREG_CTX" -n "$NS_PLATFORM" \
-      port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
-  AREG_PF_PID=$!; sleep 2
-  ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
-    arctl mcp publish "acme-fx/currency-converter" --version 1.0.0 --type oci \
-    --package-id "localhost:5001/trustusbank/currency-converter:1.0.0" \
-    --transport streamable-http \
-    --description "ISO 4217 currency converter from acme-fx.io (third-party vendor)" \
-    --overwrite 2>&1 | sed 's/^/    /' | tail -3 || true
-  # Remove the stale redteam/currency-converter entry from older demo
-  # iterations, if it exists.
-  ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
-    arctl mcp delete "redteam/currency-converter" --version 1.0.0 2>&1 \
-    | sed 's/^/    /' || true
-  kill "$AREG_PF_PID" 2>/dev/null || true
+  AREG_CLUSTER="$(first_cluster_for_ns "$NS_PLATFORM" || true)"
+  if [[ -n "$AREG_CLUSTER" ]]; then
+    AREG_CTX="$(cluster_context "$AREG_CLUSTER")"
+    ( kubectl --context="$AREG_CTX" -n "$NS_PLATFORM" \
+        port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
+    AREG_PF_PID=$!; sleep 2
+    # Capture each arctl call to a file so pipefail can't trip on tail/sed
+    # SIGPIPE under set -e (same shape that bit upgrade-banking-app.sh).
+    ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
+      arctl mcp publish "acme-fx/currency-converter" --version 1.0.0 --type oci \
+      --package-id "localhost:5001/trustusbank/currency-converter:1.0.0" \
+      --transport streamable-http \
+      --description "ISO 4217 currency converter from acme-fx.io (third-party vendor)" \
+      --overwrite >/tmp/arctl-restore.out 2>&1 || true
+    sed 's/^/    /' /tmp/arctl-restore.out | tail -3 || true
+    rm -f /tmp/arctl-restore.out
+    # Remove the stale redteam/currency-converter entry from older demo
+    # iterations, if it exists.
+    ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT" \
+      arctl mcp delete "redteam/currency-converter" --version 1.0.0 >/tmp/arctl-del.out 2>&1 || true
+    sed 's/^/    /' /tmp/arctl-del.out | tail -3 || true
+    rm -f /tmp/arctl-del.out
+    kill "$AREG_PF_PID" 2>/dev/null || true
+  fi
 fi
 
 # 3. Revert currency-converter Deployment to the clean (benign) variant
@@ -67,8 +74,15 @@ if ! docker image inspect "$IMG_VENDOR_CLEAN" >/dev/null 2>&1; then
     "$MCP_SRC_DIR/currency-converter" 2>&1 | tail -2
   docker push "$IMG_VENDOR_CLEAN" 2>&1 | tail -1 || true
 fi
+# Only act on clusters that have the REAL currency-converter Deployment.
+# In multi mode the lateral-hack stub on bank only creates a Service +
+# EndpointSlice in trustusbank-bank-vendors (no Deployment); the real
+# Deployment lives on vendor.
 for cluster in $(clusters_for_ns "$NS_BANK_VENDORS"); do
   ctx="$(cluster_context "$cluster")"
+  if ! kubectl --context="$ctx" -n "$NS_BANK_VENDORS" get deploy currency-converter >/dev/null 2>&1; then
+    continue
+  fi
   log "    $cluster:$NS_BANK_VENDORS"
   # Make sure the image is available to the cluster's kubelet.
   kind load docker-image "$IMG_VENDOR_CLEAN" --name "$cluster" 2>&1 | tail -1 | sed 's/^/      /' || true
