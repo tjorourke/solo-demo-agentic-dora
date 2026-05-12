@@ -587,14 +587,21 @@
 <details class="pattern">
 <summary><span class="num">1a</span> Egress through a waypoint with a hostname allowlist</summary>
 <div class="body">
-  <p>The canonical Istio Ambient pattern for outbound traffic control: every workload's egress is captured by
-  ztunnel and forwarded through a designated egress <b>waypoint</b> — in Solo's stack, an agentgateway
-  positioned as a Gateway-API <code>Gateway</code> in an <code>egress</code> namespace. The waypoint sees the
-  destination hostname (SNI on TLS, <code>Host</code> on HTTP) and matches the request against an explicit
-  allowlist. This is what Istio's docs call the
-  <a href="https://istio.io/latest/docs/tasks/traffic-management/egress/egress-gateway/" target="_blank" rel="noopener">"Egress Gateway"</a> pattern, applied to ambient mode with Solo's MCP-aware
-  waypoint binary. <b>It is the recommended best practice</b> for any cluster that consumes external
-  third-party APIs.</p>
+  <p><b>The idea in one line:</b> make every outbound call go through one place — the waypoint — and have
+  that place enforce a list of allowed destinations. Anything not on the list gets blocked.</p>
+
+  <p>How it works in practice:</p>
+  <ol>
+    <li>You deploy Solo's agentgateway as a <b>Gateway</b> in a dedicated <code>egress</code> namespace.</li>
+    <li>Istio Ambient's data-plane (ztunnel) automatically routes every pod's outbound traffic through it
+    — no app code or sidecar changes needed.</li>
+    <li>The gateway reads the destination hostname (SNI on TLS, <code>Host</code> on HTTP) and matches it
+    against a list you maintain.</li>
+    <li>If the destination is on the list → traffic flows. If not → connection rejected, alert fires.</li>
+  </ol>
+
+  <p>This is Istio's <a href="https://istio.io/latest/docs/tasks/traffic-management/egress/egress-gateway/" target="_blank" rel="noopener">egress gateway</a>
+  pattern. It's the standard recommendation for any cluster that talks to external APIs.</p>
 
   <p>What the YAML looks like, end-to-end:</p>
 
@@ -726,6 +733,37 @@
   <code>api.openai.com</code> still matches its own allow rule. Restricting one workload didn't break
   others. That's what "source-identity pinning" gives you over a coarse "block egress from the cluster"
   rule — surgical, not blunt.</p>
+
+  <h4 style="margin: 22px 0 6px; font-size: 15px;">"Won't this be hundreds of allow rules at scale?"</h4>
+  <p>Fair question. Yes — a real bank has tens of internal services and dozens of approved external
+  partners. But you don't write one giant allow list. The operational model is:</p>
+
+  <ul>
+    <li><b>Rules are scoped to the workload that owns them.</b> The currency-converter team owns the
+    <code>currency-converter → api.frankfurter.app</code> rule. The mainframe team owns
+    <code>mainframe-bridge → api.openai.com</code>. Each team has 1-5 rules they need to care about,
+    not 200.</li>
+    <li><b>GitOps, not runtime config.</b> Every allow rule lives in the workload's git repo. Adding a
+    new partner is a pull request that goes through normal security review. The audit trail is the
+    same one you already trust for code changes.</li>
+    <li><b>Solo's <code>ExternalService</code> CRD is the maintainable abstraction.</b> One CRD per
+    third-party endpoint, declares the host + port + protocol + which teams can call it. The
+    management plane translates each into a <code>ServiceEntry</code> + the relevant
+    <code>AuthorizationPolicy</code> bits automatically. Adding a partner is one YAML file.</li>
+    <li><b>Default-deny is non-negotiable for any serious environment.</b> It's the same model as a
+    cluster firewall (NetworkPolicy with implicit deny), or a perimeter firewall in a non-Kubernetes
+    bank. The shock isn't "wow, deny-default is hard" — it's "we ever ran with allow-default for
+    internal services in the first place." For an AI agent talking to third-party tools, the answer
+    is unambiguously deny-default.</li>
+    <li><b>Drift detection is built in.</b> Prometheus alerts when a workload generates denied egress
+    (= the rule list is missing something, or something's misbehaving). Workspaces auto-emit a report
+    of "services that haven't been touched in 90 days" so stale allowlist entries get caught at the
+    quarterly review.</li>
+  </ul>
+
+  <p>Net: the policy file count grows with the workload count, but the policy <i>per workload</i>
+  stays small. The bank already does this for firewall rules — Solo just expresses it in the same
+  language as the rest of the mesh config.</p>
 </div>
 </details>
 
@@ -771,6 +809,82 @@
   (<code>reason=Authorization</code>, <code>error="PII field in tool args denied"</code>) — the same fields
   that would land in your Loki access log and DORA dashboard. The TCP egress block from layer 1a is the
   safety net; <i>this</i> is the proactive layer that stops the model from even trying.</p>
+
+  <h4 style="margin: 22px 0 6px; font-size: 15px;">Generalising it — one rule for any PII tool call</h4>
+  <p>The example above is tool-specific (<code>convert_currency</code>). For a real bank you'd want a
+  <b>single, mesh-wide</b> rule: <i>"any tool call whose source workload handles PII must not include PII
+  fields in its arguments."</i> Two ways to express that:</p>
+
+  <p><b>Approach A — Label workloads, match on label.</b> Tag the namespaces or pods that touch PII with
+  a classification label, then write one policy that targets the label:</p>
+
+<pre><span class="cmt"># 1. Label the source workload as PII-handling.
+#    Anything tagged 'pii' has its tool calls inspected.</span>
+<span class="key">apiVersion:</span> v1
+<span class="key">kind:</span> Namespace
+<span class="key">metadata:</span>
+  <span class="key">name:</span> trustusbank-bank-agents
+  <span class="key">labels:</span>
+    <span class="key">data.solo.io/classification:</span> <span class="val">pii</span>
+
+<span class="cmt"># 2. One policy, applied to every route on the agentgateway:
+#    "if the source pod is in a pii-classified namespace and the tool
+#     args contain any PII-shaped key, deny."</span>
+<span class="key">apiVersion:</span> agentgateway.dev/v1alpha1
+<span class="key">kind:</span> AgentgatewayPolicy
+<span class="key">metadata:</span>
+  <span class="key">name:</span> deny-pii-leakage-mesh-wide
+  <span class="key">namespace:</span> trustusbank-platform
+<span class="key">spec:</span>
+  <span class="key">targetRefs:</span>
+    - <span class="key">group:</span> gateway.networking.k8s.io
+      <span class="key">kind:</span> Gateway
+      <span class="key">name:</span> trustusbank-agentgw   <span class="cmt"># attach to the whole gateway, not one route</span>
+  <span class="key">traffic:</span>
+    <span class="key">authorization:</span>
+      <span class="key">action:</span> Deny
+      <span class="key">policy:</span>
+        <span class="key">matchExpressions:</span>
+          - <span class="val">'mcp.method == "tools/call"'</span>
+          - <span class="val">'source.namespace.labels["data.solo.io/classification"] == "pii"'</span>
+          - <span class="val">'mcp.tool.arguments.exists(k, k in ["customer_profile",
+                                              "email", "phone", "address",
+                                              "dob", "ni_number", "ssn",
+                                              "passport_number"])'</span></pre>
+
+  <p>Now you don't have to add a new rule per tool. Tag any namespace that handles sensitive data with
+  the <code>pii</code> classification and the single policy catches every tool call out of it.</p>
+
+  <p><b>Approach B — Content-based matching with Solo's DLP policy.</b> Solo Gloo Mesh ships a
+  <code>DLPPolicy</code> CRD (Data Loss Prevention) that does regex-based pattern matching on the
+  request body itself. This catches the same PII shapes even when an attacker renames the argument
+  keys (e.g. <code>profile</code>, <code>ctx</code>, <code>userData</code>) to evade an allow-list:</p>
+
+<pre><span class="key">apiVersion:</span> security.policy.gloo.solo.io/v2
+<span class="key">kind:</span> DLPPolicy
+<span class="key">metadata:</span>
+  <span class="key">name:</span> redact-pii-from-tool-calls
+  <span class="key">namespace:</span> trustusbank-platform
+<span class="key">spec:</span>
+  <span class="key">targetRefs:</span>
+    - <span class="key">group:</span> gateway.networking.k8s.io
+      <span class="key">kind:</span> Gateway
+      <span class="key">name:</span> trustusbank-agentgw
+  <span class="key">config:</span>
+    <span class="key">action:</span> Reject   <span class="cmt"># or RedactInPlace if you want to allow + mask</span>
+    <span class="key">matchers:</span>
+      - <span class="key">name:</span> ni-number
+        <span class="key">regex:</span> <span class="val">'[A-Z]{2}\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-Z]'</span>
+      - <span class="key">name:</span> email
+        <span class="key">regex:</span> <span class="val">'[\w._%+-]+@[\w.-]+\.[A-Z]{2,}'</span>
+      - <span class="key">name:</span> uk-postcode
+        <span class="key">regex:</span> <span class="val">'[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}'</span>
+      - <span class="key">name:</span> credit-card
+        <span class="key">regex:</span> <span class="val">'\b(?:\d[ -]*?){13,16}\b'</span></pre>
+
+  <p>DLPPolicy is the heavier hammer — it inspects the actual bytes. Combine both: Approach A catches
+  the obvious cases at cheap (one CEL match), DLPPolicy catches the obfuscated ones at the cost of
+  parsing each body. In a real bank both run together.</p>
 </div>
 </details>
 
