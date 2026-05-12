@@ -99,9 +99,13 @@ log_ok "port-forwards started; mode=$MODE; $URL_COUNT URLs; PIDs in $PF_PIDFILE,
 
 # Open all UIs in Chrome on macOS (one tab per URL). Skipped if not Darwin,
 # Chrome isn't installed, or OPEN_BROWSER=0 is set.
+# Uses a while-read loop instead of mapfile so it works on macOS bash 3.2.
 if [[ "${OPEN_BROWSER:-1}" == "1" && "$(uname)" == "Darwin" ]]; then
   if open -Ra "Google Chrome" 2>/dev/null; then
-    mapfile -t URLS < <(grep -oE 'http://[^ ]+' "$PF_URLFILE" | sort -u)
+    URLS=()
+    while IFS= read -r u; do
+      [[ -n "$u" ]] && URLS+=("$u")
+    done < <(grep -oE 'http://[^ ]+' "$PF_URLFILE" 2>/dev/null | sort -u)
     if [[ ${#URLS[@]} -gt 0 ]]; then
       log "opening ${#URLS[@]} UIs in Chrome (one tab each)"
       open -a "Google Chrome" "${URLS[@]}"
