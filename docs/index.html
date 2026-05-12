@@ -513,6 +513,41 @@
   }
   .defence .receipts .receipt p { margin: 0; font-size: 14px; color: #334155; }
   .defence .receipts .receipt code { background: rgba(15,23,42,0.06); color: #0f172a; padding: 1px 5px; }
+
+  /* Collapsible production-pattern sections (§1a, §1b, §1c) */
+  .defence details.pattern {
+    border: 1px solid var(--card-border); border-radius: 10px;
+    margin: 14px 0; background: #fff;
+    overflow: hidden;
+    transition: box-shadow 0.15s;
+  }
+  .defence details.pattern[open] { box-shadow: 0 4px 14px rgba(15,23,42,0.06); }
+  .defence details.pattern > summary {
+    cursor: pointer;
+    padding: 14px 18px;
+    background: rgba(28,181,211,0.06);
+    border-left: 3px solid var(--accent);
+    list-style: none;
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; font-size: 16px; color: var(--ink);
+  }
+  .defence details.pattern > summary::-webkit-details-marker { display: none; }
+  .defence details.pattern > summary::before {
+    content: "▶";
+    color: var(--accent); font-size: 11px;
+    transition: transform 0.15s;
+  }
+  .defence details.pattern[open] > summary::before { transform: rotate(90deg); }
+  .defence details.pattern > summary:hover {
+    background: rgba(28,181,211,0.10);
+  }
+  .defence details.pattern > summary .num {
+    background: var(--accent); color: white;
+    padding: 2px 8px; border-radius: 10px;
+    font-size: 12px; font-weight: 700; margin-right: 2px;
+  }
+  .defence details.pattern .body { padding: 16px 22px 18px; }
+  .defence details.pattern .body > p:first-child { margin-top: 0; }
 </style>
 
 <section class="defence" id="defence">
@@ -546,10 +581,12 @@
     <p style="margin: 8px 0 0;">Correct — the demo's <code>mock-attacker</code> is in a namespace because kind has no real public internet
     and we need a destination we can grep. Real attackers POST to <code>attacker.com</code>, a paste site, a
     Discord webhook, or whatever they can spin up cheap. The <code>source.namespaces</code> matcher above wouldn't catch
-    that. The three subsections below show how this generalises in a production cluster.</p>
+    that. The three patterns below show how this generalises in a production cluster — <b>click any to expand</b>.</p>
   </div>
 
-  <h3><span class="num">1a.</span> Egress through a waypoint with a hostname allowlist</h3>
+<details class="pattern">
+<summary><span class="num">1a</span> Egress through a waypoint with a hostname allowlist</summary>
+<div class="body">
   <p>The canonical Istio Ambient pattern for outbound traffic control: every workload's egress is captured by
   ztunnel and forwarded through a designated egress <b>waypoint</b> — in Solo's stack, an agentgateway
   positioned as a Gateway-API <code>Gateway</code> in an <code>egress</code> namespace. The waypoint sees the
@@ -622,9 +659,12 @@
   <code>networking.gloo.solo.io/ExternalService</code> per partner, with workspace-scoped audit + per-team
   RBAC on who can create them. Same enforcement, lighter manifest. The <code>ExternalService</code> writes
   the <code>ServiceEntry</code> for you.</p>
+</div>
+</details>
 
-  <h3><span class="num">1b.</span> SPIFFE source-identity pinning — what this actually means</h3>
-
+<details class="pattern">
+<summary><span class="num">1b</span> SPIFFE source-identity pinning — what this actually means</summary>
+<div class="body">
   <p>The earlier callout glossed over this. Here's the concrete version with a worked example.</p>
 
   <p>An <code>AuthorizationPolicy</code> in Istio has two halves: <b>who is the source</b> (the
@@ -686,9 +726,12 @@
   <code>api.openai.com</code> still matches its own allow rule. Restricting one workload didn't break
   others. That's what "source-identity pinning" gives you over a coarse "block egress from the cluster"
   rule — surgical, not blunt.</p>
+</div>
+</details>
 
-  <h3><span class="num">1c.</span> L7 pre-call block — denying tool calls by argument shape</h3>
-
+<details class="pattern">
+<summary><span class="num">1c</span> L7 pre-call block — denying tool calls by argument shape</summary>
+<div class="body">
   <p>This is one layer further down the rabbit hole. Even before the TCP connection to
   <code>attacker.com</code> attempts to open, the request is sitting in the agentgateway as a
   decoded MCP <code>tools/call</code> JSON-RPC envelope. The gateway can read the tool name AND the
@@ -728,6 +771,8 @@
   (<code>reason=Authorization</code>, <code>error="PII field in tool args denied"</code>) — the same fields
   that would land in your Loki access log and DORA dashboard. The TCP egress block from layer 1a is the
   safety net; <i>this</i> is the proactive layer that stops the model from even trying.</p>
+</div>
+</details>
 
   <div class="why-mesh">
     <b>The defence-in-depth picture.</b> 1a (egress allowlist) is the perimeter. 1b (SPIFFE source pinning)
