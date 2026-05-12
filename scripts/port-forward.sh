@@ -3,14 +3,31 @@
 # then start a fresh set in the background.
 # PIDs are written to $PF_PIDFILE, URLs to $PF_URLFILE.
 #
-# Multi-cluster aware: in MODE=multi each service is reached on the cluster
-# that actually hosts it (per scripts/lib/topology.sh).
+# One script for both topologies. Mode is auto-detected from the kind
+# contexts present on the machine:
+#   - kind-trustusbank-edge + bank + vendor all present  -> multi
+#   - just kind-trustusbank present                       -> single
+# Override with `MODE=multi ./scripts/port-forward.sh` if needed.
 
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export REPO_ROOT
+
+# Auto-detect mode from kind contexts before sourcing topology.sh
+# (which reads $MODE and exports cluster names off it).
+if [[ -z "${MODE:-}" ]]; then
+  CTXS="$(kubectl config get-contexts -o name 2>/dev/null || true)"
+  if grep -q '^kind-trustusbank-bank$' <<<"$CTXS" \
+     && grep -q '^kind-trustusbank-edge$' <<<"$CTXS" \
+     && grep -q '^kind-trustusbank-vendor$' <<<"$CTXS"; then
+    export MODE=multi
+  else
+    export MODE=single
+  fi
+fi
+
 source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/topology.sh"
@@ -62,9 +79,10 @@ maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/kagent-ui"               "$PF_KAGENT_PO
 maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/kagent-controller"       "$PF_KAGENT_CONTROLLER_PORT" 8083 "kagent-controller (A2A)"
 maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/trustusbank-agentgw"     "$PF_AGENTGATEWAY_PORT" 8080  "agentgateway"
 
-# Gloo Mesh UI (multi mode only — the management plane sits in bank)
+# Solo management plane UI (multi mode only — co-located on bank).
+# Service name retains the gloo-mesh-* identifier from the previous brand.
 if [[ "$MODE" == "multi" ]]; then
-  maybe_pfc "$BANK_CLUSTER" gloo-mesh "svc/gloo-mesh-ui" 18015 8090 "Gloo Mesh UI"
+  maybe_pfc "$BANK_CLUSTER" gloo-mesh "svc/gloo-mesh-ui" 18015 8090 "Solo mgmt plane UI"
 fi
 
 # Frontend (edge cluster in multi mode)
@@ -74,16 +92,18 @@ maybe_pfc "$EDGE_CLUSTER" "$NS_FRONTEND" "svc/chatbot" "$PF_FRONTEND_PORT" 80 "F
 maybe_pfc "$VENDOR_CLUSTER" external-attacker "svc/mock-attacker" "$PF_MOCK_ATTACKER_PORT" 8080 "mock-attacker (C2 server)"
 
 sleep 1
-log_ok "port-forwards started; PIDs in $PF_PIDFILE, URLs in $PF_URLFILE"
+
+# Count how many URLs ended up in the file (excluding header lines).
+URL_COUNT="$(grep -cE 'http://[^ ]+' "$PF_URLFILE" || true)"
+log_ok "port-forwards started; mode=$MODE; $URL_COUNT URLs; PIDs in $PF_PIDFILE, URLs in $PF_URLFILE"
 
 # Open all UIs in Chrome on macOS (one tab per URL). Skipped if not Darwin,
 # Chrome isn't installed, or OPEN_BROWSER=0 is set.
 if [[ "${OPEN_BROWSER:-1}" == "1" && "$(uname)" == "Darwin" ]]; then
   if open -Ra "Google Chrome" 2>/dev/null; then
-    # Pull plain http URLs out of the URL file (skip header / comments).
     mapfile -t URLS < <(grep -oE 'http://[^ ]+' "$PF_URLFILE" | sort -u)
     if [[ ${#URLS[@]} -gt 0 ]]; then
-      log "opening ${#URLS[@]} UIs in Chrome"
+      log "opening ${#URLS[@]} UIs in Chrome (one tab each)"
       open -a "Google Chrome" "${URLS[@]}"
     fi
   else
