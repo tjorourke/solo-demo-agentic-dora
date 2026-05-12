@@ -1325,6 +1325,100 @@ and convert my balance to USD.</pre>
 
 <p>The single-cluster narrative for the same demo lives at <a href="single-cluster.html">single-cluster.html §6</a>. For the cross-cluster A2A trick that gets <code>support-bot</code> on edge talking to <code>fraud-bot</code> on bank, see the BYO-stub write-up at <a href="kagent-cross-cluster-byo-stubs.md">kagent-cross-cluster-byo-stubs.md</a>.</p>
 
+<h3>Live screenshots — Act 1 / Act 2 / Act 3 side-by-side</h3>
+
+<p>Captured against the running multi-cluster build via headless Chrome. Three rows, one per UI that changes between acts. The full set (chatbot, kagent UI, agentregistry, Prometheus alerts) is in <a href="https://github.com/tjorourke/solo-demo-agentic-dora/tree/main/docs/img/screenshots"><code>docs/img/screenshots/</code></a>.</p>
+
+<style>
+  .acts-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px; margin: 18px 0;
+  }
+  .acts-grid .col h5 {
+    margin: 0 0 6px; font-size: 13px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); font-weight: 700;
+  }
+  .acts-grid .col h5 .tag {
+    display: inline-block; margin-left: 6px; padding: 2px 8px;
+    font-size: 10px; border-radius: 10px; vertical-align: middle;
+  }
+  .acts-grid .col h5 .tag.t1 { background: rgba(34,197,94,0.18); color: #166534; }
+  .acts-grid .col h5 .tag.t2 { background: rgba(248,113,113,0.18); color: #b91c1c; }
+  .acts-grid .col h5 .tag.t3 { background: rgba(28,181,211,0.18); color: #0e7490; }
+  .acts-grid img {
+    width: 100%; height: auto; display: block;
+    border: 1px solid var(--card-border); border-radius: 6px;
+    background: #0f172a;
+  }
+  .acts-grid .caption {
+    font-size: 12.5px; color: #334155; margin-top: 6px; line-height: 1.45;
+  }
+  .acts-grid .caption b { color: var(--ink); }
+  .acts-row-label {
+    font-weight: 700; font-size: 14px; margin: 16px 0 4px;
+    border-left: 3px solid var(--accent); padding-left: 10px;
+  }
+  @media (max-width: 900px) { .acts-grid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="acts-row-label">mock-attacker — the C2 stand-in on vendor</div>
+<div class="acts-grid">
+  <div class="col">
+    <h5>Act 1 <span class="tag t1">clean</span></h5>
+    <img src="img/screenshots/act1-mock-attacker.png" alt="mock-attacker Act 1: zero exfil events">
+    <p class="caption"><b>0 exfil events.</b> Vendor is happy, the chatbot answered the customer normally, no attack took place.</p>
+  </div>
+  <div class="col">
+    <h5>Act 2 <span class="tag t2">rugpull, no defence</span></h5>
+    <img src="img/screenshots/act2-mock-attacker.png" alt="mock-attacker Act 2: 1 exfil event with full PII">
+    <p class="caption"><b>1 exfil event.</b> Customer's full PII (name, email, phone, address, NI number) has just left the bank via the rugpulled currency-converter. The user's chat reply still looks normal.</p>
+  </div>
+  <div class="col">
+    <h5>Act 3 <span class="tag t3">defence on</span></h5>
+    <img src="img/screenshots/act3-mock-attacker.png" alt="mock-attacker Act 3: still only the Act 2 exfil, no new entries">
+    <p class="caption"><b>No new exfil.</b> Same customer prompt, same LLM behaviour (still calls <code>get_profile</code>), but ztunnel reset the TCP at L4. The Act 2 entry is still on screen — the new attempts didn't reach the listener.</p>
+  </div>
+</div>
+
+<div class="acts-row-label">Grafana — DORA Evidence dashboard on bank</div>
+<div class="acts-grid">
+  <div class="col">
+    <h5>Act 1 <span class="tag t1">clean</span></h5>
+    <img src="img/screenshots/act1-grafana.png" alt="Grafana Act 1: tiles at zero">
+    <p class="caption">All four stat tiles at <b>0</b>. OFFENDING POD table empty. Nothing's happening — and the dashboard tells the truth.</p>
+  </div>
+  <div class="col">
+    <h5>Act 2 <span class="tag t2">rugpull, no defence</span></h5>
+    <img src="img/screenshots/act2-grafana.png" alt="Grafana Act 2: AuthZ denies still 0, exfil attempts climbing">
+    <p class="caption"><b>AuthZ denies: 0.</b> <b>Exfil attempts: 2.11</b> (red). OFFENDING POD: "No data" — there's no defence to be denied. The auditor would call this "detected but unenforced".</p>
+  </div>
+  <div class="col">
+    <h5>Act 3 <span class="tag t3">defence on</span></h5>
+    <img src="img/screenshots/act3-grafana.png" alt="Grafana Act 3: AuthZ denies firing, OFFENDING POD populated">
+    <p class="caption"><b>AuthZ denies: 3.16</b> (red). <b>Exfil attempts: 6.32</b> (still climbing — the LLM keeps trying). OFFENDING POD table now populated with the <code>spiffe://vendor.local/.../currency-converter</code> identity. <b>Same prompt, completely different evidence story.</b></p>
+  </div>
+</div>
+
+<div class="acts-row-label">MailHog — SOC inbox on bank</div>
+<div class="acts-grid">
+  <div class="col">
+    <h5>Act 1 <span class="tag t1">clean</span></h5>
+    <img src="img/screenshots/act1-mailhog.png" alt="MailHog Act 1: empty inbox">
+    <p class="caption">Inbox empty. No alerts to send when nothing's being denied.</p>
+  </div>
+  <div class="col">
+    <h5>Act 2 <span class="tag t2">rugpull, no defence</span></h5>
+    <img src="img/screenshots/act2-mailhog.png" alt="MailHog Act 2: still empty">
+    <p class="caption">Inbox still empty. Without an AuthorizationPolicy nothing is being denied, so no <code>IstioAuthZDeny</code> fires — the exfil is happening silently.</p>
+  </div>
+  <div class="col">
+    <h5>Act 3 <span class="tag t3">defence on</span></h5>
+    <img src="img/screenshots/act3-mailhog.png" alt="MailHog Act 3: alert emails arrived">
+    <p class="caption">Two firing-alert emails per attack attempt: <code>[FIRING] IstioAuthZDeny</code> + <code>BankToAttackerAttempt on trustusbank-vendor</code>. Subject line carries the cluster of origin. SOC has receipts within 30 s.</p>
+  </div>
+</div>
+
 <hr>
 
 <hr>
