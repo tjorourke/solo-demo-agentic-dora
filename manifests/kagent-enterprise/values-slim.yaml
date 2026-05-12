@@ -15,6 +15,29 @@ global:
     secretName: enterprise-kagent-license
     licenseKey: "dummy-dev-key-1234567890"
 
+# OIDC: point the controller at dex (deployed alongside kagent on the
+# bank cluster). The issuer URL uses host.docker.internal so the SAME
+# URL works from BOTH:
+#   - in-cluster pods (kind's CoreDNS resolves to the Docker host IP)
+#   - the user's browser on macOS (resolved via /etc/hosts -> 127.0.0.1,
+#     which port-forward then routes back to the dex Service)
+# The clientSecret value lives in the kagent-enterprise-oidc-secret
+# Secret which is created out-of-band by scripts/07-kagent.sh.
+oidc:
+  issuer: http://host.docker.internal:5556
+  clientId: kagent-enterprise
+  secretRef: kagent-enterprise-oidc-secret
+  secretKey: clientSecret
+
+# RBAC: every authenticated user is mapped to Admin. dex's static
+# passwords don't include a groups claim, so the chart's default CEL
+# expression (which transforms claims.Groups via the rolesMap) fails
+# with "no such key: Groups" for every request. For a single-user demo
+# we just hardcode the Admin role.
+rbac:
+  roleMapping:
+    roleMapper: "['global.Admin']"
+
 # Controller (always deployed) - keep defaults, they're already lean.
 controller:
   resources:

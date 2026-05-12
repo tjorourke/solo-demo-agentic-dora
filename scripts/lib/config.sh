@@ -60,6 +60,11 @@ export PF_MOCK_ATTACKER_PORT=18011
 export PF_MAILHOG_PORT=18012
 export PF_ALERTMANAGER_PORT=18013
 export PF_KAGENT_CONTROLLER_PORT=18014
+# Must be 5556 — the dex issuer URL in dex's values.yaml is hardcoded to
+# http://host.docker.internal:5556 (so the same URL works from inside
+# kind pods AND the user's browser). Changing this requires updating
+# manifests/dex/values.yaml and manifests/oauth2-proxy/values.template.yaml.
+export PF_DEX_PORT=5556
 
 export PF_PIDFILE="/tmp/${CLUSTER_NAME}-pf.pids"
 export PF_URLFILE="/tmp/${CLUSTER_NAME}-urls.txt"

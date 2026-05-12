@@ -555,8 +555,14 @@ spec:
           - 'mcp.tool.name == "get_balance"'
           - 'mcp.tool.name == "get_profile"'</pre></details>
 
-<h3><span class="step-num">7</span>07 — kagent</h3>
-<p>Helm-installs kagent v0.9.2 (controller + UI + Postgres) in <code>trustusbank-platform</code>. Creates a Secret <code>kagent-anthropic</code> with the Anthropic API key from <code>.env</code> (this is what bit me the first time — empty Secret = silent <code>RemoteProtocolError</code>).</p>
+<h3><span class="step-num">7</span>07 — kagent (Solo Enterprise + dex + oauth2-proxy)</h3>
+<p>Helm-installs <b>Solo Enterprise for kagent 0.4.0</b> (chart <code>kagent-enterprise</code> from
+<code>oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm</code>) in <code>trustusbank-platform</code>, plus
+<b>dex 0.24.0</b> as the OIDC IdP and <b>oauth2-proxy 10.4.3</b> as the front-door for the kagent UI's SSO flow.
+Creates a Secret <code>kagent-anthropic</code> with the Anthropic API key from <code>.env</code> (this is what bit me the first time — empty Secret = silent <code>RemoteProtocolError</code>).</p>
+<p>The <code>kagent.dev/v1alpha2</code> Agent / ModelConfig / RemoteMCPServer CRDs are unchanged from the OSS chart — Enterprise just adds the management UI and the <code>policy.kagent-enterprise.solo.io/AccessPolicy</code> CRD. See <a href="index.html#kagent-enterprise">Enterprise kagent (with dex + oauth2-proxy)</a> on the landing page for the full auth-chain breakdown.</p>
+<p><b>Login URL:</b> <code>http://localhost:18007/</code> &nbsp;·&nbsp; <b>Credentials:</b> <code>admin@kagent.local</code> / <code>admin</code></p>
+<p><b>Prereq:</b> add <code>127.0.0.1 host.docker.internal</code> to <code>/etc/hosts</code> first — the OIDC redirect URL needs to resolve from both the host browser and kind pods. See the <a href="index.html#install-prereqs">install prereqs</a> on the landing page.</p>
 
 <p>Deploys four <code>Agent</code> CRDs and four <code>RemoteMCPServer</code> CRDs. Every <code>RemoteMCPServer</code> points at the agentgateway via FQDN: <code>http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/&lt;name&gt;/</code>.</p>
 

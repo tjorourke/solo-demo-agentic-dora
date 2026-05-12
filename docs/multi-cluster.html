@@ -542,7 +542,14 @@ metadata:
 spec:
   domain: global</pre></details>
 
-<h3>Group D: kagent</h3>
+<h3>Group D: kagent (Solo Enterprise variant)</h3>
+
+<p>This demo runs <b>Solo Enterprise for kagent 0.4.0</b> (chart <code>kagent-enterprise</code>) rather than the OSS
+<code>kagent.dev/kagent</code> chart. The CRDs in the <code>kagent.dev</code> group are unchanged — Enterprise adds
+the <code>policy.kagent-enterprise.solo.io/AccessPolicy</code> CRD on top, plus the Enterprise UI binary. Login is
+SSO-gated by dex + oauth2-proxy. See the
+<a href="index.html#kagent-enterprise">Enterprise kagent</a> section on the landing page for the auth-chain
+breakdown and helm values gists.</p>
 
 <table class="inv">
 <colgroup><col class="k-kind"><col class="k-group"><col></colgroup>
@@ -554,6 +561,7 @@ spec:
 <tr><td><code>MCPServer</code></td><td>kagent.dev</td><td>In-cluster MCP server (uses local image, alternative to RemoteMCPServer).</td></tr>
 <tr><td><code>SandboxAgent</code></td><td>kagent.dev</td><td>Sandboxed agent execution (not used in demo).</td></tr>
 <tr><td><code>ToolServer</code></td><td>kagent.dev</td><td>Lower-level alternative to RemoteMCPServer.</td></tr>
+<tr><td><code>AccessPolicy</code></td><td>policy.kagent-enterprise.solo.io</td><td><b>Enterprise-only.</b> Per-tool / per-arg AuthZ on top of the OSS Agent / MCPServer wiring. Not enforced in this demo, but the CRD ships with the Enterprise chart.</td></tr>
 </tbody>
 </table>
 

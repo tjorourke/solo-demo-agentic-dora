@@ -1,0 +1,46 @@
+# Dex static-user OIDC IdP for the kagent-enterprise demo.
+
+replicaCount: 1
+
+image:
+  pullPolicy: IfNotPresent
+
+config:
+  issuer: http://host.docker.internal:5556
+  storage:
+    type: memory
+  web:
+    http: 0.0.0.0:5556
+    allowedOrigins: ['*']
+  oauth2:
+    skipApprovalScreen: true
+    alwaysShowLoginScreen: false
+  enablePasswordDB: true
+  staticPasswords:
+    - email: admin@kagent.local
+      hash: $2y$10$as1hoARJEojALjYpAxQTqeg.LKYndQ1lc7wLqoesMOwbvlifcU.mi
+      username: admin
+      userID: kagent-admin-id
+  staticClients:
+    - id: kagent-enterprise
+      name: kagent-enterprise
+      secret: 19885cfdd79015377150d560dfdf71d2
+      redirectURIs:
+        - http://localhost:18007/oauth2/callback
+        - http://localhost:18007/api/auth/callback/oidc
+      trustedPeers:
+        - kagent-enterprise
+
+service:
+  type: ClusterIP
+  ports:
+    http:
+      port: 5556
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

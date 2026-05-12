@@ -70,9 +70,15 @@ maybe_pfc "$OBS_CL" "$NS_OBS" "svc/kube-prometheus-stack-alertmanager" "$PF_ALER
 # agentgateway and kagent-controller are API/gateway endpoints, no root UI.
 PLAT_CL="${BANK_CLUSTER}"
 maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/agentregistry"           "$PF_AGENTREGISTRY_PORT" 12121 "agentregistry"
-maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/kagent-ui"               "$PF_KAGENT_PORT"       8080  "kagent UI"
+# kagent Enterprise UI is fronted by oauth2-proxy — use that instead of
+# svc/kagent-ui directly so the SSO redirect flow works in the browser.
+maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/oauth2-proxy"            "$PF_KAGENT_PORT"       4180  "kagent UI (Enterprise)"
 maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/kagent-controller"       "$PF_KAGENT_CONTROLLER_PORT" 8083 "kagent-controller (A2A)" api
 maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/trustusbank-agentgw"     "$PF_AGENTGATEWAY_PORT" 8080  "agentgateway"            api
+# dex IdP must be reachable on the host so the browser can complete the
+# OIDC redirect (which goes to host.docker.internal:5556). Bind to all
+# interfaces so kind pods can also reach via host.docker.internal.
+maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/dex"                     "$PF_DEX_PORT"           5556 "dex IdP (OIDC)"           api
 
 # Solo management plane UI (multi mode only — co-located on bank).
 # Service name retains the gloo-mesh-* identifier from the previous brand.
