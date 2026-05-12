@@ -1,5 +1,28 @@
 #!/usr/bin/env bash
-# Phase 6 — kagent install, ModelConfig, RemoteMCPServer, 3 Agents.
+# Phase 6 — kagent install (Solo Enterprise variant), ModelConfig, RemoteMCPServer, 3 Agents.
+#
+# Installs Solo Enterprise for kagent (kagent-enterprise) instead of the
+# OSS kagent.dev chart so the demo can showcase the Enterprise UI. The
+# kagent.dev/v1alpha2 Agent / ModelConfig / RemoteMCPServer CRDs are the
+# same on both sides; Enterprise just adds the policy.kagent-enterprise.
+# solo.io group plus the management UI binary.
+#
+# Three notable diffs from a clean Enterprise install:
+#
+# 1. Mock OIDC. The Enterprise controller auto-points its OIDC issuer at
+#    http://solo-enterprise-ui.<ns>.svc.cluster.local:5556 (the Solo
+#    management plane). We're not running that plane on the demo, so a
+#    tiny nginx ConfigMap serves a static /.well-known/openid-configuration
+#    discovery doc just to satisfy startup. See manifests/kagent-enterprise/
+#    mock-oidc.yaml.
+#
+# 2. License key is a 12-char dummy. The chart accepts any non-empty value
+#    in dev mode; only a warning is logged.
+#
+# 3. Nginx upstream patch. The kagent-ui pod's nginx config from the chart
+#    points /api/ to 127.0.0.1:8083, but the kagent-enterprise-controller
+#    runs in a separate pod. Patched post-install to point at the actual
+#    service.
 
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,47 +32,36 @@ source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
 trap on_error ERR
 
-log_step "6.1/6.2 — kagent (local chart, packaged via upstream Makefile)"
-require_cmd envsubst make
-KAGENT_VERSION="${KAGENT_VERSION:-v0.9.2}"
-KAGENT_VERSION_SEM="${KAGENT_VERSION#v}"
-KAGENT_SRC="/tmp/kagent-src-${KAGENT_VERSION}"
-if [[ ! -d "$KAGENT_SRC" ]]; then
-  log "cloning kagent ${KAGENT_VERSION}"
-  git clone --depth 1 -b "$KAGENT_VERSION" https://github.com/kagent-dev/kagent "$KAGENT_SRC"
-fi
-KMCP_VERSION="${KMCP_VERSION:-$(awk '/github\.com\/kagent-dev\/kmcp/ { print substr($2, 2) }' "$KAGENT_SRC/go/go.mod" | head -1)}"
-log "kagent VERSION=${KAGENT_VERSION_SEM} KMCP_VERSION=${KMCP_VERSION}"
+KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.4.0}"
+KAGENT_ENT_REGISTRY="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts"
 
-# Run upstream Makefile to envsubst all Chart.yaml files and package the
-# 15 sub-chart dependencies (agents/* + tools/* + kmcp). Skipped on re-runs
-# if charts/ already populated.
-if [[ ! -d "$KAGENT_SRC/helm/kagent/charts" || -z "$(ls "$KAGENT_SRC/helm/kagent/charts" 2>/dev/null)" ]]; then
-  ( cd "$KAGENT_SRC" && make helm-version VERSION="$KAGENT_VERSION_SEM" KMCP_VERSION="$KMCP_VERSION" ) 2>&1 | tail -5
-fi
+log_step "6.1 — mock OIDC discovery endpoint (satisfies controller startup)"
+kubectl create ns "$NS_PLATFORM" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl_apply "$REPO_ROOT/manifests/kagent-enterprise/mock-oidc.yaml"
+kubectl -n "$NS_PLATFORM" rollout status deploy/solo-enterprise-ui --timeout=60s | tail -1
 
-helm_upgrade_install kagent-crds "$KAGENT_SRC/helm/kagent-crds" \
+log_step "6.2 — kagent-enterprise-crds $KAGENT_ENT_VERSION"
+helm_upgrade_install kagent-enterprise-crds "$KAGENT_ENT_REGISTRY/kagent-enterprise-crds" \
+  --version "$KAGENT_ENT_VERSION" \
   -n "$NS_PLATFORM"
 
-helm_upgrade_install kagent "$KAGENT_SRC/helm/kagent" \
+log_step "6.3 — kagent-enterprise $KAGENT_ENT_VERSION (slim values)"
+helm_upgrade_install kagent-enterprise "$KAGENT_ENT_REGISTRY/kagent-enterprise" \
+  --version "$KAGENT_ENT_VERSION" \
   -n "$NS_PLATFORM" \
-  --set providers.default=anthropic \
-  --set providers.anthropic.apiKey="$ANTHROPIC_API_KEY" \
-  --set kagent-tools.enabled=false \
-  --set k8s-agent.enabled=false \
-  --set kgateway-agent.enabled=false \
-  --set istio-agent.enabled=false \
-  --set promql-agent.enabled=false \
-  --set observability-agent.enabled=false \
-  --set argo-rollouts-conversion-agent.enabled=false \
-  --set helm-agent.enabled=false \
-  --set cilium-policy-agent.enabled=false \
-  --set cilium-debug-agent.enabled=false \
-  --set cilium-manager-agent.enabled=false \
-  --set grafana-mcp.enabled=false \
-  --set querydoc.enabled=false \
-  --set oauth2-proxy.enabled=false
+  -f "$REPO_ROOT/manifests/kagent-enterprise/values-slim.yaml"
 wait_for_pods_ready "$NS_PLATFORM" "app.kubernetes.io/name=kagent" 300s
+
+log_step "6.3b — patch UI nginx upstream → real controller service"
+# The chart's bundled nginx config in the UI pod hard-codes the backend
+# upstream to 127.0.0.1:8083, which would be correct only if the controller
+# ran inside the UI pod (it doesn't). Without this, /api/auth/* and
+# /api/agents requests from the UI return 502.
+kubectl -n "$NS_PLATFORM" get cm kagent-ui-config -o yaml | \
+  sed 's|server 127\.0\.0\.1:8083;|server kagent-controller.'"$NS_PLATFORM"'.svc.cluster.local:8083;|' | \
+  kubectl apply -f - >/dev/null
+kubectl -n "$NS_PLATFORM" rollout restart deploy/kagent-ui
+kubectl -n "$NS_PLATFORM" rollout status deploy/kagent-ui --timeout=90s | tail -1
 
 log_step "6.3 — Anthropic API key Secret"
 [[ -n "${ANTHROPIC_API_KEY:-}" ]] || die "ANTHROPIC_API_KEY not set"

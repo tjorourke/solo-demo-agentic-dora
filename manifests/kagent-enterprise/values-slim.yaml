@@ -1,0 +1,81 @@
+# Slim values for kagent-enterprise on the demo bank cluster (kind).
+# Minimum footprint to get the Enterprise UI + controller working.
+#
+# What's enabled:  controller, ui, bundled postgres (shrunk)
+# What's disabled: kmcp, all 14 agent subcharts, kagent-tools,
+#                  grafana-mcp, querydoc, OTel sidecars.
+#
+# Resource ask: ~250m CPU, ~512Mi RAM, 500Mi PVC for postgres.
+
+# License (chart accepts any non-empty 12+ char string for dev/eval -
+# nothing actually validates the value yet)
+global:
+  licensing:
+    createSecret: true
+    secretName: enterprise-kagent-license
+    licenseKey: "dummy-dev-key-1234567890"
+
+# Controller (always deployed) - keep defaults, they're already lean.
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+# UI - the reason we're swapping in the first place
+ui:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Bundled postgres - shrunk for kind
+database:
+  postgres:
+    bundled:
+      enabled: true
+      storage: 500Mi
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 250m
+          memory: 256Mi
+
+# Disable everything that isn't strictly required
+kmcp:
+  enabled: false
+kagent-tools:
+  enabled: false
+grafana-mcp:
+  enabled: false
+querydoc:
+  enabled: false
+k8s-agent:
+  enabled: false
+kgateway-agent:
+  enabled: false
+istio-agent:
+  enabled: false
+promql-agent:
+  enabled: false
+observability-agent:
+  enabled: false
+argo-rollouts-agent:
+  enabled: false
+helm-agent:
+  enabled: false
+cilium-policy-agent:
+  enabled: false
+cilium-manager-agent:
+  enabled: false
+cilium-debug-agent:
+  enabled: false
