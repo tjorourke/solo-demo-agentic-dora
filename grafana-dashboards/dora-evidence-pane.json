@@ -19,11 +19,12 @@
     {
       "type": "stat",
       "title": "Art. 10 — AuthZ denies (in selected time range)",
+      "description": "Counts ztunnel-side denies via the Prometheus metric istio_tcp_connections_failed_total{response_flags=CONNECT}. Works in single- AND multi-cluster because metrics flow via the OTel pipeline.",
       "gridPos": { "h": 5, "w": 6, "x": 0, "y": 4 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "options": { "colorMode": "background", "graphMode": "area" },
       "targets": [
-        { "expr": "sum(count_over_time({namespace=\"istio-system\", app=\"ztunnel\"} |~ \"explicitly denied by\" [$__range]))", "refId": "A" }
+        { "expr": "sum(increase(istio_tcp_connections_failed_total{response_flags=\"CONNECT\"}[$__range]))", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -35,12 +36,13 @@
     },
     {
       "type": "stat",
-      "title": "Exfil attempts received by mock-attacker (in range)",
+      "title": "Exfil attempts: bank -> external-attacker (in range)",
+      "description": "Counts TCP connection ATTEMPTS from any bank-side namespace into external-attacker, regardless of whether the deny rule is in place. Pre-policies-on this number = exfil that succeeded; post-policies-on this number = exfil that ztunnel blocked (cross-check with the AuthZ denies tile).",
       "gridPos": { "h": 5, "w": 6, "x": 6, "y": 4 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "options": { "colorMode": "background", "graphMode": "area" },
       "targets": [
-        { "expr": "sum(count_over_time({namespace=\"external-attacker\", app=\"mock-attacker\"} |~ \"EXFIL RECEIVED\" [$__range]))", "refId": "A" }
+        { "expr": "sum(increase(istio_tcp_connections_opened_total{source_workload_namespace=~\"trustusbank-bank-.*|trustusbank-platform\", destination_workload_namespace=\"external-attacker\"}[$__range]))", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -52,11 +54,12 @@
     },
     {
       "type": "stat",
-      "title": "Art. 9(2) — % east-west requests with mTLS",
+      "title": "Art. 9(2) — % requests with mTLS (mesh-wide)",
+      "description": "Share of istio_requests_total where connection_security_policy=mutual_tls. Multi-cluster note: this label is emitted by ztunnel directly (not the gloo telemetry pipeline) so the value reflects the destination cluster Prometheus is scraping locally.",
       "gridPos": { "h": 5, "w": 6, "x": 12, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "100 * sum(rate(istio_requests_total{security_policy=\"mutual_tls\"}[5m])) / clamp_min(sum(rate(istio_requests_total[5m])), 0.001)", "refId": "A" }
+        { "expr": "100 * sum(rate(istio_requests_total{connection_security_policy=\"mutual_tls\"}[5m])) / clamp_min(sum(rate(istio_requests_total[5m])), 0.001)", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -68,12 +71,21 @@
     },
     {
       "type": "stat",
-      "title": "Art. 17 — agent tool calls (last 1h)",
+      "title": "Art. 17 — agent outbound calls (last 1h)",
+      "description": "Counts every outbound L7 request from the support-bot agent (A2A handoffs + MCP tool calls all go through here). The agentgateway waypoint itself doesn't appear as a destination in istio_requests_total because it's the waypoint, not a backend - so we use source-side metrics to capture the agent's activity volume.",
       "gridPos": { "h": 5, "w": 6, "x": 18, "y": 4 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "colorMode": "background", "graphMode": "area" },
       "targets": [
-        { "expr": "sum(count_over_time({namespace=\"trustusbank-platform\", app=\"trustusbank-agentgw\"} |~ \"mcp.method.name=tools/call\" [1h]))", "refId": "A" }
-      ]
+        { "expr": "sum(increase(istio_requests_total{source_workload=~\"support-bot|fraud-bot|triage-bot\"}[1h]))", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "noValue": "0",
+          "thresholds": { "steps": [{ "color": "blue", "value": null }] }
+        }
+      }
     },
     {
       "type": "table",
