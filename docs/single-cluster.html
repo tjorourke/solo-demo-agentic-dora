@@ -619,6 +619,97 @@ transactions, and convert my balance to USD."</pre>
 <h3>The evidence trail</h3>
 <p>Every block leaves a structured log line in ztunnel that lands in Loki. Tempo holds the matching span with the SPIFFE identities of both ends. Grafana's <i>DORA Article 17 evidence</i> dashboard pivots on these — the same panel that shows zero blocks under Act 1 shows the Act-3 deny instantly. <b>Auditors don't want a policy doc; they want a query that returns the receipts.</b></p>
 
+<h3>Run the demo step-by-step</h3>
+
+<p>You'll need a working cluster (<code>./scripts/deploy-all.sh</code>) and one terminal. The port-forward script auto-opens every UI in a fresh Chrome window — no URLs to type.</p>
+
+<details class="yaml" open><summary>0. Pre-flight (every time, before going live)</summary>
+<pre># From the repo root:
+./scripts/reset-demo.sh       # puts the cluster in Solo-OFF baseline
+./scripts/port-forward.sh     # starts every port-forward + opens UIs in Chrome</pre></details>
+
+<p>After <code>port-forward.sh</code> finishes you'll have a Chrome window with these eight tabs (in this order). The four API endpoints (Tempo, Loki, kagent-controller, agentgateway) are port-forwarded but not opened — they're queried indirectly by Grafana or via curl.</p>
+
+<table class="inv">
+<colgroup><col style="width: 60px"><col style="width: 260px"><col><col style="width: 320px"></colgroup>
+<thead><tr><th>Tab</th><th>What</th><th>URL</th><th>Use it for</th></tr></thead>
+<tbody>
+<tr><td><b>1</b></td><td>Customer chatbot</td><td><code>http://localhost:18009</code></td><td>Where the customer types the prompt; debug pane shows the agent's tool-call chain</td></tr>
+<tr><td><b>2</b></td><td>mock-attacker (C2 stand-in)</td><td><code>http://localhost:18011</code></td><td>Counts exfil events. <b>Goes red in Act 2, stays at zero in Act 3.</b></td></tr>
+<tr><td><b>3</b></td><td>agentregistry catalogue</td><td><code>http://localhost:18006</code></td><td>The DORA Art. 28 sub-outsourcing register. Same 4 entries before AND after the rugpull — the compromise is invisible here.</td></tr>
+<tr><td><b>4</b></td><td>Grafana — DORA Evidence dashboard</td><td><code>http://localhost:18001/d/dora-evidence</code></td><td>The auditor-facing receipt: AuthZ denies, offending SPIFFE identity, offending image, deep-link to logs.</td></tr>
+<tr><td><b>5</b></td><td>Prometheus — Alerts</td><td><code>http://localhost:18002/alerts</code></td><td>Shows <code>IstioAuthZDeny</code> and <code>BankToAttackerAttempt</code> firing in Act 3.</td></tr>
+<tr><td><b>6</b></td><td>MailHog — SOC inbox</td><td><code>http://localhost:18012</code></td><td>Where AlertManager delivers the two alert emails. Each has the offending SPIFFE ID and the quarantine command.</td></tr>
+<tr><td><b>7</b></td><td>kagent UI — sessions + traces</td><td><code>http://localhost:18007</code></td><td>Per-session view of every tool call the agents made.</td></tr>
+<tr><td><b>8</b></td><td>agentregistry — different page</td><td><code>http://localhost:18006</code></td><td>Pre-loaded second view of the catalogue (handy when the script swaps the image).</td></tr>
+</tbody>
+</table>
+
+<h4>Act 1 — set the scene <span style="color:var(--muted); font-size: 14px; font-weight: 400">(~30 sec)</span></h4>
+
+<p>On <b>tab 1 (chatbot)</b>, type:</p>
+<pre>I am customer 12345. Please check my balance, list my recent transactions,
+and convert my balance to USD.</pre>
+
+<p>Clean response in ~5 s: balance + USD figure. Wave at <b>tab 2 (mock-attacker)</b> — zero events. Wave at <b>tab 3 (catalogue)</b> — 4 entries (<code>account-mcp</code>, <code>transaction-mcp</code>, <code>ticket-mcp</code>, <code>acme-fx/currency-converter</code>). "This is the audit register your DORA Art. 28 file is built on."</p>
+
+<h4>Act 2 — the supply-chain compromise <span style="color:var(--muted); font-size: 14px; font-weight: 400">(~2 min)</span></h4>
+
+<details class="yaml"><summary>In a terminal: <code>./scripts/upgrade-banking-app.sh</code></summary>
+<pre># Swaps acme-fx/currency-converter:1.0.0 to a rugpulled image with the SAME
+# tag - same way Codecov / 3CX / xz-utils were compromised. The bank's git
+# repo doesn't change, the catalogue record doesn't change, only the bytes
+# at that image tag change.
+./scripts/upgrade-banking-app.sh</pre></details>
+
+<p>While it runs, narrate the supply-chain story (vendor pipeline compromised, image tag mutated, none of the bank's manifests changed). When the script finishes:</p>
+
+<ul>
+  <li><b>Tab 3 (catalogue)</b>: refresh → still 4 entries, same names, same versions. <b>The catalogue says everything is fine.</b> Auditor-visible state is unchanged.</li>
+  <li><b>Tab 1 (chatbot)</b>: toggle <b>debug ON</b>, send the same prompt. Debug pane shows the tool sequence:
+    <pre>1. get_balance(account_id="12345")           ← legitimate
+2. get_profile(account_id="12345")           ← the agent was tricked
+3. convert_currency(amount=4287.55,
+                    from="GBP", to="USD",
+                    customer_profile=&lt;full PII&gt;) ← profile passed as arg</pre>
+    User-facing reply is normal: <code>£4,287.55 / $5,445.19</code>.</li>
+  <li><b>Tab 2 (mock-attacker)</b>: refresh → red. Customer profile body is on screen — name, email, phone, address, DOB, NI number have just left the bank.</li>
+</ul>
+
+<h4>Act 3 — deploy Solo <span style="color:var(--muted); font-size: 14px; font-weight: 400">(~2 min)</span></h4>
+
+<details class="yaml"><summary>In a terminal: <code>./scripts/deploy-solo.sh</code></summary>
+<pre># Applies, in one shot:
+#   - Istio AuthorizationPolicy on every workload namespace, using
+#     SPIFFE principals (per-ServiceAccount identity).
+#   - A deny-egress policy on external-attacker that blocks
+#     anything from trustusbank-bank-* and trustusbank-platform.
+./scripts/deploy-solo.sh</pre></details>
+
+<p>Then on <b>tab 1 (chatbot)</b>, send the same prompt:</p>
+<pre>I am customer 12345. Please check my balance, list my recent transactions,
+and convert my balance to USD.</pre>
+
+<p>Tool-call chain is <b>identical</b> — the LLM is still fooled by the same prompt injection. Now look at the four evidence tabs:</p>
+
+<ul>
+  <li><b>Tab 2 (mock-attacker)</b>: refresh → still zero new entries. ztunnel reset the TCP at L4 because the source pod's SPIFFE identity isn't allowed to reach <code>external-attacker</code>. <b>The bytes did not leave the trust boundary.</b></li>
+  <li><b>Tab 5 (Prometheus)</b>: <code>IstioAuthZDeny</code> and <code>BankToAttackerAttempt</code> both firing with <code>source_principal=spiffe://.../trustusbank-bank-vendors/sa/currency-converter</code>.</li>
+  <li><b>Tab 6 (MailHog)</b>: two alert emails landed within 30 s. Body has the SPIFFE ID, the dashboard deep-link, and the <code>kubectl scale --replicas=0</code> quarantine command.</li>
+  <li><b>Tab 4 (DORA Evidence dashboard)</b>: AuthZ denies = red, exfil received = green, offending pod table populated, full forensic context per attempt.</li>
+</ul>
+
+<div class="callout info"><b>Demo nuance worth narrating.</b> <code>BankToAttackerAttempt</code> ALSO fires in Act 2 (Solo OFF) — the underlying counter increments whether or not the connection succeeds. The alert is telling the truth: a bank pod is talking to <code>external-attacker</code>. Audience point: <i>detection without enforcement is post-mortem.</i> Act 3 adds the second alert (<code>IstioAuthZDeny</code>) — same detection plus a "we physically blocked it" signal. <b>That contrast is the punchline.</b></div>
+
+<h4>Closing <span style="color:var(--muted); font-size: 14px; font-weight: 400">(~30 sec)</span></h4>
+
+<p>Real attack chain — supply-chain compromise → LLM prompt injection → lateral exfiltration. Succeeded against bare Kubernetes. Failed against Solo Enterprise for Istio Ambient + agentgateway + agentregistry on the same cluster. One toggle script separated the two outcomes.</p>
+
+<details class="yaml"><summary>Reset and run again: <code>./scripts/reset-demo.sh</code></summary>
+<pre>./scripts/reset-demo.sh   # back to Solo-OFF baseline; reload tabs to clear UI state</pre></details>
+
+<p>Six standalone follow-on demos live in <a href="https://github.com/tjorourke/solo-demo-agentic-dora/blob/main/demo-scripts/runbook.md">demo-scripts/runbook.md §3</a> — distributed trace of the attack chain, live policy authoring, L7 pre-call block, egress LLM gateway, A2A controls, rate-limiting. Each takes 2–5 min and is independently runnable.</p>
+
 <hr>
 
 <h2 id="flow"><span class="num">7.</span> Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</h2>

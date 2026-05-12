@@ -1167,6 +1167,98 @@ k9s --context=kind-trustusbank-vendor     # ⌘3</pre></details>
 
 <div class="callout ok"><b>The demo's load-bearing claim:</b> the LLM layer is still vulnerable to prompt injection (and likely always will be). What changes between act 2 and act 3 isn't whether the model is fooled — it's whether the runtime damage lands. Solo's mesh at the wire level is the layer that catches it.</div>
 
+<h3>Run the demo step-by-step</h3>
+
+<p>You'll need a working multi-cluster build (<code>MODE=multi ./scripts/deploy-all.sh</code>) and one terminal. <code>port-forward.sh</code> auto-detects the multi-cluster topology, port-forwards to the right cluster per service, and opens every UI in a fresh Chrome window.</p>
+
+<details class="yaml" open><summary>0. Pre-flight (every time, before going live)</summary>
+<pre># From the repo root:
+./scripts/reset-demo.sh         # baseline state (Solo OFF)
+./scripts/port-forward.sh       # 12 port-forwards, 8 Chrome tabs
+
+# If you've restarted Docker, the kind node IPs may have shifted - re-run:
+./scripts/multi/fix-relay-address.sh
+./scripts/multi/10-fix-federation-hijack.sh</pre></details>
+
+<p>After <code>port-forward.sh</code> finishes Chrome opens with these tabs. The four API endpoints (Tempo, Loki, kagent-controller, agentgateway) are port-forwarded but not opened — they're consumed indirectly.</p>
+
+<table class="inv">
+<colgroup><col style="width: 60px"><col style="width: 250px"><col><col style="width: 110px"><col style="width: 280px"></colgroup>
+<thead><tr><th>Tab</th><th>What</th><th>URL</th><th>Cluster</th><th>Use it for</th></tr></thead>
+<tbody>
+<tr><td><b>1</b></td><td>Customer chatbot</td><td><code>http://localhost:18009</code></td><td><span class="pill pill-edge">edge</span></td><td>The customer-facing UI on edge. Debug pane reveals the cross-cluster A2A and MCP calls.</td></tr>
+<tr><td><b>2</b></td><td>mock-attacker (C2 stand-in)</td><td><code>http://localhost:18011</code></td><td><span class="pill pill-vendor">vendor</span></td><td>Counts exfil events. Goes red in Act 2, stays zero in Act 3.</td></tr>
+<tr><td><b>3</b></td><td>agentregistry catalogue</td><td><code>http://localhost:18006</code></td><td><span class="pill pill-bank">bank</span></td><td>DORA Art. 28 register. Same 4 entries before / after the rugpull.</td></tr>
+<tr><td><b>4</b></td><td>Grafana — DORA Evidence</td><td><code>http://localhost:18001/d/dora-evidence</code></td><td><span class="pill pill-bank">bank</span></td><td>The auditor-facing receipt: AuthZ denies, SPIFFE identity, offending image, cross-cluster deep-link.</td></tr>
+<tr><td><b>5</b></td><td>Prometheus — Alerts</td><td><code>http://localhost:18002/alerts</code></td><td><span class="pill pill-bank">bank</span></td><td><code>IstioAuthZDeny</code> and <code>BankToAttackerAttempt</code> firing in Act 3 with the remote-cluster identity.</td></tr>
+<tr><td><b>6</b></td><td>MailHog — SOC inbox</td><td><code>http://localhost:18012</code></td><td><span class="pill pill-bank">bank</span></td><td>Two alert emails per attack attempt.</td></tr>
+<tr><td><b>7</b></td><td>kagent UI — sessions + traces</td><td><code>http://localhost:18007</code></td><td><span class="pill pill-bank">bank</span></td><td>kagent-controller's UI shows every A2A/MCP tool call.</td></tr>
+<tr><td><b>8</b></td><td>Solo mgmt plane UI</td><td><code>http://localhost:18015</code></td><td><span class="pill pill-bank">bank · mgmt</span></td><td>Workspaces · Clusters · Routes · Insights across all 3 kind clusters.</td></tr>
+</tbody>
+</table>
+
+<h4>Act 1 — set the scene <span style="color:var(--muted); font-size: 14px; font-weight: 400">(~30 sec)</span></h4>
+
+<p>On <b>tab 1 (chatbot)</b>, type:</p>
+<pre>I am customer 12345. Please check my balance, list my recent transactions,
+and convert my balance to USD.</pre>
+
+<p>Clean response in ~5 s. <b>While narrating, this is also the moment to point at tab 8 (Solo mgmt plane UI)</b> — Workspaces shows the federated topology, Clusters lists all three with ACCEPTED status, Insights is empty.</p>
+
+<p>"<i>This isn't one cluster pretending to be three. It's three independent kind clusters with three SPIFFE trust domains, peered east/west, federated under one Solo Workspace. The customer's prompt that you just saw went through chatbot on <code>edge</code>, A2A'd to support-bot on <code>edge</code>, A2A'd cross-cluster to fraud-bot on <code>bank</code>, and called four MCP servers on <code>bank</code> plus one on <code>vendor</code>. Two trust-domain hops on the wire, two waypoints in the data path. Customer never knows.</i>"</p>
+
+<h4>Act 2 — the supply-chain compromise <span style="color:var(--muted); font-size: 14px; font-weight: 400">(~2 min)</span></h4>
+
+<details class="yaml"><summary>In a terminal: <code>./scripts/upgrade-banking-app.sh</code></summary>
+<pre># Multi-cluster: the script swaps the currency-converter image on the
+# VENDOR cluster (where it actually runs). The cross-cluster path from
+# bank's agentgateway to vendor stays exactly the same - the wire
+# trust boundary is what makes this interesting.
+./scripts/upgrade-banking-app.sh</pre></details>
+
+<ul>
+  <li><b>Tab 3 (catalogue)</b>: still 4 entries — the bank's audit register is unchanged.</li>
+  <li><b>Tab 1 (chatbot)</b>: toggle <b>debug ON</b>, send the same prompt. Watch the cross-cluster tool calls fly. The customer reply is normal.</li>
+  <li><b>Tab 2 (mock-attacker, on vendor)</b>: red. Customer PII has just crossed three trust boundaries — agentgateway on bank → currency-converter on vendor → mock-attacker on vendor.</li>
+  <li><b>Tab 8 (Solo mgmt plane UI → Insights)</b>: zero AuthZ denies. The mgmt plane sees the attack pattern but has no policy to block it yet.</li>
+</ul>
+
+<h4>Act 3 — deploy Solo <span style="color:var(--muted); font-size: 14px; font-weight: 400">(~2 min)</span></h4>
+
+<details class="yaml"><summary>In a terminal: <code>./scripts/deploy-solo.sh</code></summary>
+<pre># In multi-cluster mode, the AuthorizationPolicy is applied on the VENDOR
+# cluster (where mock-attacker lives) and references the SOURCE workload
+# by its full SPIFFE identity:
+#   from:
+#     - source:
+#         principals:
+#           - "spiffe://vendor.local/ns/trustusbank-bank-vendors/sa/currency-converter"
+# ztunnel on vendor enforces it whether the source is on the same node, a
+# different node, or coming back to vendor from another cluster via the
+# east/west GW. The SPIFFE identity stays attached to the wire.
+./scripts/deploy-solo.sh</pre></details>
+
+<p>Same prompt on <b>tab 1 (chatbot)</b>:</p>
+
+<ul>
+  <li><b>Tab 2 (mock-attacker)</b>: stays at zero. ztunnel rejected the HBONE handshake from currency-converter (the LLM is still fooled — it still tried).</li>
+  <li><b>Tab 5 (Prometheus)</b>: both alerts firing with <code>source_principal=spiffe://vendor.local/ns/trustusbank-bank-vendors/sa/currency-converter</code>.</li>
+  <li><b>Tab 6 (MailHog)</b>: two alert emails per attempt.</li>
+  <li><b>Tab 4 (DORA Evidence)</b>: green for "exfil blocked", red counter for denies, offending pod table populated.</li>
+  <li><b>Tab 8 (Solo mgmt plane UI → Insights)</b>: the deny shows up here too with the cluster + workspace pivot. Single view across all three clusters — the multi-cluster value-add.</li>
+</ul>
+
+<div class="callout info"><b>What's specifically multi-cluster here.</b> In single-cluster mode the deny rule has a <code>cluster.local</code> trust prefix. In multi-cluster mode it's <code>vendor.local</code> — and the rule still works because the SPIFFE identity travels with the HBONE handshake all the way back to vendor's ztunnel. That's the federated-trust story you can't tell with OSS Istio or plain Kubernetes NetworkPolicy.</div>
+
+<h4>Closing <span style="color:var(--muted); font-size: 14px; font-weight: 400">(~30 sec)</span></h4>
+
+<p>Three clusters, three trust domains, one federated mesh, one auditor-visible deny. Same supply-chain attack pattern as Codecov / 3CX / xz-utils — succeeded against bare multi-cluster Kubernetes, failed against Solo Enterprise for Istio Ambient + agentgateway + agentregistry. The cross-cluster identity is what makes the deny rule survive even when the attacker lives on a different cluster from the victim service.</p>
+
+<details class="yaml"><summary>Reset and run again: <code>./scripts/reset-demo.sh</code></summary>
+<pre>./scripts/reset-demo.sh   # back to Solo-OFF baseline on all three clusters</pre></details>
+
+<p>The single-cluster narrative for the same demo lives at <a href="single-cluster.html">single-cluster.html §6</a>. For the cross-cluster A2A trick that gets <code>support-bot</code> on edge talking to <code>fraud-bot</code> on bank, see the BYO-stub write-up at <a href="kagent-cross-cluster-byo-stubs.md">kagent-cross-cluster-byo-stubs.md</a>.</p>
+
 <hr>
 
 <hr>
