@@ -171,6 +171,64 @@
   </div>
 </header>
 
+<style>
+  /* ----- top index strip ----- */
+  .toc-strip {
+    background: #fff; border: 1px solid var(--card-border); border-radius: 10px;
+    padding: 12px 18px; margin: 0 0 32px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px;
+    font-size: 14px;
+  }
+  .toc-strip .label {
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin-right: 6px;
+  }
+  .toc-strip a {
+    color: var(--accent-dark); text-decoration: none; font-weight: 500;
+    padding: 4px 8px; border-radius: 6px; transition: background 0.12s;
+  }
+  .toc-strip a:hover { background: rgba(28,181,211,0.10); text-decoration: none; }
+
+  /* ----- big button-style walkthrough cards ----- */
+  .pick.buttons { margin-top: 20px; }
+  .pick.buttons .card {
+    border: 2px solid var(--accent);
+    border-radius: 14px;
+    padding: 24px 28px;
+    background: linear-gradient(180deg, #ffffff 0%, rgba(28,181,211,0.06) 100%);
+    box-shadow: 0 4px 12px rgba(15,23,42,0.06);
+    transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s, background 0.12s;
+    cursor: pointer; position: relative; overflow: hidden;
+  }
+  .pick.buttons .card::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent-dark) 100%);
+  }
+  .pick.buttons .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px rgba(28,181,211,0.18);
+    border-color: var(--accent-dark);
+    background: linear-gradient(180deg, #ffffff 0%, rgba(28,181,211,0.12) 100%);
+  }
+  .pick.buttons .card .tag {
+    background: var(--accent); color: #fff;
+    font-weight: 700;
+  }
+  .pick.buttons .card h3 { color: var(--ink); font-size: 24px; }
+  .pick.buttons .card .cta {
+    color: #fff;
+    background: var(--accent-dark);
+    padding: 10px 16px;
+    border-radius: 8px;
+    align-self: flex-start;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(8,145,178,0.30);
+    margin-top: 12px;
+  }
+  .pick.buttons .card:hover .cta { background: #0f172a; }
+  .pick.buttons .card .cta::after { color: #fff; }
+</style>
+
 <main>
 
 <section class="intro">
@@ -179,6 +237,66 @@
   and the LLM falls for the prompt injection, what's the next layer that stops the damage?</i></p>
   <p>Two flavours of the same demo. Same chatbot, same agents, same attack — different blast radius.</p>
 </section>
+
+<nav class="toc-strip" aria-label="Page index">
+  <span class="label">On this page</span>
+  <a href="#walkthroughs">Walkthroughs</a>
+  <a href="#attack">The attack</a>
+  <a href="#defence">The defence</a>
+  <a href="#components">Components</a>
+  <a href="#compare">Single vs multi</a>
+  <a href="blog.html">Why · blog post</a>
+  <a href="https://github.com/tjorourke/solo-demo-agentic-dora">GitHub repo →</a>
+</nav>
+
+<h2 id="walkthroughs">Pick a walkthrough</h2>
+
+<div class="pick buttons">
+  <a class="card" href="single-cluster.html">
+    <span class="tag">Start here · single cluster</span>
+    <h3>Single-cluster walkthrough</h3>
+    <p class="summary">
+      Everything in one kind cluster. Same agents, same MCP servers, same supply-chain attack — minus the
+      cross-cluster gymnastics. Shortest path to seeing the runtime defence in action end-to-end.
+    </p>
+    <div class="stack">
+      <code>1 cluster</code>
+      <code>7 namespaces</code>
+      <code>~10 phase scripts</code>
+      <code>~25 min from cold</code>
+    </div>
+    <ul>
+      <li>kind cluster + Solo Enterprise for Istio (Ambient: ztunnel + waypoint)</li>
+      <li>agentgateway as waypoint — CEL allowlist on MCP tools</li>
+      <li>kagent + 4 declarative agents + 4 RemoteMCPServer routes</li>
+      <li>Live attack: rugpull the converter, watch ztunnel deny egress</li>
+    </ul>
+    <span class="cta">Open the single-cluster walkthrough</span>
+  </a>
+
+  <a class="card" href="multi-cluster.html">
+    <span class="tag">Advanced · multi cluster</span>
+    <h3>Multi-cluster walkthrough</h3>
+    <p class="summary">
+      Same demo split across three kind clusters — <code>edge</code>, <code>bank</code>, <code>vendor</code>.
+      Shared-trust SPIFFE, east/west gateways, Solo Workspaces. Includes a real-world lateral hack for
+      cross-cluster A2A and the federation-hijack fix that took half a day to RC.
+    </p>
+    <div class="stack">
+      <code>3 clusters</code>
+      <code>shared root CA</code>
+      <code>east/west GWs</code>
+      <code>Solo mgmt plane</code>
+    </div>
+    <ul>
+      <li>Three kind clusters with peered Solo Istio Ambient meshes</li>
+      <li>kagent agents distributed across edge + bank</li>
+      <li>Manual EndpointSlice "lateral hack" for cross-cluster A2A</li>
+      <li>Federation-hijack root-cause + permanent fix walkthrough</li>
+    </ul>
+    <span class="cta">Open the multi-cluster walkthrough</span>
+  </a>
+</div>
 
 <style>
   .attack-section {
@@ -235,7 +353,7 @@
   .attack-section .why-mesh b { color: var(--ink); }
 </style>
 
-<section class="attack-section">
+<section class="attack-section" id="attack">
   <h2>What's a rug-pull attack, and what does this demo show?</h2>
   <p class="sub">A real attack pattern that the runtime-defence story plays out against, end-to-end.</p>
 
@@ -343,7 +461,7 @@
   .defence .receipts .receipt code { background: rgba(15,23,42,0.06); color: #0f172a; padding: 1px 5px; }
 </style>
 
-<section class="defence">
+<section class="defence" id="defence">
   <h2>The defence — what gets applied in Act 3, and why it works</h2>
   <p class="sub">One operator command (<code>./scripts/policies-on.sh</code>) applies a small set of
   AuthorizationPolicies that turn the LLM-level breach into a wire-level block.</p>
@@ -414,7 +532,7 @@
   </div>
 </section>
 
-<div class="what-grid">
+<div class="what-grid" id="components">
   <div class="item">
     <h4>The story in 3 lines</h4>
     <p>A customer asks "what's my balance in USD?". The LLM is fooled by a prompt-injection in the rugpulled
@@ -435,56 +553,7 @@
   </div>
 </div>
 
-<h2>Pick a walkthrough</h2>
-
-<div class="pick">
-  <a class="card" href="single-cluster.html">
-    <span class="tag">Single cluster · start here</span>
-    <h3>Single-cluster pattern</h3>
-    <p class="summary">
-      Everything in one kind cluster. Same agents, same MCP servers, same supply-chain attack — minus the
-      cross-cluster gymnastics. Shortest path to seeing the runtime defence in action end-to-end.
-    </p>
-    <div class="stack">
-      <code>1 cluster</code>
-      <code>7 namespaces</code>
-      <code>~10 phase scripts</code>
-      <code>~25 min from cold</code>
-    </div>
-    <ul>
-      <li>kind cluster + Solo Enterprise for Istio (Ambient: ztunnel + waypoint)</li>
-      <li>agentgateway as waypoint — CEL allowlist on MCP tools</li>
-      <li>kagent + 4 declarative agents + 4 RemoteMCPServer routes</li>
-      <li>Live attack: rugpull the converter, watch ztunnel deny egress</li>
-    </ul>
-    <span class="cta">Open the single-cluster pattern</span>
-  </a>
-
-  <a class="card" href="multi-cluster.html">
-    <span class="tag">Multi-cluster · advanced</span>
-    <h3>Multi-cluster pattern</h3>
-    <p class="summary">
-      Same demo split across three kind clusters — <code>edge</code>, <code>bank</code>, <code>vendor</code>.
-      Shared-trust SPIFFE, east/west gateways, Solo Workspaces. Includes a real-world lateral hack for
-      cross-cluster A2A and the federation-hijack fix that took half a day to RC.
-    </p>
-    <div class="stack">
-      <code>3 clusters</code>
-      <code>shared root CA</code>
-      <code>east/west GWs</code>
-      <code>Solo mgmt plane</code>
-    </div>
-    <ul>
-      <li>Three kind clusters with peered Solo Istio Ambient meshes</li>
-      <li>kagent agents distributed across edge + bank</li>
-      <li>Manual EndpointSlice "lateral hack" for cross-cluster A2A</li>
-      <li>Federation-hijack root-cause + permanent fix walkthrough</li>
-    </ul>
-    <span class="cta">Open the multi-cluster pattern</span>
-  </a>
-</div>
-
-<div class="arch">
+<div class="arch" id="compare">
   <h3>How they compare</h3>
   <p>Same application code, same containers, same attack. What changes is the mesh topology underneath.</p>
   <table>
