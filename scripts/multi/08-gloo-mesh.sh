@@ -126,14 +126,26 @@ done
 
 # ---------- Agents on workload clusters ----------
 
-BANK_IP="$(docker inspect "${BANK_CLUSTER}-control-plane" --format '{{ .NetworkSettings.Networks.kind.IPAddress }}')"
+# Deterministic discovery of bank's relay address. Do NOT use docker inspect
+# - kind can reshuffle the docker network IPs across restarts, and at one
+# point this picked up the kind-registry container's IP (172.22.0.9) instead
+# of a bank node, leaving every agent stuck in connection-refused.
+#
+# Pull a real worker InternalIP from the bank cluster itself. Workers (not
+# the control-plane) are what the kubelet advertises for NodePort traffic,
+# and the value is always current with whatever Docker/kind has on the host.
+BANK_IP="$(kctx "$BANK_CLUSTER" get nodes \
+  -l '!node-role.kubernetes.io/control-plane' \
+  -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')"
+[[ -n "$BANK_IP" ]] || die "could not discover bank worker InternalIP"
+
 # The helm chart's service.ports[].nodePort override silently fails — the
 # chart picks a random NodePort. Read the actual one out of the live Service
 # so the agents get a working address.
 ACTUAL_NP="$(kctx "$BANK_CLUSTER" -n gloo-mesh get svc gloo-mesh-mgmt-server -o jsonpath='{.spec.ports[?(@.name=="grpc")].nodePort}')"
 [[ -n "$ACTUAL_NP" ]] || die "could not discover mgmt-server grpc NodePort"
 RELAY_ADDR="${BANK_IP}:${ACTUAL_NP}"
-log "agent relay address: $RELAY_ADDR  (NodePort discovered, requested $MGMT_RELAY_NODEPORT got $ACTUAL_NP)"
+log "agent relay address: $RELAY_ADDR  (bank worker InternalIP from k8s; NodePort discovered, requested $MGMT_RELAY_NODEPORT got $ACTUAL_NP)"
 
 write_agent_values() {
   local cluster="$1" file="$2"
