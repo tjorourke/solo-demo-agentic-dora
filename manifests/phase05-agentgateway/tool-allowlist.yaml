@@ -1,9 +1,7 @@
 # Tool allowlist enforced at agentgateway. CEL expressions match on
-# mcp.tool.name to bound which tools each route exposes.
-#
-# In production you'd combine this with jwt.sub for per-agent identity.
-# For this demo we keep it simple: each route only exposes the tools that
-# legitimate agents would invoke. Anything else gets a 403 at the gateway.
+# mcp.tool.name to bound which tools each route exposes, plus the MCP
+# lifecycle methods (initialize, tools/list, tools/call, notifications,
+# session DELETE) so the wire protocol works end-to-end.
 
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
@@ -20,11 +18,15 @@ spec:
       action: Allow
       policy:
         matchExpressions:
+          # MCP wire protocol lifecycle
+          - 'mcp.method == "initialize"'
+          - 'mcp.method == "tools/list"'
+          - 'mcp.method == "tools/call"'
+          - 'mcp.method == "notifications/initialized"'
+          - 'mcp.method == "notifications/cancelled"'
+          # Per-tool allow
           - 'mcp.tool.name == "get_balance"'
           - 'mcp.tool.name == "get_profile"'
-          - 'mcp.method == "tools/list"'
-          - 'mcp.method == "initialize"'
-          - 'mcp.method == "notifications/initialized"'
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
@@ -41,12 +43,14 @@ spec:
       action: Allow
       policy:
         matchExpressions:
+          - 'mcp.method == "initialize"'
+          - 'mcp.method == "tools/list"'
+          - 'mcp.method == "tools/call"'
+          - 'mcp.method == "notifications/initialized"'
+          - 'mcp.method == "notifications/cancelled"'
           - 'mcp.tool.name == "list_recent"'
           - 'mcp.tool.name == "get_details"'
           - 'mcp.tool.name == "flag_suspicious"'
-          - 'mcp.method == "tools/list"'
-          - 'mcp.method == "initialize"'
-          - 'mcp.method == "notifications/initialized"'
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
@@ -63,8 +67,10 @@ spec:
       action: Allow
       policy:
         matchExpressions:
+          - 'mcp.method == "initialize"'
+          - 'mcp.method == "tools/list"'
+          - 'mcp.method == "tools/call"'
+          - 'mcp.method == "notifications/initialized"'
+          - 'mcp.method == "notifications/cancelled"'
           - 'mcp.tool.name == "create_ticket"'
           - 'mcp.tool.name == "notify_human"'
-          - 'mcp.method == "tools/list"'
-          - 'mcp.method == "initialize"'
-          - 'mcp.method == "notifications/initialized"'

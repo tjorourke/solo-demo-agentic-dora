@@ -75,3 +75,18 @@ maybe_pfc "$VENDOR_CLUSTER" external-attacker "svc/mock-attacker" "$PF_MOCK_ATTA
 
 sleep 1
 log_ok "port-forwards started; PIDs in $PF_PIDFILE, URLs in $PF_URLFILE"
+
+# Open all UIs in Chrome on macOS (one tab per URL). Skipped if not Darwin,
+# Chrome isn't installed, or OPEN_BROWSER=0 is set.
+if [[ "${OPEN_BROWSER:-1}" == "1" && "$(uname)" == "Darwin" ]]; then
+  if open -Ra "Google Chrome" 2>/dev/null; then
+    # Pull plain http URLs out of the URL file (skip header / comments).
+    mapfile -t URLS < <(grep -oE 'http://[^ ]+' "$PF_URLFILE" | sort -u)
+    if [[ ${#URLS[@]} -gt 0 ]]; then
+      log "opening ${#URLS[@]} UIs in Chrome"
+      open -a "Google Chrome" "${URLS[@]}"
+    fi
+  else
+    log_warn "Google Chrome not installed — skipping auto-open"
+  fi
+fi

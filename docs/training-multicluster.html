@@ -133,9 +133,9 @@
     <li><a href="#crds">CRD reference (every kind you'll see)</a></li>
     <li><a href="#hbone">HBONE + waypoint: how the wire works</a></li>
     <li><a href="#workspace">Gloo Mesh Workspaces &amp; Segments</a></li>
-    <li><a href="#walk">Step-by-step build (M00 → M09)</a></li>
+    <li><a href="#walk">Step-by-step build (M00 → M10) + operator helpers</a></li>
     <li><a href="#demo">The supply-chain attack demo</a></li>
-    <li><a href="#distributed">Distributing 3 agents across 3 clusters (+ lateral hack)</a></li>
+    <li><a href="#distributed">Distributing 3 agents across 3 clusters (lateral hack + federation-hijack fix)</a></li>
     <li><a href="#flow">Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</a></li>
     <li><a href="#labs">Lab walkthrough — AgentGateway as Istio Waypoint</a></li>
   </ol>
@@ -826,7 +826,7 @@ spec: { domain: global }
 
 <hr>
 
-<h2 id="walk"><span class="num">6.</span> Step-by-step build (M00 → M09)</h2>
+<h2 id="walk"><span class="num">6.</span> Step-by-step build (M00 → M10) + operator helpers</h2>
 
 <p>Every step in <a href="https://github.com/tjorourke/solo-demo-agentic-dora/tree/main/scripts/multi"><code>scripts/multi/</code></a> with the actual commands. Run them via <code>./scripts/deploy-all.sh --mode multi</code> or one-by-one.</p>
 
@@ -974,6 +974,23 @@ remote:
 
 <h3><span class="step-num">9</span>M09 — Workspace + WorkspaceSettings + Segment</h3>
 <p>Activates federation. See the YAML in section 5 above for the complete trio.</p>
+
+<h3><span class="step-num">10</span>M10 — Federation hijack fix on edge</h3>
+<p>Re-runnable cleanup that drops <code>solo.io/service-scope=global</code> from <code>trustusbank-platform</code> on cluster-edge, deletes the four <code>autogen.global.*</code> ServiceEntries that hijacked the local hostname, and bounces <code>kagent-ui</code> + <code>kagent-controller</code> so they re-enrol in ztunnel. See §8.5 below for the full root-cause walkthrough.</p>
+
+<h3>Operator helpers</h3>
+
+<p>Two macOS helpers to make day-to-day ops faster:</p>
+
+<ul>
+  <li><b>k9s in 3 Terminal tabs</b> — <code>./scripts/multi/k9s-tabs.sh</code> opens three Terminal tabs (⌘1/2/3 to switch) each running k9s against one cluster context.</li>
+  <li><b>Port-forwards auto-open in Chrome</b> — <code>./scripts/port-forward.sh</code> starts every port-forward as before, then opens every <code>http://localhost:&lt;port&gt;</code> in Chrome so you don't have to type any of them. Disable with <code>OPEN_BROWSER=0 ./scripts/port-forward.sh</code>.</li>
+</ul>
+
+<details class="yaml"><summary>manual fallback — what the tabs would run</summary>
+<pre>k9s --context=kind-trustusbank-edge       # ⌘1
+k9s --context=kind-trustusbank-bank       # ⌘2
+k9s --context=kind-trustusbank-vendor     # ⌘3</pre></details>
 
 <hr>
 
@@ -1247,6 +1264,60 @@ $ kubectl --context=kind-trustusbank-edge -n trustusbank-bank-agents exec deploy
 405 time=0.027s          # reached bank's fraud-bot pod (Method Not Allowed on GET — A2A wants POST)</pre>
 
 <p>Status codes prove the hops landed on the real bank-side destinations. <code>404</code> from agentgateway's HTTPRoute table and <code>405</code> from fraud-bot's A2A server — both authentic, both delivered cross-cluster.</p>
+
+<h3>L7 gotcha — federation hijacking the local kagent stack</h3>
+
+<p>After the lateral hack landed, the <code>chatbot → support-bot</code> A2A path broke with <code>RemoteProtocolError: Server disconnected without sending a response</code>. The path is entirely local on cluster-edge — frontend nginx → <code>kagent-ui.trustusbank-platform.svc.cluster.local:8080</code> → <code>kagent-controller</code>. Neither hop should touch bank.</p>
+
+<p>ztunnel's connection log gave the away:</p>
+
+<pre>warn  access  connection failed
+  src.addr=10.10.1.39:41674       (chatbot)
+  dst.addr=10.110.240.216:8080    (kagent-ui ClusterIP)
+  direction="outbound"
+  error="unknown network gateway: GatewayAddress {
+    destination: Hostname(NamespacedHostname {
+      namespace: \"istio-eastwest\",
+      hostname: \"node.istio-eastwest.trustusbank-bank.mesh.internal\"
+    }), hbone_mtls_port: 15008
+  } not found"</pre>
+
+<p>Gloo Mesh's federation discovery had unioned the local FQDN into the global <code>ServiceEntry</code> for <code>kagent-ui</code>, so ztunnel decided to forward the packet to <i>bank's east/west gateway</i> instead of the local pod. Bank's east/west GW hostname couldn't be resolved on edge — connection reset.</p>
+
+<p>Two-step fix on edge:</p>
+
+<ol>
+  <li>Drop <code>solo.io/service-scope=global</code> from <code>trustusbank-platform</code> — edge's kagent stack is local-only.</li>
+  <li>Delete the existing autogen entries so the bad union is removed; Gloo Mesh's discovery loop won't recreate them now that the namespace isn't global.</li>
+</ol>
+
+<details class="yaml"><summary>scripts/multi/10-fix-federation-hijack.sh</summary>
+<pre>CTX_E="kind-trustusbank-edge"
+
+# ambient on platform ns so edge kagent pods get SPIFFE
+kubectl --context=$CTX_E label ns trustusbank-platform \
+  istio.io/dataplane-mode=ambient --overwrite
+
+# remove global scope — edge kagent stack is local-only
+kubectl --context=$CTX_E label ns trustusbank-platform \
+  solo.io/service-scope-
+
+# delete the hijacked autogen entries
+for n in kagent-controller kagent-postgresql kagent-ui \
+         kagent-kmcp-controller-manager-metrics-service; do
+  kubectl --context=$CTX_E -n istio-system delete serviceentry \
+    "autogen.global.trustusbank-platform.$n" --ignore-not-found
+  kubectl --context=$CTX_E -n istio-system delete workloadentry \
+    "autogen.trustusbank-bank.trustusbank-platform.$n" --ignore-not-found
+done
+
+# bounce kagent so it picks up ztunnel enrolment
+kubectl --context=$CTX_E -n trustusbank-platform \
+  rollout restart deploy/kagent-ui deploy/kagent-controller</pre></details>
+
+<p>After the fix, the same E2E request returns Claude-authored text in &lt; 2 s, and a tool-call trace shows a real cross-cluster A2A handoff from <code>support-bot</code> (edge) into <code>fraud-bot</code> (bank) plus three MCP tool calls via the agentgateway waypoint.</p>
+
+<div class="callout ok"><b>Takeaway:</b> federation autogen entries can shadow local Services if you accidentally widen a namespace's scope. If a service is only ever consumed inside one cluster, keep it out of <code>solo.io/service-scope=global</code> — otherwise ztunnel will follow the federation edge hop even when the pod is right there on the local node.</div>
 
 <hr>
 
