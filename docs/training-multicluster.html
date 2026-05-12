@@ -979,6 +979,101 @@ remote:
 
 <h2 id="demo"><span class="num">7.</span> The supply-chain attack demo</h2>
 
+<h3>Application-level A2A flow — what the chatbot triggers</h3>
+
+<p>When a customer types "balance + convert to USD" into the chatbot, this is the call graph kagent drives. Three agents in a handoff chain, four MCP tool servers behind agentgateway, with the supply-chain attack landing at the currency-converter call in the bottom row.</p>
+
+<style>
+  .a2a { margin: 18px 0; }
+  .a2a-row { display: grid; grid-template-columns: 1fr 50px 1fr 50px 1fr 50px 1fr; align-items: stretch; gap: 0; margin: 6px 0; }
+  .a2a-row .box { border: 2px solid #cbd5e1; border-radius: 10px; padding: 12px 14px; background: #f8fafc; }
+  .a2a-row .box.user    { border-color: #94a3b8; background: #f1f5f9; }
+  .a2a-row .box.agent   { border-color: #22c55e; background: #f0fdf4; }
+  .a2a-row .box.mcp     { border-color: #fbbf24; background: #fffbeb; }
+  .a2a-row .box.vendor  { border-color: #f87171; background: #fef2f2; }
+  .a2a-row .box .h      { font-size: 13.5px; font-weight: 700; margin-bottom: 4px; }
+  .a2a-row .box .sub    { font-size: 11px; color: var(--muted); margin-bottom: 6px; font-family: ui-monospace, monospace; }
+  .a2a-row .box ul      { margin: 0; padding-left: 16px; font-size: 11.5px; }
+  .a2a-row .box li      { margin-bottom: 1px; }
+  .a2a-row .arr         { display: flex; align-items: center; justify-content: center; font-size: 10.5px; color: #0e7490; font-family: ui-monospace, monospace; position: relative; }
+  .a2a-row .arr::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: #1cb5d3; transform: translateY(-50%); }
+  .a2a-row .arr::after  { content: "▶"; position: absolute; top: 50%; right: 4px; transform: translateY(-50%); color: #1cb5d3; }
+  .a2a-row .arr span    { position: relative; z-index: 1; background: #fff; border: 1px solid #1cb5d3; border-radius: 12px; padding: 3px 8px; color: #0e7490; font-weight: 700; white-space: nowrap; }
+  @media (max-width: 1100px) { .a2a-row { grid-template-columns: 1fr; } .a2a-row .arr::before, .a2a-row .arr::after { display: none; } .a2a-row .arr { padding: 6px 0; } }
+</style>
+
+<div class="a2a">
+  <!-- Top row: customer → support-bot → fraud-bot → triage-bot (the A2A handoff chain) -->
+  <div class="a2a-row">
+    <div class="box user">
+      <div class="h">Customer</div>
+      <div class="sub">browser → chatbot SPA</div>
+      <ul><li>"check balance, recent txns, convert to USD"</li></ul>
+    </div>
+    <div class="arr"><span>A2A msg/send</span></div>
+    <div class="box agent">
+      <div class="h">support-bot</div>
+      <div class="sub">trustusbank-bank-agents</div>
+      <ul>
+        <li>parses intent</li>
+        <li>fans out to MCP tools (row 2)</li>
+        <li>hands off to fraud-bot if anomaly</li>
+      </ul>
+    </div>
+    <div class="arr"><span>A2A handoff</span></div>
+    <div class="box agent">
+      <div class="h">fraud-bot</div>
+      <div class="sub">trustusbank-bank-agents</div>
+      <ul>
+        <li>list_recent + get_details</li>
+        <li>scores risk 0-100</li>
+        <li>risk &gt; 70 → handoff to triage</li>
+      </ul>
+    </div>
+    <div class="arr"><span>A2A handoff</span></div>
+    <div class="box agent">
+      <div class="h">triage-bot</div>
+      <div class="sub">trustusbank-bank-agents</div>
+      <ul>
+        <li>create_ticket</li>
+        <li>notify_human</li>
+        <li>DORA Art. 17 incident record</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Bottom row: tool calls from support-bot to the 4 MCP servers -->
+  <div class="a2a-row" style="margin-top: 18px;">
+    <div class="box mcp">
+      <div class="h">account-mcp</div>
+      <div class="sub">trustusbank-bank-mcp</div>
+      <ul><li>get_balance</li><li>get_profile ⚠ (PII)</li></ul>
+    </div>
+    <div class="arr"><span>MCP tool/call</span></div>
+    <div class="box mcp">
+      <div class="h">transaction-mcp</div>
+      <div class="sub">trustusbank-bank-mcp</div>
+      <ul><li>list_recent</li><li>get_details</li><li>flag_suspicious</li></ul>
+    </div>
+    <div class="arr"><span>MCP tool/call</span></div>
+    <div class="box mcp">
+      <div class="h">ticket-mcp</div>
+      <div class="sub">trustusbank-bank-mcp</div>
+      <ul><li>create_ticket</li><li>notify_human</li></ul>
+    </div>
+    <div class="arr"><span>MCP tool/call</span></div>
+    <div class="box vendor">
+      <div class="h">currency-converter</div>
+      <div class="sub">trustusbank-bank-vendors · 3rd-party</div>
+      <ul><li>convert_currency</li><li>⚠ rugpull variant exfils PII</li></ul>
+    </div>
+  </div>
+</div>
+
+<p>Each <code>MCP tool/call</code> arrow above terminates at the <b>agentgateway</b> in <code>trustusbank-platform</code>; agentgateway routes per its HTTPRoutes to the correct MCP server. JWT auth + per-agent tool allowlist are enforced there. The rugpull attack adds a fifth implicit hop: from the compromised currency-converter to <code>mock-attacker.external-attacker</code> — that's the egress the mesh's L4 AuthorizationPolicy denies in act 3.</p>
+
+
+
 <p>The demo plays out as a three-step narrative — <b>baseline</b>, <b>compromise</b>, <b>defence</b> — and I call them <em>acts</em> because that's how the runbook in the repo refers to them. Validated end-to-end against the single-cluster <code>trustusbank</code> on 2026-05-11 17:14 BST.</p>
 
 <table class="inv">
