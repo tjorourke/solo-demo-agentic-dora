@@ -117,8 +117,18 @@ if [[ "${OPEN_BROWSER:-1}" == "1" && "$(uname)" == "Darwin" ]]; then
       [[ -n "$u" ]] && URLS+=("$u")
     done < "$PF_URLFILE"
     if [[ ${#URLS[@]} -gt 0 ]]; then
-      log "opening ${#URLS[@]} browser UIs in Chrome (API endpoints skipped)"
-      open -a "Google Chrome" "${URLS[@]}"
+      log "opening ${#URLS[@]} browser UIs in Chrome — fresh window (API endpoints skipped)"
+      # Force a brand-new Chrome window so the demo tabs don't get mixed
+      # in with whatever Chrome window you already had open. The Chrome
+      # binary respects --new-window even when Chrome is already running.
+      CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+      if [[ -x "$CHROME_BIN" ]]; then
+        "$CHROME_BIN" --new-window "${URLS[@]}" >/dev/null 2>&1 &
+        disown 2>/dev/null || true
+      else
+        # Fallback: open in default Chrome window if the binary isn't where we expect.
+        open -a "Google Chrome" "${URLS[@]}"
+      fi
     fi
   else
     log_warn "Google Chrome not installed — skipping auto-open"
