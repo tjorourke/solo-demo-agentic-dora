@@ -18,13 +18,13 @@
     },
     {
       "type": "stat",
-      "title": "Art. 10 — AuthZ denies (in selected time range)",
-      "description": "Counts ztunnel-side denies via the Prometheus metric istio_tcp_connections_failed_total{response_flags=CONNECT}. Works in single- AND multi-cluster because metrics flow via the OTel pipeline.",
+      "title": "Art. 10 — AuthZ denies (live, last 5 min)",
+      "description": "Counts ztunnel-side denies in the last 5 minutes via Prometheus istio_tcp_connections_failed_total{response_flags=CONNECT}. Fixed 5-min window so reset-demo clears the panel within minutes - not whatever the dashboard's time range happens to be. Works in single- AND multi-cluster because metrics flow via the OTel pipeline.",
       "gridPos": { "h": 5, "w": 6, "x": 0, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "options": { "colorMode": "background", "graphMode": "area" },
       "targets": [
-        { "expr": "sum(increase(istio_tcp_connections_failed_total{response_flags=\"CONNECT\"}[$__range]))", "refId": "A" }
+        { "expr": "sum(increase(istio_tcp_connections_failed_total{response_flags=\"CONNECT\"}[5m]))", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -36,13 +36,13 @@
     },
     {
       "type": "stat",
-      "title": "Exfil attempts: bank -> external-attacker (in range)",
-      "description": "Counts TCP connection ATTEMPTS from any bank-side namespace into external-attacker, regardless of whether the deny rule is in place. Pre-policies-on this number = exfil that succeeded; post-policies-on this number = exfil that ztunnel blocked (cross-check with the AuthZ denies tile).",
+      "title": "Exfil attempts: bank -> external-attacker (live, last 5 min)",
+      "description": "Counts TCP connection ATTEMPTS from any bank-side namespace into external-attacker in the last 5 minutes. Pre-policies-on this number = exfil that succeeded; post-policies-on this number = exfil that ztunnel blocked (cross-check with the AuthZ denies tile). Fixed 5-min window so reset clears the panel quickly.",
       "gridPos": { "h": 5, "w": 6, "x": 6, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "options": { "colorMode": "background", "graphMode": "area" },
       "targets": [
-        { "expr": "sum(increase(istio_tcp_connections_opened_total{source_workload_namespace=~\"trustusbank-bank-.*|trustusbank-platform\", destination_workload_namespace=\"external-attacker\"}[$__range]))", "refId": "A" }
+        { "expr": "sum(increase(istio_tcp_connections_opened_total{source_workload_namespace=~\"trustusbank-bank-.*|trustusbank-platform\", destination_workload_namespace=\"external-attacker\"}[5m]))", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -96,7 +96,7 @@
       "options": { "showHeader": true },
       "targets": [
         {
-          "expr": "topk(20, sum by (source_workload, source_workload_namespace, source_principal, destination_service_namespace, destination_service_name) (increase(istio_tcp_connections_failed_total{response_flags=\"CONNECT\"}[$__range]))) > 0",
+          "expr": "topk(20, sum by (source_workload, source_workload_namespace, source_principal, destination_service_namespace, destination_service_name) (increase(istio_tcp_connections_failed_total{response_flags=\"CONNECT\"}[5m]))) > 0",
           "refId": "A",
           "instant": true,
           "format": "table"
