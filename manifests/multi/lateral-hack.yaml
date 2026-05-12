@@ -1,0 +1,84 @@
+# Lateral cross-cluster hack — applied on cluster-edge.
+#
+# Each kagent Agent CRD must exist locally in the cluster doing the
+# tool/handoff reference. In our distributed layout:
+#   edge owns support-bot (the only real pod here)
+#   bank owns fraud-bot, triage-bot, and the MCP servers
+# We deploy BYO Agent CRDs on edge with replicas=0 for fraud-bot/triage-bot
+# (so kagent's local-CRD lookup passes). Those stubs create K8s Services
+# with no local endpoints. We then plant manual EndpointSlices pointing
+# those Services' traffic at bank's east/west GW NodePort.
+#
+# Same pattern for trustusbank-agentgw (the bank's MCP entry point).
+#
+# Bank's side (applied with `kubectl patch svc ...`):
+#   svc/fraud-bot          NodePort 30090  (in trustusbank-bank-agents)
+#   svc/triage-bot         NodePort 30091  (in trustusbank-bank-agents)
+#   svc/trustusbank-agentgw NodePort 30092 (in trustusbank-platform)
+#
+# Bank node IP on the shared kind docker network: 172.22.0.8
+#
+# Result: from edge, calls to fraud-bot.trustusbank-bank-agents:8080 land
+# on the bank cluster's real fraud-bot pod. No HBONE on this hop because
+# we changed bank's trustDomain mid-build for the waypoint cert-fetch;
+# plain TCP via kube-proxy on bank serves the cross-cluster wire.
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: fraud-bot-xc
+  namespace: trustusbank-bank-agents
+  labels:
+    kubernetes.io/service-name: fraud-bot
+addressType: IPv4
+ports:
+  - name: http
+    port: 30090
+    protocol: TCP
+endpoints:
+  - addresses: ["172.22.0.8"]
+    conditions: { ready: true }
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: triage-bot-xc
+  namespace: trustusbank-bank-agents
+  labels:
+    kubernetes.io/service-name: triage-bot
+addressType: IPv4
+ports:
+  - name: http
+    port: 30091
+    protocol: TCP
+endpoints:
+  - addresses: ["172.22.0.8"]
+    conditions: { ready: true }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trustusbank-agentgw
+  namespace: trustusbank-platform
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 30092
+      protocol: TCP
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: trustusbank-agentgw-xc
+  namespace: trustusbank-platform
+  labels:
+    kubernetes.io/service-name: trustusbank-agentgw
+addressType: IPv4
+ports:
+  - name: http
+    port: 30092
+    protocol: TCP
+endpoints:
+  - addresses: ["172.22.0.8"]
+    conditions: { ready: true }

@@ -135,6 +135,7 @@
     <li><a href="#workspace">Gloo Mesh Workspaces &amp; Segments</a></li>
     <li><a href="#walk">Step-by-step build (M00 → M09)</a></li>
     <li><a href="#demo">The supply-chain attack demo</a></li>
+    <li><a href="#distributed">Distributing 3 agents across 3 clusters (+ lateral hack)</a></li>
     <li><a href="#flow">Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</a></li>
     <li><a href="#labs">Lab walkthrough — AgentGateway as Istio Waypoint</a></li>
   </ol>
@@ -1116,7 +1117,140 @@ remote:
 
 <hr>
 
-<h2 id="flow"><span class="num">8.</span> Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</h2>
+<h2 id="distributed"><span class="num">8.</span> Distributing the 3 agents across 3 clusters</h2>
+
+<p>kagent's <code>Agent</code> CRD validates tool references against the <i>local</i> cluster's API server — there's no <code>cluster</code> field on a <code>type: Agent</code> tool. To put <code>support-bot</code> on cluster-edge while <code>fraud-bot</code> and <code>triage-bot</code> live on cluster-bank, you need (a) a local Agent CRD for every name <code>support-bot</code> references, plus (b) a way to route the actual A2A wire across clusters.</p>
+
+<p>The trick: kagent's <code>type: BYO</code> Agent <b>does</b> accept <code>replicas: 0</code>. That creates the Agent CRD (kagent's validator passes) plus a backing <code>Service</code> with no local endpoints — exactly the shape we need for cross-cluster mesh routing.</p>
+
+<style>
+  .dist { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0; }
+  .dist .col { background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 10px; padding: 14px 16px; }
+  .dist .col.edge { border-color: #22d3ee; }
+  .dist .col.bank { border-color: #fbbf24; background: #fffbeb; }
+  .dist h5 { margin: 0 0 6px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .dist .role { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+  .dist .role.real { background: #dcfce7; color: #166534; }
+  .dist .role.stub { background: #f1f5f9; color: #475569; }
+  .dist ul { margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; }
+  .dist li { margin-bottom: 3px; }
+  .dist .meta { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
+  @media (max-width: 760px) { .dist { grid-template-columns: 1fr; } }
+</style>
+
+<div class="dist">
+  <div class="col edge">
+    <h5>cluster-edge — Agent CRDs <span class="pill pill-edge">edge</span></h5>
+    <div><b>support-bot</b> <span class="role real">real · replicas=1</span></div>
+    <div class="meta">type: Declarative · running pod · serves <code>POST /</code> on :8080</div>
+    <ul><li>customer's first-line agent</li><li>tools: account-mcp, transaction-mcp, currency-converter, Agent:fraud-bot</li></ul>
+    <div style="margin-top: 10px"><b>fraud-bot</b> <span class="role stub">stub · replicas=0</span></div>
+    <div class="meta">type: BYO · image: pause:3.9 · 0 pods · Service exists for routing</div>
+    <div style="margin-top: 6px"><b>triage-bot</b> <span class="role stub">stub · replicas=0</span></div>
+    <div class="meta">type: BYO · image: pause:3.9 · 0 pods · Service exists for routing</div>
+  </div>
+
+  <div class="col bank">
+    <h5>cluster-bank — Agent CRDs <span class="pill pill-bank">bank</span></h5>
+    <div><b>fraud-bot</b> <span class="role real">real · replicas=1</span></div>
+    <div class="meta">type: Declarative · running pod · MCP tool: transaction-mcp</div>
+    <ul><li>scores transaction risk 0-100</li><li>hands off to triage-bot if risk &gt; 70</li></ul>
+    <div style="margin-top: 10px"><b>triage-bot</b> <span class="role real">real · replicas=1</span></div>
+    <div class="meta">type: Declarative · running pod · MCP tool: ticket-mcp</div>
+    <ul><li>creates DORA Art. 17 incident records</li><li>notifies human via Slack/email</li></ul>
+    <div style="margin-top: 10px"><b>support-bot</b> <span class="role stub">stub · replicas=0</span></div>
+    <div class="meta">type: BYO · 0 pods · keeps local references valid (vendor-cluster code may A2A back here in future)</div>
+  </div>
+</div>
+
+<h3>The lateral hack — manual cross-cluster Endpoints</h3>
+
+<p>Solo Mesh's federation auto-publishes Services across clusters via <code>.mesh.internal</code> hostnames, but in our setup the federation's <code>WorkloadEntry</code> address propagation didn't complete (the auto-generated entries have <code>network: trustusbank-bank</code> with no <code>address</code>, so ztunnel has no upstream to forward to). The pragmatic fix is to skip the federation layer for these specific Services and plant <b>manual EndpointSlices</b> on edge that point the stub Services at bank node IPs + NodePort. Plain TCP, no HBONE on this hop, no trust-bundle to align.</p>
+
+<details class="yaml"><summary>bank-side: expose the destination Services as NodePort</summary>
+<pre># fraud-bot Service in trustusbank-bank-agents
+kubectl --context=kind-trustusbank-bank -n trustusbank-bank-agents patch svc fraud-bot \
+  --type=merge -p '{"spec":{"type":"NodePort","ports":[
+    {"name":"http","port":8080,"targetPort":8080,"nodePort":30090,"protocol":"TCP"}
+  ]}}'
+
+# triage-bot Service in trustusbank-bank-agents
+kubectl --context=kind-trustusbank-bank -n trustusbank-bank-agents patch svc triage-bot \
+  --type=merge -p '{"spec":{"type":"NodePort","ports":[
+    {"name":"http","port":8080,"targetPort":8080,"nodePort":30091,"protocol":"TCP"}
+  ]}}'
+
+# trustusbank-agentgw in trustusbank-platform
+kubectl --context=kind-trustusbank-bank -n trustusbank-platform patch svc trustusbank-agentgw \
+  --type=merge -p '{"spec":{"type":"NodePort","ports":[
+    {"name":"http","port":8080,"targetPort":8080,"nodePort":30092,"protocol":"TCP"}
+  ]}}'</pre></details>
+
+<details class="yaml"><summary>edge-side: manual EndpointSlices pointing the stubs at bank — <code>manifests/multi/lateral-hack.yaml</code></summary>
+<pre># Bank node IP on the shared kind docker network: 172.22.0.8
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: fraud-bot-xc
+  namespace: trustusbank-bank-agents
+  labels: { kubernetes.io/service-name: fraud-bot }
+addressType: IPv4
+ports: [{ name: http, port: 30090, protocol: TCP }]
+endpoints:
+  - addresses: ["172.22.0.8"]
+    conditions: { ready: true }
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: triage-bot-xc
+  namespace: trustusbank-bank-agents
+  labels: { kubernetes.io/service-name: triage-bot }
+addressType: IPv4
+ports: [{ name: http, port: 30091, protocol: TCP }]
+endpoints:
+  - addresses: ["172.22.0.8"]
+    conditions: { ready: true }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trustusbank-agentgw
+  namespace: trustusbank-platform
+spec:
+  ports: [{ name: http, port: 8080, targetPort: 30092, protocol: TCP }]
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: trustusbank-agentgw-xc
+  namespace: trustusbank-platform
+  labels: { kubernetes.io/service-name: trustusbank-agentgw }
+addressType: IPv4
+ports: [{ name: http, port: 30092, protocol: TCP }]
+endpoints:
+  - addresses: ["172.22.0.8"]
+    conditions: { ready: true }</pre></details>
+
+<h3>L4 verification — the hack works</h3>
+
+<p>From inside the <code>support-bot</code> pod on edge, dialing the FQDN of each cross-cluster target:</p>
+
+<pre>$ kubectl --context=kind-trustusbank-edge -n trustusbank-bank-agents exec deploy/support-bot -- \
+    curl -s -o /dev/null -w '%{http_code} time=%{time_total}s\n' --max-time 10 \
+    http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/
+404 time=0.010s          # reached bank's agentgateway (no route for /)
+
+$ kubectl --context=kind-trustusbank-edge -n trustusbank-bank-agents exec deploy/support-bot -- \
+    curl -s -o /dev/null -w '%{http_code} time=%{time_total}s\n' --max-time 10 \
+    http://fraud-bot.trustusbank-bank-agents.svc.cluster.local:8080/
+405 time=0.027s          # reached bank's fraud-bot pod (Method Not Allowed on GET — A2A wants POST)</pre>
+
+<p>Status codes prove the hops landed on the real bank-side destinations. <code>404</code> from agentgateway's HTTPRoute table and <code>405</code> from fraud-bot's A2A server — both authentic, both delivered cross-cluster.</p>
+
+<hr>
+
+<h2 id="flow"><span class="num">9.</span> Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</h2>
 
 <p>The waypoint is where AgentGateway earns its keep. In ambient mesh, every L7 hop between two services in different namespaces (or with policy enforcement enabled) goes <b>pod → source-node ztunnel → waypoint → destination-node ztunnel → pod</b>. Five components, five hops, all running native HBONE. Below is the exact path a request from <code>customer-agent</code> (in <code>ai-agents</code>) to <code>inventory-mcp</code> (in <code>ai-tools</code>) takes once the waypoint is wired in.</p>
 
@@ -1207,7 +1341,7 @@ remote:
 
 <hr>
 
-<h2 id="labs"><span class="num">9.</span> Lab walkthrough — AgentGateway as Istio Waypoint</h2>
+<h2 id="labs"><span class="num">10.</span> Lab walkthrough — AgentGateway as Istio Waypoint</h2>
 
 <p>This section follows the canonical Solo internal gist <a href="https://gist.github.com/rvennam/6cf84236bb56c1d2468f70cf035cd41b">agentgateway-as-waypoint.md</a> end-to-end. Eight labs from a clean prereqs state to a fully policy-enforced ambient mesh. Every snippet is the gist's exact YAML / shell — copy-paste runnable. The result is the canonical reference implementation; matches the demo we ship.</p>
 
