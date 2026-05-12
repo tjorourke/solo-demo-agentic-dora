@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Single-cluster Solo Istio Ambient + kagent — a hands-on training walkthrough</title>
+<title>Single-cluster Solo Enterprise for Istio + kagent — a reference pattern for agentic deployments</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
@@ -111,14 +111,14 @@
 
 <a class="nav-back" href="index.html">Back to demo home</a>
 
-<h1>Single-cluster Solo Istio Ambient + kagent</h1>
-<p class="subtitle">A training walkthrough for new Solo engineers. The original trustusbank agentic-DORA demo, end-to-end on one kind cluster — what each Solo component does, how the wire actually works, and where the supply-chain attack lands.</p>
+<h1>Single-cluster Solo Enterprise for Istio + kagent</h1>
+<p class="subtitle">A reference pattern for agentic AI deployments. The trustusbank agentic-DORA demo, end-to-end on one kind cluster — what each Solo component does, how the wire actually works, and where the supply-chain attack lands.</p>
 
 <div class="meta-row">
   <div class="author-avatar">TO</div>
   <div class="meta-text">
     <span class="author">Tom O'Rourke</span>
-    <span class="role">Solo Solutions Engineer — runbook for new joiners</span>
+    <span class="role">Solo Solutions Engineering</span>
   </div>
 </div>
 
@@ -136,7 +136,7 @@
   </ol>
 </div>
 
-<p class="lede">If you've already done the <a href="multi-cluster.html">multi-cluster walkthrough</a>, this is the same demo with the federation, peering, and east/west gateway layers removed — same chatbot, same agents, same MCP tools, same attack. Start here if you want the shortest path to seeing Solo's runtime defence in action.</p>
+<p class="lede">If you've already read the <a href="multi-cluster.html">multi-cluster pattern</a>, this is the same demo with the federation, peering, and east/west gateway layers removed — same chatbot, same agents, same MCP tools, same attack. Start here if you want the shortest path to seeing Solo's runtime defence in action.</p>
 
 <hr>
 
@@ -406,7 +406,7 @@
 </tbody>
 </table>
 
-<p>No Workspaces, no WorkspaceSettings, no KubernetesCluster, no Solo Service-Scope label. Those are Gloo Mesh federation kinds that only matter once you have multiple clusters.</p>
+<p>No Workspaces, no WorkspaceSettings, no KubernetesCluster, no Solo service-scope label. Those are Solo management-plane kinds that only matter once you have multiple clusters.</p>
 
 <hr>
 
@@ -679,7 +679,7 @@ transactions, and convert my balance to USD."</pre>
 
 <hr>
 
-<p class="lede">If you've finished this and want to see the same demo with cross-cluster identity, peering, and Gloo Mesh federation — the <a href="multi-cluster.html">multi-cluster walkthrough</a> picks up where this ends. The <a href="https://github.com/tjorourke/solo-demo-agentic-dora">repo</a> is checked in; every script and YAML referenced here is live in the codebase.</p>
+<p class="lede">If you've finished this and want to see the same demo with cross-cluster identity, peering, and Solo's multi-cluster federation — the <a href="multi-cluster.html">multi-cluster pattern</a> picks up where this ends. The <a href="https://github.com/tjorourke/solo-demo-agentic-dora">repo</a> is checked in; every script and YAML referenced here is live in the codebase.</p>
 
 </main>
 </body>

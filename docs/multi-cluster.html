@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Multi-cluster Solo Istio Ambient + Gloo Mesh + kagent — a hands-on training walkthrough</title>
+<title>Multi-cluster Solo Enterprise for Istio + kagent — a reference pattern for agentic deployments</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
@@ -117,8 +117,8 @@
 
 <a class="nav-back" href="index.html">Back to demo home</a>
 
-<h1>Multi-cluster Solo Istio Ambient + Gloo Mesh + kagent</h1>
-<p class="subtitle">A training walkthrough for new Solo engineers. What it took to stand up the trustusbank agentic-DORA demo on three kind clusters, what each Solo component does, how the wire actually works, and where the OOB defaults hit a wall.</p>
+<h1>Multi-cluster Solo Enterprise for Istio + kagent</h1>
+<p class="subtitle">A reference pattern for agentic AI deployments across multiple clusters. What it took to stand up the trustusbank agentic-DORA demo on three kind clusters, what each Solo component does, how the wire actually works, and where the OOB defaults hit a wall.</p>
 
 <div class="meta-row">
   <div class="author-avatar">TO</div>
@@ -128,7 +128,7 @@
   </div>
 </div>
 
-<p class="lede">If you're new at Solo and trying to understand how Solo Istio Ambient, the Gloo Mesh management plane, kagent, and agentgateway fit together in a real multi-cluster topology, this is the doc I wish I'd had on day one. It walks the build top to bottom: three kind clusters, federated trust, east/west peering, the Workspace model, HBONE on the wire, waypoints in the data plane, and every CRD you'll meet along the way. Every YAML block expands inline.</p>
+<p class="lede">If you're standing up an agentic AI deployment across multiple clusters and need to understand how Solo Enterprise for Istio Ambient, the Solo management plane, kagent, and agentgateway fit together, this is the doc that walks it top to bottom: three kind clusters, federated trust, east/west peering, the Workspace model, HBONE on the wire, waypoints in the data plane, and every CRD you'll meet along the way. Every YAML block expands inline.</p>
 
 <div class="toc">
   <h3>Contents</h3>
@@ -137,7 +137,7 @@
     <li><a href="#whats-where">What's deployed where</a></li>
     <li><a href="#crds">CRD reference (every kind you'll see)</a></li>
     <li><a href="#hbone">HBONE + waypoint: how the wire works</a></li>
-    <li><a href="#workspace">Gloo Mesh Workspaces &amp; Segments</a></li>
+    <li><a href="#workspace">Solo Workspaces &amp; Segments</a></li>
     <li><a href="#walk">Step-by-step build (M00 → M10) + operator helpers</a></li>
     <li><a href="#demo">The supply-chain attack demo</a></li>
     <li><a href="#distributed">Distributing 3 agents across 3 clusters (lateral hack + federation-hijack fix)</a></li>
@@ -150,7 +150,7 @@
 
 <h2 id="topology"><span class="num">1.</span> The 3-cluster topology</h2>
 
-<p>Three kind clusters on the shared <code>kind</code> docker network. Each is an independent Kubernetes cluster, each runs its own Solo Istio Ambient control plane (<code>istiod</code>, <code>istio-cni</code>, <code>ztunnel</code>), and each has a distinct SPIFFE trust domain. They peer via an east/west Gateway per cluster (HBONE on TCP/15008, xDS on 15012) and are federated by a single Gloo Mesh management plane co-located on <code>bank</code>.</p>
+<p>Three kind clusters on the shared <code>kind</code> docker network. Each is an independent Kubernetes cluster, each runs its own Solo Enterprise for Istio (Ambient) control plane (<code>istiod</code>, <code>istio-cni</code>, <code>ztunnel</code>), and each has a distinct SPIFFE trust domain. They peer via an east/west Gateway per cluster (HBONE on TCP/15008, xDS on 15012) and are federated by a single Solo management plane co-located on <code>bank</code>.</p>
 
 <!-- Cluster topology — mgmt plane co-located inside bank, clean SVG connectors. -->
 <style>
@@ -261,7 +261,7 @@
       <div class="gwbar"><span class="lbl">istio-eastwest GW</span> <span>:15008 HBONE</span></div>
 
       <div class="mgmt">
-        <div class="mhdr"><span>Gloo Mesh management plane</span> <span class="tag">co-located</span></div>
+        <div class="mhdr"><span>Solo management plane</span> <span class="tag">co-located</span></div>
         <div class="mtd">ns: gloo-mesh · relay gRPC :30416 (NodePort)</div>
         <ul>
           <li>gloo-mesh-mgmt-server + redis + UI</li>
@@ -305,7 +305,7 @@
 <thead><tr><th>Cluster</th><th>Role</th><th>Trust domain</th></tr></thead>
 <tbody>
 <tr><td><div><span class="pill pill-edge">edge</span></div><div style="margin-top:4px"><code>trustusbank-edge</code></div></td><td>Customer-facing. Browser hits the chatbot here. Northbound traffic enters the mesh on this cluster.</td><td><code>edge.local</code></td></tr>
-<tr><td><div><span class="pill pill-bank">bank</span></div><div style="margin-top:4px"><code>trustusbank-bank</code></div></td><td>The bank's own infrastructure. Agents, MCP servers, agentgateway, agentregistry, observability, and (co-located here) the Gloo Mesh management plane.</td><td><code>bank.local</code></td></tr>
+<tr><td><div><span class="pill pill-bank">bank</span></div><div style="margin-top:4px"><code>trustusbank-bank</code></div></td><td>The bank's own infrastructure. Agents, MCP servers, agentgateway, agentregistry, observability, and (co-located here) the Solo management plane.</td><td><code>bank.local</code></td></tr>
 <tr><td><div><span class="pill pill-vendor">vendor</span></div><div style="margin-top:4px"><code>trustusbank-vendor</code></div></td><td>Third-party / untrusted. Holds the rogue <code>currency-converter</code> MCP server and the mock attacker that receives exfiltrated PII.</td><td><code>vendor.local</code></td></tr>
 </tbody>
 </table>
@@ -339,7 +339,7 @@
 <tbody>
 <tr><td><code>istio-system</code></td><td>istiod, istio-cni, ztunnel</td><td>Ambient control + data plane</td></tr>
 <tr><td><code>istio-eastwest</code></td><td>istio-eastwest GW (local) + 2 peer Gateways (peer-edge, peer-vendor)</td><td>Inbound + outbound peer references</td></tr>
-<tr><td><code>gloo-mesh</code></td><td><b>gloo-mesh-mgmt-server</b>, redis, UI, telemetry-gateway, telemetry-collector × N, prometheus-server, gloo-mesh-agent</td><td>The Gloo Mesh management plane lives here</td></tr>
+<tr><td><code>gloo-mesh</code></td><td><b>gloo-mesh-mgmt-server</b>, redis, UI, telemetry-gateway, telemetry-collector × N, prometheus-server, gloo-mesh-agent</td><td>The Solo management plane lives here. (Helm chart and binary names retain the <code>gloo-mesh-*</code> identifiers from the previous brand.)</td></tr>
 <tr><td><code>trustusbank-platform</code></td><td>agentgateway, trustusbank-agentgw, agentregistry + postgres, kagent-controller, kagent-ui, kagent-kmcp-controller-manager, kagent-postgresql</td><td>MCP wire + catalog + agent control plane. Authentication moved from Keycloak-issued JWTs to mesh-native SPIFFE identity at the waypoint.</td></tr>
 <tr><td><code>trustusbank-bank-agents</code> <small>ambient</small></td><td>support-bot, fraud-bot, triage-bot (each as a <code>kagent</code> <code>Agent</code> CRD that spawns a Pod)</td><td>The three agents that run the demo's flow</td></tr>
 <tr><td><code>trustusbank-bank-mcp</code> <small>ambient</small></td><td>account-mcp, transaction-mcp, ticket-mcp, waypoint</td><td>Three internal MCP tool servers + L7 waypoint</td></tr>
@@ -364,7 +364,7 @@
 
 <h2 id="crds"><span class="num">3.</span> CRD reference (every kind you'll see)</h2>
 
-<p>One thing that surprised me coming in: a fully wired Solo Istio + Gloo Mesh + kagent install adds about 130 CRDs to a cluster. They cluster into five clean groups. The blocks below are the canonical YAML for each — click to expand.</p>
+<p>A fully wired Solo Enterprise for Istio + kagent install adds about 130 CRDs to a cluster. They cluster into five clean groups. The blocks below are the canonical YAML for each — click to expand.</p>
 
 <h3>Group A: Kubernetes Gateway API (v1.5.0, experimental channel)</h3>
 
@@ -404,7 +404,7 @@ spec:
 
 <h3>Group B: Istio APIs (security + networking + telemetry)</h3>
 
-<p>Standard Istio CRDs. Most are familiar from any Istio deployment; the multi-cluster twist is that <code>ServiceEntry</code> and <code>WorkloadEntry</code> resources are auto-generated by the Gloo Mesh management plane to publish remote services.</p>
+<p>Standard Istio CRDs. Most are familiar from any Istio deployment; the multi-cluster twist is that <code>ServiceEntry</code> and <code>WorkloadEntry</code> resources are auto-generated by the Solo management plane to publish remote services.</p>
 
 <table class="inv">
 <colgroup><col class="k-kind"><col class="k-group"><col></colgroup>
@@ -414,7 +414,7 @@ spec:
 <tr><td><code>PeerAuthentication</code></td><td>security.istio.io</td><td>Mesh-wide mTLS strictness (Ambient is always STRICT)</td></tr>
 <tr><td><code>RequestAuthentication</code></td><td>security.istio.io</td><td>JWT validation rules at L7</td></tr>
 <tr><td><code>DestinationRule</code></td><td>networking.istio.io</td><td>Per-destination traffic policy (locality, outlier detection, etc.)</td></tr>
-<tr><td><code>ServiceEntry</code></td><td>networking.istio.io</td><td><b>Auto-generated by Gloo Mesh federation</b> — one per service exposed cross-cluster, with hostname <code>&lt;svc&gt;.&lt;ns&gt;.&lt;hostSuffix&gt;</code></td></tr>
+<tr><td><code>ServiceEntry</code></td><td>networking.istio.io</td><td><b>Auto-generated by Solo's multi-cluster federation</b> — one per service exposed cross-cluster, with hostname <code>&lt;svc&gt;.&lt;ns&gt;.&lt;hostSuffix&gt;</code></td></tr>
 <tr><td><code>WorkloadEntry</code></td><td>networking.istio.io</td><td><b>Auto-generated</b> — represents a remote pod that the ServiceEntry selects. Carries the <code>network</code> label so ztunnel knows to route via the right east/west GW.</td></tr>
 <tr><td><code>Telemetry</code></td><td>telemetry.istio.io</td><td>Per-workload tracing/log/metric config</td></tr>
 <tr><td><code>EnvoyFilter</code></td><td>networking.istio.io</td><td>Low-level Envoy escape hatch (rarely used in Ambient)</td></tr>
@@ -445,7 +445,7 @@ spec:
               - cluster.local/ns/trustusbank-platform/sa/trustusbank-agentgw</pre></details>
 
 <details class="yaml"><summary>example — auto-generated ServiceEntry for cross-cluster service publication</summary>
-<pre># Gloo Mesh writes one of these on every cluster for every Service it
+<pre># Solo's management plane writes one of these on every cluster for every Service it
 # federates. Hostname is built from the WorkspaceSettings hostSuffix.
 apiVersion: networking.istio.io/v1
 kind: ServiceEntry
@@ -470,9 +470,9 @@ spec:
       solo.io/parent-service: account-mcp
       solo.io/parent-service-namespace: trustusbank-bank-mcp</pre></details>
 
-<h3>Group C: Gloo Mesh / Gloo Platform APIs</h3>
+<h3>Group C: Solo management-plane APIs <code>(*.gloo.solo.io)</code></h3>
 
-<p>This is the bulk of the new CRDs. Gloo Mesh installs ~80 of them under the <code>gloo.solo.io</code> family. Most are policy-shaped and you won't see them until you opt in to a specific feature. The five that matter for *this* multi-cluster setup are:</p>
+<p>This is the bulk of the new CRDs. Solo's management plane installs ~80 of them under the <code>gloo.solo.io</code> API group (the group name is a holdover from the previous brand). Most are policy-shaped and you won't see them until you opt in to a specific feature. The five that matter for <i>this</i> multi-cluster setup are:</p>
 
 <table class="inv">
 <colgroup><col class="k-kind"><col class="k-group"><col></colgroup>
@@ -481,7 +481,7 @@ spec:
 <tr><td><code>Workspace</code></td><td>admin.gloo.solo.io/v2</td><td>The tenancy boundary. Lists clusters + namespace selectors that belong to one app team or policy boundary. Lives in <code>gloo-mesh</code>.</td></tr>
 <tr><td><code>WorkspaceSettings</code></td><td>admin.gloo.solo.io/v2</td><td>The policy for a Workspace. Federation on/off, host suffix, east/west gateway selector, service isolation. Lives in a namespace the Workspace selects (not in gloo-mesh).</td></tr>
 <tr><td><code>KubernetesCluster</code></td><td>admin.gloo.solo.io/v2</td><td>Registers a workload cluster with the mgmt server. Without this the relay rejects the agent.</td></tr>
-<tr><td><code>RootTrustPolicy</code></td><td>admin.gloo.solo.io/v2</td><td>(Optional in our setup) tells Gloo Mesh's CA manager to federate a trust root across the mesh. We do this manually with the cacerts secret pattern from the Istio Makefile.</td></tr>
+<tr><td><code>RootTrustPolicy</code></td><td>admin.gloo.solo.io/v2</td><td>(Optional in our setup) tells Solo's CA manager to federate a trust root across the mesh. We do this manually with the cacerts secret pattern from the Istio Makefile.</td></tr>
 <tr><td><code>VirtualDestination</code></td><td>networking.gloo.solo.io/v2</td><td>(Optional alternate path) declare a virtual host that fronts multiple real backends across clusters — used when you want explicit aliasing instead of namespace-sameness.</td></tr>
 <tr><td><code>Segment</code></td><td>admin.solo.io/v1alpha1</td><td><b>Critical, easy to miss.</b> Names a routing segment with a DNS suffix. Without a Segment in <code>istio-system</code> labelled on the namespace, federation can't generate global hostnames.</td></tr>
 </tbody>
@@ -769,7 +769,7 @@ spec:
 
 <hr>
 
-<h2 id="workspace"><span class="num">5.</span> Gloo Mesh Workspaces &amp; Segments</h2>
+<h2 id="workspace"><span class="num">5.</span> Solo Workspaces &amp; Segments</h2>
 
 <p>This is the conceptual model that took me longest to internalise, so it's worth taking time over.</p>
 
@@ -777,7 +777,7 @@ spec:
 
 <p>Plain Istio multi-cluster says "Services with the same name+namespace across clusters merge into one logical Service". That's elegant but fragile in a real org: team A's <code>payments</code> Service in namespace <code>billing</code> on cluster-X and team B's unrelated <code>payments</code> Service in namespace <code>billing</code> on cluster-Y would also merge, and nobody asked for that.</p>
 
-<p>Gloo Mesh wraps Istio with a tenancy layer. A <code>Workspace</code> is a named set of <i>(cluster, namespaces)</i> tuples — the units that belong to one team or policy boundary. Federation only happens <i>within</i> a Workspace (or between Workspaces that explicitly import/export each other).</p>
+<p>Solo's management plane wraps Istio with a tenancy layer. A <code>Workspace</code> is a named set of <i>(cluster, namespaces)</i> tuples — the units that belong to one team or policy boundary. Federation only happens <i>within</i> a Workspace (or between Workspaces that explicitly import/export each other).</p>
 
 <h3>The four resources you need</h3>
 
@@ -1001,7 +1001,7 @@ remote:
   <li><b>edge</b> gets the chatbot frontend + a kagent-ui Service stub</li>
 </ul>
 
-<h3><span class="step-num">8</span>M08 — Gloo Mesh management plane</h3>
+<h3><span class="step-num">8</span>M08 — Solo management plane</h3>
 <p>Adds the <code>gloo-platform</code> helm repo (GCS-hosted, not OCI), installs <code>gloo-platform-crds</code> + <code>gloo-platform</code> on bank with mgmt-server enabled, then <code>gloo-platform-crds</code> + agent on edge and vendor. Copies the relay-root-tls-secret + relay-identity-token-secret from bank to the workload clusters so the agents can bootstrap trust.</p>
 
 <div class="callout"><b>Three gotchas in this phase:</b><br>
@@ -1319,13 +1319,13 @@ $ kubectl --context=kind-trustusbank-edge -n trustusbank-bank-agents exec deploy
     }), hbone_mtls_port: 15008
   } not found"</pre>
 
-<p>Gloo Mesh's federation discovery had unioned the local FQDN into the global <code>ServiceEntry</code> for <code>kagent-ui</code>, so ztunnel decided to forward the packet to <i>bank's east/west gateway</i> instead of the local pod. Bank's east/west GW hostname couldn't be resolved on edge — connection reset.</p>
+<p>Solo's federation discovery had unioned the local FQDN into the global <code>ServiceEntry</code> for <code>kagent-ui</code>, so ztunnel decided to forward the packet to <i>bank's east/west gateway</i> instead of the local pod. Bank's east/west GW hostname couldn't be resolved on edge — connection reset.</p>
 
 <p>Two-step fix on edge:</p>
 
 <ol>
   <li>Drop <code>solo.io/service-scope=global</code> from <code>trustusbank-platform</code> — edge's kagent stack is local-only.</li>
-  <li>Delete the existing autogen entries so the bad union is removed; Gloo Mesh's discovery loop won't recreate them now that the namespace isn't global.</li>
+  <li>Delete the existing autogen entries so the bad union is removed; the Solo management plane's discovery loop won't recreate them now that the namespace isn't global.</li>
 </ol>
 
 <details class="yaml"><summary>scripts/multi/10-fix-federation-hijack.sh</summary>
