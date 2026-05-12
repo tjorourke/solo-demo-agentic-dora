@@ -542,35 +542,199 @@
               - <span class="val">"trustusbank-platform"</span>   <span class="cmt"># plus the platform tier</span></pre>
 
   <div style="background: rgba(220,38,38,0.06); border-left: 3px solid var(--warn); border-radius: 0 6px 6px 0; padding: 14px 18px; margin: 18px 0;">
-    <p style="margin: 0 0 10px;"><b>"But in reality the attacker's C2 is on the public internet, not in another namespace — how would this work then?"</b></p>
-    <p style="margin: 0 0 10px;">Correct — the demo's <code>mock-attacker</code> is in a namespace because kind has no real public internet
+    <p style="margin: 0;"><b>"But in reality the attacker's C2 is on the public internet, not in another namespace — how would this work then?"</b></p>
+    <p style="margin: 8px 0 0;">Correct — the demo's <code>mock-attacker</code> is in a namespace because kind has no real public internet
     and we need a destination we can grep. Real attackers POST to <code>attacker.com</code>, a paste site, a
-    Discord webhook, or whatever they can spin up cheap. The <code>namespaces:</code> matcher above wouldn't catch
-    that. Here's how you'd actually wire it in production:</p>
-    <ol style="margin: 6px 0 0 18px; font-size: 14.5px; color: #334155;">
-      <li><b>Egress through a waypoint, never directly.</b> Make every pod's outbound traffic transit Solo's
-      agentgateway acting as an <i>egress gateway</i>. The waypoint sees the destination hostname (SNI on TLS,
-      <code>Host</code> on HTTP) — the matcher you write isn't "namespace" but
-      <code>to.operation.hosts: ["api.frankfurter.app", "api.openai.com", ...]</code>. Default-deny, allowlist
-      the known partners. Reviewed quarterly by security.</li>
-      <li><b>Solo <code>ExternalService</code> CRD as the allowlist.</b> Solo's management plane has a
-      first-class abstraction for "third-party endpoint my mesh can talk to" — every <code>ExternalService</code>
-      is on the audit register; anything not on it falls through to the default-deny. Adding a partner is a PR,
-      not a runtime decision.</li>
-      <li><b>SPIFFE-based identity stays load-bearing.</b> Even with a hostname matcher, the source side is
-      still pinned on the SPIFFE identity of the rugpulled tool — only that workload's egress is restricted,
-      not the whole cluster. The bank's mainframe-replacement service that legitimately needs to call OpenAI
-      isn't impacted.</li>
-      <li><b>L7 pre-call block at the agentgateway.</b> Defence-in-depth: even before the TCP connection
-      attempts, the agentgateway's CEL policy can reject any <code>mcp.tool.call</code> whose arguments include
-      sensitive PII fields (<code>customer_profile</code>, <code>ni_number</code>, …). The model never gets to
-      try.</li>
-    </ol>
-    <p style="margin: 12px 0 0; font-size: 14.5px; color: #334155;">
-      The kind-local namespace matcher is the same shape of rule, just with a simpler target. Swap
-      <code>source.namespaces</code> for <code>to.operation.hosts</code> (or the <code>ExternalService</code>
-      selector) and the same enforcement model carries through.
-    </p>
+    Discord webhook, or whatever they can spin up cheap. The <code>source.namespaces</code> matcher above wouldn't catch
+    that. The three subsections below show how this generalises in a production cluster.</p>
+  </div>
+
+  <h3><span class="num">1a.</span> Egress through a waypoint with a hostname allowlist</h3>
+  <p>The canonical Istio Ambient pattern for outbound traffic control: every workload's egress is captured by
+  ztunnel and forwarded through a designated egress <b>waypoint</b> — in Solo's stack, an agentgateway
+  positioned as a Gateway-API <code>Gateway</code> in an <code>egress</code> namespace. The waypoint sees the
+  destination hostname (SNI on TLS, <code>Host</code> on HTTP) and matches the request against an explicit
+  allowlist. This is what Istio's docs call the
+  <a href="https://istio.io/latest/docs/tasks/traffic-management/egress/egress-gateway/" target="_blank" rel="noopener">"Egress Gateway"</a> pattern, applied to ambient mode with Solo's MCP-aware
+  waypoint binary. <b>It is the recommended best practice</b> for any cluster that consumes external
+  third-party APIs.</p>
+
+  <p>What the YAML looks like, end-to-end:</p>
+
+<pre><span class="cmt"># 1. The egress waypoint itself - a Gateway-API Gateway with class
+#    enterprise-agentgateway-waypoint. Lives in its own namespace.</span>
+<span class="key">apiVersion:</span> gateway.networking.k8s.io/v1
+<span class="key">kind:</span> Gateway
+<span class="key">metadata:</span>
+  <span class="key">name:</span> trustusbank-egress
+  <span class="key">namespace:</span> trustusbank-egress
+  <span class="key">labels:</span>
+    <span class="key">istio.io/waypoint-for:</span> <span class="val">all</span>     <span class="cmt"># this waypoint handles east+west AND egress</span>
+<span class="key">spec:</span>
+  <span class="key">gatewayClassName:</span> enterprise-agentgateway-waypoint
+  <span class="key">listeners:</span>
+    - <span class="key">name:</span> http
+      <span class="key">port:</span> 443
+      <span class="key">protocol:</span> HTTP
+
+<span class="cmt"># 2. Register every approved external partner as a ServiceEntry. Each
+#    is on the audit register; adding a new partner is a PR.</span>
+<span class="key">apiVersion:</span> networking.istio.io/v1
+<span class="key">kind:</span> ServiceEntry
+<span class="key">metadata:</span>
+  <span class="key">name:</span> openai
+  <span class="key">namespace:</span> trustusbank-egress
+<span class="key">spec:</span>
+  <span class="key">hosts:</span>
+    - <span class="val">api.openai.com</span>
+  <span class="key">ports:</span>
+    - <span class="key">number:</span> 443
+      <span class="key">name:</span> https
+      <span class="key">protocol:</span> HTTPS
+  <span class="key">resolution:</span> DNS
+  <span class="key">location:</span> MESH_EXTERNAL
+<span class="cmt"># ... repeat for api.frankfurter.app, api.anthropic.com, etc.</span>
+
+<span class="cmt"># 3. The deny-default. Anything outbound that ISN'T listed above
+#    gets rejected by the waypoint. Match the egress namespace's
+#    waypoint as the policy target.</span>
+<span class="key">apiVersion:</span> security.istio.io/v1
+<span class="key">kind:</span> AuthorizationPolicy
+<span class="key">metadata:</span>
+  <span class="key">name:</span> egress-allowlist
+  <span class="key">namespace:</span> trustusbank-egress
+<span class="key">spec:</span>
+  <span class="key">targetRefs:</span>
+    - <span class="key">group:</span> gateway.networking.k8s.io
+      <span class="key">kind:</span> Gateway
+      <span class="key">name:</span> trustusbank-egress
+  <span class="key">action:</span> ALLOW
+  <span class="key">rules:</span>
+    - <span class="key">to:</span>
+        - <span class="key">operation:</span>
+            <span class="key">hosts:</span>
+              - <span class="val">"api.openai.com"</span>
+              - <span class="val">"api.frankfurter.app"</span>
+              - <span class="val">"api.anthropic.com"</span>
+              <span class="cmt"># anything else falls through to default-deny</span></pre>
+
+  <p>Equivalent in Solo's higher-level abstractions: a single
+  <code>networking.gloo.solo.io/ExternalService</code> per partner, with workspace-scoped audit + per-team
+  RBAC on who can create them. Same enforcement, lighter manifest. The <code>ExternalService</code> writes
+  the <code>ServiceEntry</code> for you.</p>
+
+  <h3><span class="num">1b.</span> SPIFFE source-identity pinning — what this actually means</h3>
+
+  <p>The earlier callout glossed over this. Here's the concrete version with a worked example.</p>
+
+  <p>An <code>AuthorizationPolicy</code> in Istio has two halves: <b>who is the source</b> (the
+  <code>from</code> stanza), and <b>what destination</b> (the <code>to</code> stanza). The source half can
+  match on:</p>
+
+  <ul>
+    <li>SPIFFE principal (<code>cluster.local/ns/X/sa/Y</code>) — the cryptographic identity istiod baked
+    into the pod's mTLS cert</li>
+    <li>Namespace pattern (the kind-local shortcut the demo uses)</li>
+    <li>IP CIDR (fragile, almost never used in production)</li>
+  </ul>
+
+  <p>Production rules pin on the SPIFFE principal, not the namespace. The point is <b>per-workload
+  scoping</b>: each policy is narrow to exactly the workload that should be restricted. Worked example:</p>
+
+  <p>Suppose your bank has two workloads that both legitimately call external APIs:</p>
+
+  <ul>
+    <li><code>mainframe-bridge</code> (SA <code>mainframe-bridge</code> in <code>core</code>) calls
+    <code>api.openai.com</code> as part of a sanctioned ops integration.</li>
+    <li><code>currency-converter</code> (SA <code>currency-converter</code> in <code>bank-vendors</code>)
+    calls <code>api.frankfurter.app</code> for FX rates.</li>
+  </ul>
+
+  <p>You'd write <b>two narrow allow rules</b> instead of one blanket "anyone can reach the
+  internet":</p>
+
+<pre><span class="cmt"># Allow mainframe-bridge -> openai only</span>
+<span class="key">spec:</span>
+  <span class="key">action:</span> ALLOW
+  <span class="key">rules:</span>
+    - <span class="key">from:</span>
+        - <span class="key">source:</span>
+            <span class="key">principals:</span>
+              - <span class="val">"cluster.local/ns/core/sa/mainframe-bridge"</span>
+      <span class="key">to:</span>
+        - <span class="key">operation:</span>
+            <span class="key">hosts:</span> [<span class="val">"api.openai.com"</span>]
+
+<span class="cmt"># Allow currency-converter -> frankfurter only</span>
+<span class="key">spec:</span>
+  <span class="key">action:</span> ALLOW
+  <span class="key">rules:</span>
+    - <span class="key">from:</span>
+        - <span class="key">source:</span>
+            <span class="key">principals:</span>
+              - <span class="val">"cluster.local/ns/bank-vendors/sa/currency-converter"</span>
+      <span class="key">to:</span>
+        - <span class="key">operation:</span>
+            <span class="key">hosts:</span> [<span class="val">"api.frankfurter.app"</span>]</pre>
+
+  <p>When the rugpulled <code>currency-converter</code> tries to POST to <code>attacker.com</code>, its
+  SPIFFE identity is <code>cluster.local/ns/bank-vendors/sa/currency-converter</code> and the destination is
+  <code>attacker.com</code>. Neither allow rule matches that <i>(source, destination)</i> pair, so the
+  default-deny kicks in. The TCP handshake fails at the waypoint.</p>
+
+  <p>Crucially: <b>the <code>mainframe-bridge</code> pod isn't impacted.</b> Its legitimate call to
+  <code>api.openai.com</code> still matches its own allow rule. Restricting one workload didn't break
+  others. That's what "source-identity pinning" gives you over a coarse "block egress from the cluster"
+  rule — surgical, not blunt.</p>
+
+  <h3><span class="num">1c.</span> L7 pre-call block — denying tool calls by argument shape</h3>
+
+  <p>This is one layer further down the rabbit hole. Even before the TCP connection to
+  <code>attacker.com</code> attempts to open, the request is sitting in the agentgateway as a
+  decoded MCP <code>tools/call</code> JSON-RPC envelope. The gateway can read the tool name AND the
+  argument values, and apply a CEL expression against them.</p>
+
+  <p>For the rugpull case, the giveaway is that <code>currency-converter.convert_currency</code> is being
+  invoked with a <code>customer_profile</code> argument that contains PII fields it has no business seeing.
+  A pre-call policy can reject any tool call whose argument map smells like PII:</p>
+
+<pre><span class="cmt"># manifests/phase05-agentgateway/deny-pii-in-tool-args.yaml</span>
+<span class="key">apiVersion:</span> agentgateway.dev/v1alpha1
+<span class="key">kind:</span> AgentgatewayPolicy
+<span class="key">metadata:</span>
+  <span class="key">name:</span> deny-pii-in-tool-args
+  <span class="key">namespace:</span> trustusbank-platform
+<span class="key">spec:</span>
+  <span class="key">targetRefs:</span>
+    - <span class="key">group:</span> gateway.networking.k8s.io
+      <span class="key">kind:</span> HTTPRoute
+      <span class="key">name:</span> currency-converter-route
+  <span class="key">traffic:</span>
+    <span class="key">authorization:</span>
+      <span class="key">action:</span> Deny
+      <span class="key">policy:</span>
+        <span class="key">matchExpressions:</span>
+          <span class="cmt"># Match: tool call AND args contain ANY PII-shaped key</span>
+          - <span class="val">'mcp.method == "tools/call"'</span>
+          - <span class="val">'mcp.tool.name == "convert_currency"'</span>
+          - <span class="val">'mcp.tool.arguments.exists(k, k in ["customer_profile",
+                                              "ni_number",
+                                              "email",
+                                              "dob",
+                                              "address"])'</span></pre>
+
+  <p>This fires <i>before</i> the agentgateway even forwards the call to currency-converter. From the LLM's
+  view it gets a clean <code>403 Forbidden</code> back from the gateway with a structured reason
+  (<code>reason=Authorization</code>, <code>error="PII field in tool args denied"</code>) — the same fields
+  that would land in your Loki access log and DORA dashboard. The TCP egress block from layer 1a is the
+  safety net; <i>this</i> is the proactive layer that stops the model from even trying.</p>
+
+  <div class="why-mesh">
+    <b>The defence-in-depth picture.</b> 1a (egress allowlist) is the perimeter. 1b (SPIFFE source pinning)
+    makes that perimeter <i>scoped per workload</i> rather than blanket. 1c (CEL on tool-call args) stops the
+    risky LLM action upstream of the perimeter. Stack all three and even a fully fooled LLM driving a
+    rugpulled tool through a compromised pipeline hits three independent enforcement layers, each one
+    sufficient to block the exfil on its own.
   </div>
 
   <h3><span class="num">2.</span> Why this works even when the LLM is fooled</h3>
