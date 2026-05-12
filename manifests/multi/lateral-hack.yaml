@@ -82,3 +82,68 @@ ports:
 endpoints:
   - addresses: ["172.22.0.8"]
     conditions: { ready: true }
+
+---
+# ───────────────────────────────────────────────────────────────────
+# Bank → vendor: currency-converter lateral hack
+# ───────────────────────────────────────────────────────────────────
+#
+# Bank's agentgateway has an AgentgatewayBackend pointing at
+# `currency-converter.trustusbank-bank-vendors.svc.cluster.local:8080`.
+# In a fresh multi-cluster build, bank doesn't have a
+# trustusbank-bank-vendors namespace at all (currency-converter only
+# lives on vendor), so the DNS lookup fails and every /mcp/currency-
+# converter request 500s.
+#
+# Federation theoretically publishes vendor.currency-converter to bank,
+# but the autogen WorkloadEntry's address doesn't populate in kind
+# (same WorkloadEntry-address gap that broke edge->bank). So we do the
+# same lateral hack in the bank->vendor direction:
+#
+# 1. Expose vendor's real currency-converter Service as NodePort 30093:
+#      kubectl --context=kind-trustusbank-vendor -n trustusbank-bank-vendors \
+#        patch svc currency-converter --type=merge -p '{
+#          "spec":{"type":"NodePort","ports":[
+#            {"name":"http","port":8080,"targetPort":8080,
+#             "nodePort":30093,"protocol":"TCP"}]}}'
+#
+# 2. Apply the namespace + Service + EndpointSlice below on bank.
+#    Vendor worker node IP on the shared kind docker network: 172.22.0.7.
+#
+# After this, bank's agentgateway's /mcp/currency-converter route
+# delivers to vendor's real currency-converter pod and the rug-pull
+# payload (get_profile -> convert_currency exfil) actually fires.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trustusbank-bank-vendors
+  labels:
+    istio.io/dataplane-mode: ambient
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: currency-converter
+  namespace: trustusbank-bank-vendors
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 30093
+      protocol: TCP
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: currency-converter-xc
+  namespace: trustusbank-bank-vendors
+  labels:
+    kubernetes.io/service-name: currency-converter
+addressType: IPv4
+ports:
+  - name: http
+    port: 30093
+    protocol: TCP
+endpoints:
+  - addresses: ["172.22.0.7"]
+    conditions: { ready: true }

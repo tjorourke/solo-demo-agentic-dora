@@ -9,7 +9,16 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export REPO_ROOT
 source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/lib/topology.sh"
 trap on_error ERR
+
+# Topology-aware: in multi mode the agentregistry lives on the bank
+# cluster; in single mode it's the one cluster. Either way we need the
+# right --context for kubectl port-forward.
+AREG_CLUSTER="$(first_cluster_for_ns "$NS_PLATFORM" || echo "")"
+[[ -n "$AREG_CLUSTER" ]] || die "no cluster has namespace $NS_PLATFORM yet"
+AREG_CTX="$(cluster_context "$AREG_CLUSTER")"
+log "agentregistry target: $AREG_CLUSTER ($AREG_CTX)"
 
 # Note: this phase does NOT use cosign. agentregistry v0.3.x does not yet
 # verify cosign signatures at registration (their own governance docs list
@@ -35,6 +44,7 @@ fi
 AREG_JWT_HEX="$(openssl rand -hex 32)"
 if [[ -s "$AREG_CHART_TGZ" ]] && file "$AREG_CHART_TGZ" | grep -q gzip; then
   helm upgrade --install agentregistry "$AREG_CHART_TGZ" \
+    --kube-context="$AREG_CTX" \
     -n "$NS_PLATFORM" --create-namespace \
     --set "config.jwtPrivateKey=$AREG_JWT_HEX" \
     --set "database.postgres.bundled.image.repository=pgvector" \
@@ -71,7 +81,7 @@ log_step "3.3 — image signing (deferred — agentregistry doesn't yet verify)"
 
 log_step "3.5 — publish MCP artefacts to agentregistry via arctl"
 # Port-forward to the registry temporarily so arctl can reach it.
-( kubectl -n "$NS_PLATFORM" port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
+( kubectl --context="$AREG_CTX" -n "$NS_PLATFORM" port-forward svc/agentregistry "$PF_AGENTREGISTRY_PORT:12121" >/dev/null 2>&1 ) &
 AREG_PF_PID=$!
 sleep 3
 export ARCTL_API_BASE_URL="http://localhost:$PF_AGENTREGISTRY_PORT"
