@@ -57,7 +57,6 @@ maybe_pfc "$OBS_CL" "$NS_OBS" "svc/kube-prometheus-stack-alertmanager" "$PF_ALER
 
 # Platform (bank cluster in multi mode)
 PLAT_CL="${BANK_CLUSTER}"
-maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/keycloak"                "$PF_KEYCLOAK_PORT"     8080  "Keycloak"
 maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/agentregistry"           "$PF_AGENTREGISTRY_PORT" 12121 "agentregistry"
 maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/kagent-ui"               "$PF_KAGENT_PORT"       8080  "kagent UI"
 maybe_pfc "$PLAT_CL" "$NS_PLATFORM" "svc/kagent-controller"       "$PF_KAGENT_CONTROLLER_PORT" 8083 "kagent-controller (A2A)"

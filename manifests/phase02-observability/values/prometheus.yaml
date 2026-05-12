@@ -4,6 +4,9 @@ grafana:
   service:
     type: ClusterIP
   defaultDashboardsEnabled: true
+  resources:
+    requests: { memory: 128Mi, cpu: 50m }
+    limits:   { memory: 256Mi }
   sidecar:
     dashboards:
       enabled: true
@@ -30,7 +33,24 @@ prometheus:
   prometheusSpec:
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
-    retention: 30d
+    # Demo retention — was 30d, which is wasteful on a laptop kind cluster.
+    retention: 6h
+    retentionSize: 512MB
+    resources:
+      requests: { memory: 256Mi, cpu: 100m }
+      limits:   { memory: 512Mi }
 
+prometheusOperator:
+  resources:
+    requests: { memory: 64Mi, cpu: 25m }
+    limits:   { memory: 128Mi }
+
+# Disable alerting in dev — saves ~150 MB.
 alertmanager:
-  enabled: true
+  enabled: false
+
+# Node-level metrics aren't useful for the agentic demo. Disable to save ~150 MB.
+prometheus-node-exporter:
+  enabled: false
+kube-state-metrics:
+  enabled: false

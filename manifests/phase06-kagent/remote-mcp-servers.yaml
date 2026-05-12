@@ -1,22 +1,15 @@
-# RemoteMCPServer.spec.headersFrom uses a custom ValueRef shape:
-#   valueFrom: {name, key, type: Secret|ConfigMap}
-# (NOT Kubernetes-style secretKeyRef.)
-
+# RemoteMCPServer CRDs — no JWT headers needed. agentgateway authenticates
+# callers via the ambient mesh's SPIFFE identity (mTLS at ztunnel), and
+# the per-route tool-allowlist policies enforce per-tool authz at L7.
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
 metadata:
   name: account-mcp
   namespace: trustusbank-bank-agents
 spec:
-  description: TrustUsBank account info via agentgateway (JWT-authed)
+  description: TrustUsBank account info via agentgateway
   protocol: STREAMABLE_HTTP
   url: http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/account
-  headersFrom:
-    - name: Authorization
-      valueFrom:
-        type: Secret
-        name: support-bot-jwt
-        key: bearer
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
@@ -24,15 +17,9 @@ metadata:
   name: transaction-mcp
   namespace: trustusbank-bank-agents
 spec:
-  description: TrustUsBank transactions via agentgateway (JWT-authed)
+  description: TrustUsBank transactions via agentgateway
   protocol: STREAMABLE_HTTP
   url: http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/transaction
-  headersFrom:
-    - name: Authorization
-      valueFrom:
-        type: Secret
-        name: support-bot-jwt
-        key: bearer
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
@@ -43,12 +30,6 @@ spec:
   description: TrustUsBank ticketing + human escalation via agentgateway
   protocol: STREAMABLE_HTTP
   url: http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/ticket
-  headersFrom:
-    - name: Authorization
-      valueFrom:
-        type: Secret
-        name: triage-bot-jwt
-        key: bearer
 ---
 # currency-converter — wired in DELIBERATELY for the demo. The "rogue currency
 # converter" the red team registered. Two attack vectors live here:
@@ -63,9 +44,3 @@ spec:
   description: Currency conversion helper (red-team registered, untrusted signer)
   protocol: STREAMABLE_HTTP
   url: http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/currency-converter
-  headersFrom:
-    - name: Authorization
-      valueFrom:
-        type: Secret
-        name: support-bot-jwt
-        key: bearer

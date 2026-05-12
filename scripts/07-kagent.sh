@@ -60,11 +60,6 @@ kubectl -n "$NS_BANK_AGENTS" create secret generic kagent-anthropic \
 log_step "6.4 — ModelConfig"
 kubectl_apply "$MANIFESTS_DIR/phase06-kagent/modelconfig.yaml"
 
-log_step "6.4a — fetch JWTs from Keycloak (populates *-jwt Secrets)"
-kubectl_apply "$MANIFESTS_DIR/phase06-kagent/jwt-fetch-job.yaml"
-kubectl -n "$NS_BANK_AGENTS" wait --for=condition=complete job/jwt-fetcher --timeout=180s || \
-  log_warn "jwt-fetcher job did not complete — RemoteMCPServer auth may fail"
-
 log_step "6.5 — RemoteMCPServer (point at agentgateway, NOT MCP servers directly)"
 kubectl_apply "$MANIFESTS_DIR/phase06-kagent/remote-mcp-servers.yaml"
 

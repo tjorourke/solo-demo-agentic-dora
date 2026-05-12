@@ -230,7 +230,7 @@
       <div class="ns">trustusbank-bank-mcp</div>
       <ul><li>account · transaction · ticket MCP</li><li>waypoint (L7)</li></ul>
       <div class="ns">trustusbank-platform</div>
-      <ul><li>agentgateway · agentregistry</li><li>kagent ctrl · Keycloak</li></ul>
+      <ul><li>agentgateway · agentregistry</li><li>kagent ctrl</li></ul>
       <div class="ns">trustusbank-observability</div>
       <ul><li>Prom · Loki · Tempo · Grafana · OTel</li></ul>
     </div>
@@ -302,7 +302,7 @@
 <tr><td><code>istio-system</code></td><td>istiod, istio-cni, ztunnel</td><td>Ambient control + data plane</td></tr>
 <tr><td><code>istio-eastwest</code></td><td>istio-eastwest GW (local) + 2 peer Gateways (peer-edge, peer-vendor)</td><td>Inbound + outbound peer references</td></tr>
 <tr><td><code>gloo-mesh</code></td><td><b>gloo-mesh-mgmt-server</b>, redis, UI, telemetry-gateway, telemetry-collector × N, prometheus-server, gloo-mesh-agent</td><td>The Gloo Mesh management plane lives here</td></tr>
-<tr><td><code>trustusbank-platform</code></td><td>agentgateway, trustusbank-agentgw, agentregistry + postgres, kagent-controller, kagent-ui, kagent-kmcp-controller-manager, kagent-postgresql, keycloak</td><td>MCP wire + catalog + agent control plane + JWT issuer</td></tr>
+<tr><td><code>trustusbank-platform</code></td><td>agentgateway, trustusbank-agentgw, agentregistry + postgres, kagent-controller, kagent-ui, kagent-kmcp-controller-manager, kagent-postgresql</td><td>MCP wire + catalog + agent control plane. Authentication moved from Keycloak-issued JWTs to mesh-native SPIFFE identity at the waypoint.</td></tr>
 <tr><td><code>trustusbank-bank-agents</code> <small>ambient</small></td><td>support-bot, fraud-bot, triage-bot (each as a <code>kagent</code> <code>Agent</code> CRD that spawns a Pod)</td><td>The three agents that run the demo's flow</td></tr>
 <tr><td><code>trustusbank-bank-mcp</code> <small>ambient</small></td><td>account-mcp, transaction-mcp, ticket-mcp, waypoint</td><td>Three internal MCP tool servers + L7 waypoint</td></tr>
 <tr><td><code>trustusbank-observability</code></td><td>prometheus, grafana, loki, tempo, mailhog, alertmanager, otel-collector, promtail (DS), node-exporter (DS), kube-state-metrics</td><td>Single observability stack for all 3 clusters</td></tr>
@@ -513,7 +513,7 @@ spec:
 <tbody>
 <tr><td><code>Agent</code></td><td>kagent.dev/v1alpha2</td><td>An LLM-backed agent. <code>type: Declarative</code> = systemMessage + tools list, kagent generates a Deployment + Service. <code>type: BYO</code> = bring your own image. Schema enforces <code>replicas: minimum 1</code> on Declarative.</td></tr>
 <tr><td><code>ModelConfig</code></td><td>kagent.dev/v1alpha2</td><td>LLM provider + model + API key reference. Demo uses <code>anthropic-haiku</code>.</td></tr>
-<tr><td><code>RemoteMCPServer</code></td><td>kagent.dev/v1alpha2</td><td>External MCP server reference. URL + optional Authorization headers (JWT from Keycloak).</td></tr>
+<tr><td><code>RemoteMCPServer</code></td><td>kagent.dev/v1alpha2</td><td>External MCP server reference. URL only — the mesh authenticates the caller via SPIFFE at the waypoint, so no Authorization header is needed.</td></tr>
 <tr><td><code>MCPServer</code></td><td>kagent.dev</td><td>In-cluster MCP server (uses local image, alternative to RemoteMCPServer).</td></tr>
 <tr><td><code>SandboxAgent</code></td><td>kagent.dev</td><td>Sandboxed agent execution (not used in demo).</td></tr>
 <tr><td><code>ToolServer</code></td><td>kagent.dev</td><td>Lower-level alternative to RemoteMCPServer.</td></tr>
@@ -553,26 +553,22 @@ spec:
       - type: Agent
         agent: { name: fraud-bot }</pre></details>
 
-<details class="yaml"><summary>example — RemoteMCPServer pointing at agentgateway with a JWT header</summary>
+<details class="yaml"><summary>example — RemoteMCPServer pointing at agentgateway (no JWT — mesh authenticates via SPIFFE)</summary>
 <pre>apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
 metadata:
   name: account-mcp
   namespace: trustusbank-bank-agents
 spec:
-  description: TrustUsBank account info via agentgateway (JWT-authed)
+  description: TrustUsBank account info via agentgateway
   protocol: STREAMABLE_HTTP
   url: http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/mcp/account
-  headersFrom:
-    - name: Authorization
-      valueFrom:
-        type: Secret
-        name: support-bot-jwt    # populated by the jwt-fetcher Job from Keycloak
-        key: bearer</pre></details>
+  # No headersFrom block — the caller's SPIFFE identity is verified by ztunnel
+  # at the mTLS layer, and the waypoint enforces per-agent authz on it.</pre></details>
 
 <h3>Group E: agentgateway</h3>
 
-<p>agentgateway is Solo's MCP-aware data-plane proxy. It sits between the kagent agents and the MCP servers, terminating MCP, validating JWTs, enforcing per-agent tool allowlists. It's programmed by Gateway API CRDs plus a small set of its own.</p>
+<p>agentgateway is Solo's MCP-aware data-plane proxy. It sits between the kagent agents and the MCP servers, terminating MCP and enforcing per-route tool allowlists via CEL. Caller authentication comes from the mesh (SPIFFE identity at the waypoint), not from JWT headers. Programmed by Gateway API CRDs plus a small set of its own.</p>
 
 <table class="inv">
 <colgroup><col class="k-kind"><col class="k-group"><col></colgroup>
@@ -636,12 +632,15 @@ metadata:
 spec:
   targetRefs: [{ group: gateway.networking.k8s.io, kind: HTTPRoute,
                  name: account-mcp-route }]
-  mcpAuthorization:
-    rules:
-      - if: 'jwt.sub == "support-bot"'
-        allow: { tools: [get_balance, get_profile] }
-      - if: 'jwt.sub == "fraud-bot"'
-        allow: { tools: [get_profile] }</pre></details>
+  traffic:
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+          - 'mcp.tool.name == "get_balance"'
+          - 'mcp.tool.name == "get_profile"'
+          - 'mcp.method == "tools/list"'
+          - 'mcp.method == "initialize"'</pre></details>
 
 <hr>
 
