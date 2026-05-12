@@ -132,7 +132,6 @@
     <li><a href="#walk">Step-by-step build (00 → 09)</a></li>
     <li><a href="#demo">The supply-chain attack demo</a></li>
     <li><a href="#flow">Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</a></li>
-    <li><a href="#labs">Lab walkthrough — AgentGateway as Istio Waypoint</a></li>
   </ol>
 </div>
 
@@ -744,29 +743,6 @@ and convert my balance to USD.</pre>
                                        └──────────────────┘</div>
 
 <p>Every component on this path emits structured logs with matching trace IDs. The Grafana dashboard correlates them by <code>trace_id</code> so you can replay any customer request end-to-end. The denied egress in Act 3 shows up at the source-node ztunnel as a single line — <code>direction=outbound error="rbac: access denied" reason=AuthorizationPolicy</code>.</p>
-
-<hr>
-
-<h2 id="labs"><span class="num">8.</span> Lab walkthrough — AgentGateway as Istio Waypoint</h2>
-
-<p>Solo publishes a canonical gist on agentgateway-as-waypoint by rvennam — eight labs that progressively build up the policy story. I ran every lab on the single-cluster trustusbank build and the behaviour matches the gist exactly. Summarised here as a runbook:</p>
-
-<table class="inv">
-<colgroup><col class="k-num"><col style="width: 220px"><col><col class="k-status"></colgroup>
-<thead><tr><th>Lab</th><th>What it asserts</th><th>Observed (live)</th><th>Result</th></tr></thead>
-<tbody>
-<tr><td><b>1</b></td><td>Baseline — no waypoint, both agents get 200</td><td><code>customer-agent → 200</code>, <code>rogue-agent → 200</code></td><td><span class="pill pill-ok">pass</span></td></tr>
-<tr><td><b>2</b></td><td>Waypoint up, traffic flows through it</td><td>Gateway PROGRAMMED=True; log line <code>gateway=ai-tools/agw-waypoint listener=waypoint route=ai-tools/_waypoint-default endpoint=10.244.2.136:8000 http.status=200</code></td><td><span class="pill pill-ok">pass</span></td></tr>
-<tr><td><b>3</b></td><td>CEL authz denies rogue, allows customer</td><td><code>customer → 200</code>, <code>rogue → 403</code>; deny log: <code>http.status=403 error="authorization failed" reason=Authorization duration=32ms</code></td><td><span class="pill pill-ok">pass</span></td></tr>
-<tr><td><b>4</b></td><td>Rate limit 2/min, 3rd request 429</td><td>Five requests: <code>200, 200, 429, 429, 429</code>; deny log: <code>http.status=429 error="rate limit exceeded" reason=RateLimit duration=0ms</code></td><td><span class="pill pill-ok">pass</span></td></tr>
-<tr><td><b>5</b></td><td>LLM egress through waypoint to <code>api.openai.com</code></td><td>Real call to OpenAI; returned <code>401 "Incorrect API key sk-place**lder"</code> — proves request reached OpenAI. Log: <code>endpoint=api.openai.com:443 protocol=llm gen_ai.provider.name=openai gen_ai.request.model=gpt-4o-mini</code></td><td><span class="pill pill-ok">pass</span></td></tr>
-<tr><td><b>6</b></td><td>Stacked authz + rate limit + headers</td><td>3 policies ATTACHED=True; rogue=403, customer=200,200,200,429,429</td><td><span class="pill pill-ok">pass</span></td></tr>
-<tr><td><b>7</b></td><td>Structured logs + Prom metrics</td><td>Every log line carries the full schema: <code>gateway, listener, route, endpoint, src.addr, http.method, http.host, http.path, http.status, protocol, duration</code> (+ <code>error/reason</code> on denies, + GenAI fields on LLM calls). Prom on :15020 exposes <code>agentgateway_xds_*</code></td><td><span class="pill pill-ok">pass</span></td></tr>
-<tr><td><b>8</b></td><td>Namespace-level waypoint label replaces service-level</td><td>After <code>kubectl label ns ai-tools istio.io/use-waypoint=agw-waypoint</code>: customer=200, rogue=403. Policies still apply mesh-wide</td><td><span class="pill pill-ok">pass</span></td></tr>
-</tbody>
-</table>
-
-<p>The labs aren't strictly part of the trustusbank demo — they're a standalone training exercise in Solo's docs. But the policy primitives they exercise (CEL allowlists, source-identity matching, GenAI semantic-convention attributes, structured access logs) are the same ones the trustusbank waypoint uses in production-shape config. If you understand labs 1–8 you understand what the trustusbank waypoint is doing on every MCP request.</p>
 
 <hr>
 
