@@ -152,117 +152,149 @@
 
 <p>Three kind clusters on the shared <code>kind</code> docker network. Each is an independent Kubernetes cluster, each runs its own Solo Istio Ambient control plane (<code>istiod</code>, <code>istio-cni</code>, <code>ztunnel</code>), and each has a distinct SPIFFE trust domain. They peer via an east/west Gateway per cluster (HBONE on TCP/15008, xDS on 15012) and are federated by a single Gloo Mesh management plane co-located on <code>bank</code>.</p>
 
-<!-- Cluster topology — proper interconnected layout with visible HBONE + relay lines. -->
+<!-- Cluster topology — mgmt plane co-located inside bank, clean SVG connectors. -->
 <style>
-  .topo { position: relative; margin: 28px 0; padding: 12px 0 8px; }
-  .topo .mgmt-banner { background: #faf5ff; border: 2px solid #c084fc; border-radius: 10px; padding: 14px 18px; max-width: 720px; margin: 0 auto 28px; position: relative; }
-  .topo .mgmt-banner .title { font-size: 14.5px; font-weight: 700; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
-  .topo .mgmt-banner .td { font-size: 12px; color: var(--muted); margin-bottom: 8px; font-family: ui-monospace, monospace; }
-  .topo .mgmt-banner ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; column-count: 2; column-gap: 24px; }
-  .topo .mgmt-banner li { break-inside: avoid; margin-bottom: 3px; }
-  .topo .row3 { display: grid; grid-template-columns: 1fr 50px 1fr 50px 1fr; align-items: stretch; gap: 0; }
-  .topo .row3 .conn { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #1cb5d3; font-family: ui-monospace, monospace; font-size: 11px; position: relative; }
-  .topo .row3 .conn::before { content: ""; position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: repeating-linear-gradient(to right, #1cb5d3 0 6px, transparent 6px 12px); transform: translateY(-50%); z-index: 0; }
-  .topo .row3 .conn .lbl { position: relative; z-index: 1; background: #fff; padding: 4px 8px; border: 1px solid #1cb5d3; border-radius: 12px; color: #0e7490; white-space: nowrap; }
-  .topo .cl { background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 10px; padding: 14px 16px; min-height: 100%; }
-  .topo .cl.edge   { border-color: #22d3ee; }
-  .topo .cl.bank   { border-color: #fbbf24; background: #fffbeb; }
-  .topo .cl.vendor { border-color: #f87171; background: #fef2f2; }
-  .topo .cl .title { font-size: 14.5px; font-weight: 700; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .topo .cl .td    { font-size: 12px; color: var(--muted); margin-bottom: 10px; font-family: ui-monospace, monospace; }
-  .topo .cl ul     { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
-  .topo .cl li     { margin-bottom: 2px; }
-  .topo .cl .ns    { font-weight: 600; font-size: 11.5px; margin-top: 10px; color: #475569; text-transform: uppercase; letter-spacing: 0.04em; }
-  .topo .relay-down { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; margin: 10px 0 0; }
-  .topo .relay-down .pipe { text-align: center; color: #c084fc; font-family: ui-monospace, monospace; font-size: 11px; }
-  .topo .relay-down .pipe::before { content: "│"; display: block; color: #c084fc; }
-  .topo .relay-down .pipe span { display: inline-block; padding: 2px 8px; background: #fff; border: 1px solid #c084fc; border-radius: 12px; color: #7c3aed; }
-  .topo .legend { margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; font-size: 12.5px; }
-  .topo .legend .item { background: #f8fafc; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px 12px; }
-  .topo .legend .item b { color: var(--ink); }
+  .topo2 { position: relative; margin: 28px 0 24px; }
+  .topo2 .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; position: relative; z-index: 1; }
+  .topo2 .cl {
+    background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px;
+    padding: 14px 16px; position: relative;
+    display: flex; flex-direction: column;
+  }
+  .topo2 .cl.edge   { border-color: #22d3ee; background: #ecfeff; }
+  .topo2 .cl.bank   { border-color: #fbbf24; background: #fffbeb; }
+  .topo2 .cl.vendor { border-color: #f87171; background: #fef2f2; }
+  .topo2 .cl .hdr { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .topo2 .cl .hdr .name { font-size: 15px; font-weight: 700; }
+  .topo2 .cl .td { font-size: 11.5px; color: var(--muted); margin-bottom: 12px; font-family: ui-monospace, monospace; line-height: 1.5; }
+  .topo2 .cl .ns { font-weight: 600; font-size: 10.5px; margin-top: 9px; color: #475569; text-transform: uppercase; letter-spacing: 0.06em; }
+  .topo2 .cl ul { margin: 3px 0 0; padding-left: 16px; font-size: 12.5px; }
+  .topo2 .cl li { margin-bottom: 2px; line-height: 1.4; }
+  .topo2 .cl .gwbar {
+    margin-top: 12px; padding: 5px 8px; border-radius: 6px;
+    background: rgba(28,181,211,0.12); border: 1px dashed #1cb5d3;
+    color: #0e7490; font-family: ui-monospace, monospace; font-size: 11px;
+    display: flex; justify-content: space-between; gap: 8px; align-items: center;
+  }
+  .topo2 .cl .gwbar .lbl { font-weight: 700; }
+  .topo2 .mgmt {
+    margin-top: 12px; padding: 10px 12px; border-radius: 8px;
+    background: #faf5ff; border: 2px solid #c084fc;
+    box-shadow: 0 0 0 3px rgba(192,132,252,0.10);
+  }
+  .topo2 .mgmt .mhdr {
+    display: flex; justify-content: space-between; align-items: center;
+    font-weight: 700; font-size: 12.5px; color: #6b21a8; margin-bottom: 3px;
+  }
+  .topo2 .mgmt .mhdr .tag {
+    font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase;
+    background: rgba(192,132,252,0.20); color: #6b21a8;
+    padding: 2px 7px; border-radius: 10px; font-weight: 700;
+  }
+  .topo2 .mgmt .mtd { font-family: ui-monospace, monospace; font-size: 10.5px; color: #7c3aed; margin-bottom: 5px; }
+  .topo2 .mgmt ul { margin: 2px 0 0; padding-left: 16px; font-size: 11.5px; color: #4c1d95; }
+  .topo2 .mgmt ul li { margin-bottom: 1px; }
+  .topo2 .relay-badge {
+    margin-top: 10px; padding: 5px 8px; border-radius: 6px;
+    background: rgba(192,132,252,0.10); border: 1px dashed #c084fc;
+    color: #7c3aed; font-family: ui-monospace, monospace; font-size: 11px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .topo2 .relay-badge .arr { color: #c084fc; font-weight: 700; }
+  .topo2 svg.lines {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 0;
+  }
+  .topo2 .legend { margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; font-size: 12.5px; }
+  .topo2 .legend .item { background: #f8fafc; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px 12px; }
+  .topo2 .legend .item .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .topo2 .legend .item.cyan .dot { background: #1cb5d3; }
+  .topo2 .legend .item.purple .dot { background: #c084fc; }
+  .topo2 .legend .item.green .dot { background: #22c55e; }
+  .topo2 .legend .item b { color: var(--ink); }
   @media (max-width: 900px) {
-    .topo .row3 { grid-template-columns: 1fr; }
-    .topo .row3 .conn { padding: 12px 0; }
-    .topo .row3 .conn::before { left: 50%; right: auto; top: 0; bottom: 0; width: 2px; height: auto; background: repeating-linear-gradient(to bottom, #1cb5d3 0 6px, transparent 6px 12px); transform: translateX(-50%); }
-    .topo .mgmt-banner ul { column-count: 1; }
-    .topo .relay-down { grid-template-columns: 1fr; }
-    .topo .legend { grid-template-columns: 1fr; }
+    .topo2 .row { grid-template-columns: 1fr; }
+    .topo2 .legend { grid-template-columns: 1fr; }
   }
 </style>
 
-<div class="topo">
-  <div class="mgmt-banner">
-    <div class="title"><span>Gloo Mesh management plane</span><span class="pill pill-mgmt">co-located on bank</span></div>
-    <div class="td">runs in bank's <code>gloo-mesh</code> namespace · relay gRPC :30416 (NodePort)</div>
-    <ul>
-      <li>gloo-mesh-mgmt-server + redis + UI</li>
-      <li>telemetry-gateway + telemetry-collectors</li>
-      <li><code>KubernetesCluster</code> × 3 (ACCEPTED)</li>
-      <li><code>Workspace</code> + <code>WorkspaceSettings</code> + <code>Segment</code></li>
-    </ul>
-  </div>
-
-  <!-- Vertical relay pipes from mgmt down to each cluster -->
-  <div class="relay-down">
-    <div class="pipe"><span>relay → edge agent</span></div>
-    <div class="pipe"><span>relay → bank agent (local)</span></div>
-    <div class="pipe"><span>relay → vendor agent</span></div>
-  </div>
-
-  <!-- Three clusters side-by-side with east/west HBONE connectors between them -->
-  <div class="row3">
+<div class="topo2">
+  <div class="row">
+    <!-- EDGE -->
     <div class="cl edge">
-      <div class="title"><span>cluster-edge</span> <span class="pill pill-edge">edge</span></div>
-      <div class="td">trust: edge.local<br>net: trustusbank-edge</div>
+      <div class="hdr"><span class="name">cluster-edge</span> <span class="pill pill-edge">edge</span></div>
+      <div class="td">trust: edge.local · net: trustusbank-edge</div>
+
       <div class="ns">trustusbank-bank-frontend</div>
       <ul><li>chatbot (nginx)</li></ul>
+
       <div class="ns">trustusbank-platform</div>
-      <ul><li>kagent-ui Service stub</li></ul>
-      <div class="ns">control + data plane</div>
-      <ul>
-        <li>istiod · ztunnel · istio-cni</li>
-        <li>istio-eastwest GW</li>
-        <li>gloo-mesh-agent</li>
-      </ul>
+      <ul><li>kagent-ui · controller (local)</li></ul>
+
+      <div class="ns">trustusbank-bank-agents</div>
+      <ul><li>support-bot (real pod)</li><li>fraud-bot · triage-bot (stubs)</li></ul>
+
+      <div class="ns">control plane</div>
+      <ul><li>istiod · ztunnel · istio-cni</li><li>gloo-mesh-agent</li></ul>
+
+      <div class="gwbar"><span class="lbl">istio-eastwest GW</span> <span>:15008 HBONE</span></div>
+      <div class="relay-badge"><span class="arr">↗</span> gloo-mesh-agent → bank :30416</div>
     </div>
 
-    <div class="conn"><span class="lbl">↔ HBONE :15008</span></div>
-
+    <!-- BANK -->
     <div class="cl bank">
-      <div class="title"><span>cluster-bank</span> <span class="pill pill-bank">bank · mgmt</span></div>
-      <div class="td">trust: bank.local<br>net: trustusbank-bank</div>
+      <div class="hdr"><span class="name">cluster-bank</span> <span class="pill pill-bank">bank · mgmt</span></div>
+      <div class="td">trust: bank.local · net: trustusbank-bank</div>
+
       <div class="ns">trustusbank-bank-agents</div>
-      <ul><li>support-bot · fraud-bot · triage-bot</li></ul>
+      <ul><li>fraud-bot · triage-bot (real)</li></ul>
+
       <div class="ns">trustusbank-bank-mcp</div>
       <ul><li>account · transaction · ticket MCP</li><li>waypoint (L7)</li></ul>
+
       <div class="ns">trustusbank-platform</div>
-      <ul><li>agentgateway · agentregistry</li><li>kagent ctrl</li></ul>
+      <ul><li>agentgateway · agentregistry</li><li>kagent-ctrl (federated)</li></ul>
+
       <div class="ns">trustusbank-observability</div>
       <ul><li>Prom · Loki · Tempo · Grafana · OTel</li></ul>
+
+      <div class="gwbar"><span class="lbl">istio-eastwest GW</span> <span>:15008 HBONE</span></div>
+
+      <div class="mgmt">
+        <div class="mhdr"><span>Gloo Mesh management plane</span> <span class="tag">co-located</span></div>
+        <div class="mtd">ns: gloo-mesh · relay gRPC :30416 (NodePort)</div>
+        <ul>
+          <li>gloo-mesh-mgmt-server + redis + UI</li>
+          <li>telemetry-gateway + collectors</li>
+          <li><code style="font-size:10.5px">KubernetesCluster</code> × 3 (ACCEPTED)</li>
+          <li><code style="font-size:10.5px">Workspace</code> + <code style="font-size:10.5px">WorkspaceSettings</code></li>
+        </ul>
+      </div>
     </div>
 
-    <div class="conn"><span class="lbl">↔ HBONE :15008</span></div>
-
+    <!-- VENDOR -->
     <div class="cl vendor">
-      <div class="title"><span>cluster-vendor</span> <span class="pill pill-vendor">vendor</span></div>
-      <div class="td">trust: vendor.local<br>net: trustusbank-vendor</div>
+      <div class="hdr"><span class="name">cluster-vendor</span> <span class="pill pill-vendor">vendor</span></div>
+      <div class="td">trust: vendor.local · net: trustusbank-vendor</div>
+
       <div class="ns">trustusbank-bank-vendors</div>
       <ul><li>currency-converter (clean + rugpull)</li><li>waypoint</li></ul>
+
       <div class="ns">external-attacker</div>
-      <ul><li>mock-attacker (NOT ambient)</li></ul>
-      <div class="ns">control + data plane</div>
-      <ul>
-        <li>istiod · ztunnel · istio-cni</li>
-        <li>istio-eastwest GW</li>
-        <li>gloo-mesh-agent</li>
-      </ul>
+      <ul><li>mock-attacker (NOT in mesh)</li></ul>
+
+      <div class="ns">control plane</div>
+      <ul><li>istiod · ztunnel · istio-cni</li><li>gloo-mesh-agent</li></ul>
+
+      <div class="gwbar"><span class="lbl">istio-eastwest GW</span> <span>:15008 HBONE</span></div>
+      <div class="relay-badge"><span class="arr">↖</span> gloo-mesh-agent → bank :30416</div>
     </div>
   </div>
 
   <div class="legend">
-    <div class="item"><b>↑ Northbound:</b> browser → chatbot in edge.</div>
-    <div class="item"><b>↔ East/west (cyan):</b> HBONE :15008 between every pair of east/west GWs, SNI-routed by destination cluster.</div>
-    <div class="item"><b>⇣ Mgmt plane (purple):</b> relay gRPC :30416 from each gloo-mesh-agent up to bank's mgmt-server.</div>
+    <div class="item cyan"><span class="dot"></span><b>East/west HBONE :15008</b> — every pair of clusters' istio-eastwest GWs peer over HBONE. SNI carries destination cluster.</div>
+    <div class="item purple"><span class="dot"></span><b>Mgmt-plane relay :30416</b> — each cluster's gloo-mesh-agent dials bank's mgmt-server. Bank's agent talks to its own mgmt-server locally.</div>
+    <div class="item green"><span class="dot"></span><b>Northbound</b> — browser → chatbot in edge. Edge is the only cluster that takes external traffic.</div>
   </div>
 </div>
 
