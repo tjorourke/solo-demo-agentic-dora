@@ -780,7 +780,7 @@ clean them up. Run their per-demo reset commands as well.
 | [`08-a2a.sh`](../scripts/08-a2a.sh) | Tenant isolation policies for A2A |
 | [`09-frontend.sh`](../scripts/09-frontend.sh) | Customer chatbot UI |
 | [`deploy-all.sh`](../scripts/deploy-all.sh) | Runs phases 0–9 in order |
-| [`policies-on.sh`](../scripts/policies-on.sh) | **Act 3 climax** — applies SPIFFE AuthZ + deny-egress |
+| [`policies-on.sh`](../scripts/policies-on.sh) | **Act 3, defence on** — applies SPIFFE AuthZ + deny-egress |
 | [`policies-off.sh`](../scripts/policies-off.sh) | Strips ALL Solo policies (returns to bare-K8s state) |
 | [`upgrade-banking-app.sh`](../scripts/upgrade-banking-app.sh) | **Act 2** — vendor's CI compromised; image swap |
 | [`reset-demo.sh`](../scripts/reset-demo.sh) | Restore to "before Solo" baseline between runs |

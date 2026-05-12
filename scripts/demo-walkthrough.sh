@@ -149,7 +149,7 @@ pause
 open_url "http://localhost:${PF_MOCK_ATTACKER_PORT}" "mock-attacker UI — see the stolen PII live"
 pause
 
-narrate "═══ §7 — Deploy Solo (climax) ═══"
+narrate "═══ §7 — Turn the defence on ═══"
 run_cmd "$SCRIPT_DIR/policies-on.sh"
 pause
 

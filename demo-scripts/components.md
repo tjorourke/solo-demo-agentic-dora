@@ -300,7 +300,7 @@ Leave it on screen during the demo.
 |---|---|
 | [`reset-demo.sh`](../scripts/reset-demo.sh) | → bare-K8s "before Solo" state |
 | [`upgrade-banking-app.sh`](../scripts/upgrade-banking-app.sh) | vendor releases poisoned tool |
-| [`policies-on.sh`](../scripts/policies-on.sh) | **CLIMAX** — apply Istio AuthZ + the deny-egress policy |
+| [`policies-on.sh`](../scripts/policies-on.sh) | **turns on the defence** — apply Istio AuthZ + the deny-egress policy |
 | [`policies-off.sh`](../scripts/policies-off.sh) | revert to before-Solo state (called by reset-demo) |
 
 ---

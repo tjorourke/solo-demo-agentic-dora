@@ -563,7 +563,7 @@ spec:
 <h3><span class="step-num">8</span>08 — A2A wiring + policy</h3>
 <p>The chatbot's nginx proxies <code>/api/a2a/&lt;ns&gt;/&lt;agent&gt;/</code> to <code>kagent-ui:8080</code>, which proxies <code>/api/</code> to <code>kagent-controller:8083</code>. From there kagent's own router speaks A2A to each agent pod over its <code>POST /</code> endpoint.</p>
 
-<p>Applies the <code>AuthorizationPolicy</code> that becomes load-bearing in Act 3: <i>deny egress from <code>currency-converter</code> to <code>external-attacker</code></i>. Targeted by SA, enforced by ztunnel at L4.</p>
+<p>Applies the <code>AuthorizationPolicy</code> that becomes the main rule in Act 3: <i>deny egress from <code>currency-converter</code> to <code>external-attacker</code></i>. Targeted by SA, enforced by ztunnel at L4.</p>
 
 <details class="yaml"><summary>the act-3 deny policy</summary>
 <pre>apiVersion: security.istio.io/v1
@@ -613,7 +613,7 @@ transactions, and convert my balance to USD."</pre>
 
 <p><b>Attacker log lines: 20 before this run, 20 after. Zero new exfil.</b></p>
 
-<div class="callout ok"><b>The demo's load-bearing claim:</b> the LLM layer is still vulnerable to prompt injection (and likely always will be). What changes between Act 2 and Act 3 isn't whether the model is fooled — it's whether the runtime damage lands. Solo's mesh at the wire level is the layer that catches it.</div>
+<div class="callout ok"><b>The demo's main point:</b> the LLM layer is still vulnerable to prompt injection (and likely always will be). What changes between Act 2 and Act 3 isn't whether the model is fooled — it's whether the runtime damage lands. Solo's mesh at the wire level is the layer that catches it.</div>
 
 <h3>The evidence trail</h3>
 <p>Every block leaves a structured log line in ztunnel that lands in Loki. Tempo holds the matching span with the SPIFFE identities of both ends. Grafana's <i>DORA Article 17 evidence</i> dashboard pivots on these — the same panel that shows zero blocks under Act 1 shows the Act-3 deny instantly. <b>Auditors don't want a policy doc; they want a query that returns the receipts.</b></p>
@@ -698,7 +698,7 @@ and convert my balance to USD.</pre>
   <li><b>Tab 4 (DORA Evidence dashboard)</b>: AuthZ denies = red, exfil received = green, offending pod table populated, full forensic context per attempt.</li>
 </ul>
 
-<div class="callout info"><b>Demo nuance worth narrating.</b> <code>BankToAttackerAttempt</code> ALSO fires in Act 2 (Solo OFF) — the underlying counter increments whether or not the connection succeeds. The alert is telling the truth: a bank pod is talking to <code>external-attacker</code>. Audience point: <i>detection without enforcement is post-mortem.</i> Act 3 adds the second alert (<code>IstioAuthZDeny</code>) — same detection plus a "we physically blocked it" signal. <b>That contrast is the punchline.</b></div>
+<div class="callout info"><b>Demo nuance worth narrating.</b> <code>BankToAttackerAttempt</code> ALSO fires in Act 2 (Solo OFF) — the underlying counter increments whether or not the connection succeeds. The alert is telling the truth: a bank pod is talking to <code>external-attacker</code>. Audience point: <i>detection without enforcement is post-mortem.</i> Act 3 adds the second alert (<code>IstioAuthZDeny</code>) — same detection plus a "we physically blocked it" signal. <b>That contrast is the whole point of the demo.</b></div>
 
 <h4>Closing <span style="color:var(--muted); font-size: 14px; font-weight: 400">(~30 sec)</span></h4>
 

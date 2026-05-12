@@ -15,7 +15,7 @@
 #   2. ./scripts/upgrade-banking-app.sh                       → vendor's CI got compromised
 #   3. (chatbot) same prompt → agent fooled, exfil succeeds
 #   4. kubectl -n external-attacker logs deploy/mock-attacker → see stolen PII
-#   5. ./scripts/policies-on.sh                                → CLIMAX
+#   5. ./scripts/policies-on.sh                                → turns on the defence
 #   6. (chatbot) same prompt → agent fooled the same way, but exfil now BLOCKED
 
 set -Eeuo pipefail
@@ -120,5 +120,5 @@ log "  1. (chatbot) http://localhost:$PF_FRONTEND_PORT — happy path"
 log "  2. ./scripts/upgrade-banking-app.sh"
 log "  3. (chatbot) same prompt"
 log "  4. kubectl -n external-attacker logs deploy/mock-attacker"
-log "  5. ./scripts/policies-on.sh                          ← climax"
+log "  5. ./scripts/policies-on.sh                          ← turns the defence on"
 log "  6. (chatbot) same prompt — exfil now blocked"

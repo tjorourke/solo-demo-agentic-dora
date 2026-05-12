@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Apply Solo's runtime-defence AuthorizationPolicies. Solo is already
 # installed at this point (Istio Ambient mesh + agentgateway + kagent +
-# agentregistry); this is the toggle that turns ENFORCEMENT on. The
-# CLIMAX of the demo: the attack just succeeded, you run this, and now
-# the same attack fails.
+# agentregistry); this is the toggle that turns enforcement on. After
+# the attack succeeded, you run this, and now the same attack fails.
 #
 # What this applies (on the right cluster per resource):
 #   1. Default-deny on bank-mcp / bank-agents / bank-vendors (zero-trust

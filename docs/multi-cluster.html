@@ -118,7 +118,7 @@
 <a class="nav-back" href="index.html">Back to demo home</a>
 
 <h1>Multi-cluster Solo Enterprise for Istio + kagent</h1>
-<p class="subtitle">A reference pattern for agentic AI deployments across multiple clusters. What it took to stand up the trustusbank agentic-DORA demo on three kind clusters, what each Solo component does, how the wire actually works, and where the OOB defaults hit a wall.</p>
+<p class="subtitle">A reference pattern for agentic AI deployments across multiple clusters. What it took to stand up the trustusbank agentic-DORA demo on three kind clusters, what each Solo component does, how the wire actually works, and where the default settings need adjusting.</p>
 
 <div class="meta-row">
   <div class="author-avatar">TO</div>
@@ -363,7 +363,7 @@
 
 <h2 id="crds"><span class="num">3.</span> CRD reference (every kind you'll see)</h2>
 
-<p>A fully wired Solo Enterprise for Istio + kagent install adds about 130 CRDs to a cluster. They cluster into five clean groups. The blocks below are the canonical YAML for each — click to expand.</p>
+<p>A fully wired Solo Enterprise for Istio + kagent install adds about 130 CRDs to a cluster. They cluster into five clean groups. The blocks below are the standard YAML for each — click to expand.</p>
 
 <h3>Group A: Kubernetes Gateway API (v1.5.0, experimental channel)</h3>
 
@@ -1015,7 +1015,7 @@ remote:
 <p>Re-runnable cleanup that drops <code>solo.io/service-scope=global</code> from <code>trustusbank-platform</code> on cluster-edge, deletes the four <code>autogen.global.*</code> ServiceEntries that hijacked the local hostname, and bounces <code>kagent-ui</code> + <code>kagent-controller</code> so they re-enrol in ztunnel. See §8.5 below for the full root-cause walkthrough.</p>
 
 <h3><span class="step-num">11</span>M11 — Multi-cluster observability + alerting pipeline</h3>
-<p>Wires the canonical Solo telemetry pipeline so ztunnel deny counters on vendor (where the demo's deny actually fires) reach the Prometheus + AlertManager + MailHog stack on bank — and the customer-facing demo claim ("blocked, with receipts") is provable in a single Grafana dashboard.</p>
+<p>Wires the standard Solo telemetry pipeline so ztunnel deny counters on vendor (where the demo's deny actually fires) reach the Prometheus + AlertManager + MailHog stack on bank — and the customer-facing demo claim ("blocked, with receipts") is provable in a single Grafana dashboard.</p>
 
 <div class="diagram">vendor / edge:  ztunnel + istiod + agentgateway
                     │
@@ -1230,7 +1230,7 @@ k9s --context=kind-trustusbank-vendor     # ⌘3</pre></details>
 
 <p><b>Attacker log lines: 20 before this run, 20 after. Zero new exfil.</b></p>
 
-<div class="callout ok"><b>The demo's load-bearing claim:</b> the LLM layer is still vulnerable to prompt injection (and likely always will be). What changes between act 2 and act 3 isn't whether the model is fooled — it's whether the runtime damage lands. Solo's mesh at the wire level is the layer that catches it.</div>
+<div class="callout ok"><b>The demo's main point:</b> the LLM layer is still vulnerable to prompt injection (and likely always will be). What changes between act 2 and act 3 isn't whether the model is fooled — it's whether the runtime damage lands. Solo's mesh at the wire level is the layer that catches it.</div>
 
 <h3>Run the demo step-by-step</h3>
 
