@@ -136,7 +136,7 @@
   </ol>
 </div>
 
-<p class="lede">If you've already done the <a href="training-multicluster.html">multi-cluster walkthrough</a>, this is the same demo with the federation, peering, and east/west gateway layers removed — same chatbot, same agents, same MCP tools, same attack. Start here if you want the shortest path to seeing Solo's runtime defence in action.</p>
+<p class="lede">If you've already done the <a href="multi-cluster.html">multi-cluster walkthrough</a>, this is the same demo with the federation, peering, and east/west gateway layers removed — same chatbot, same agents, same MCP tools, same attack. Start here if you want the shortest path to seeing Solo's runtime defence in action.</p>
 
 <hr>
 
@@ -144,33 +144,222 @@
 
 <p>One kind cluster, seven namespaces. The mesh layer is Solo Enterprise for Istio in Ambient mode — every workload pod gets a ztunnel sidecar (per-node, not per-pod) plus an L7 waypoint for the namespaces that need policy enforcement on MCP calls.</p>
 
-<div class="diagram"><span class="h">┌────────────────────── kind cluster: trustusbank ─────────────────────┐</span>
-<span class="h">│</span>                                                                       <span class="h">│</span>
-<span class="h">│  </span><span class="w">trustusbank-bank-frontend</span>            <span class="b">trustusbank-bank-agents</span>           <span class="h">│</span>
-<span class="h">│   ┌──────────────┐</span>                  <span class="b">┌──────────────────────────┐</span>     <span class="h">│</span>
-<span class="h">│   │</span> chatbot (nginx) <span class="h">│</span>  A2A POST /     <span class="b">│</span> support-bot · fraud-bot   <span class="b">│</span>     <span class="h">│</span>
-<span class="h">│   │</span> /api → kagent  <span class="h">│</span> ───────────────► <span class="b">│</span> triage-bot                <span class="b">│</span>     <span class="h">│</span>
-<span class="h">│   └──────────────┘</span>                  <span class="b">└──────────┬───────────────┘</span>     <span class="h">│</span>
-<span class="h">│</span>                                                <span class="b">│</span>                          <span class="h">│</span>
-<span class="h">│</span>                                                <span class="b">▼</span>  /mcp/...                <span class="h">│</span>
-<span class="h">│  </span><span class="m">trustusbank-platform</span>                <span class="m">┌──────────────────────────┐</span>     <span class="h">│</span>
-<span class="h">│   ┌────────────────────────┐</span>         <span class="m">│</span> agentgateway (waypoint)  <span class="m">│</span>     <span class="h">│</span>
-<span class="h">│   │</span> kagent (controller+UI) <span class="h">│</span>         <span class="m">│</span> CEL allowlist on MCP     <span class="m">│</span>     <span class="h">│</span>
-<span class="h">│   │</span> kagent-postgresql      <span class="h">│</span>         <span class="m">└──────────┬───────────────┘</span>     <span class="h">│</span>
-<span class="h">│   └────────────────────────┘</span>                    <span class="m">│</span>                       <span class="h">│</span>
-<span class="h">│</span>                                                  <span class="m">▼</span>                       <span class="h">│</span>
-<span class="h">│  </span><span class="b">trustusbank-bank-mcp</span>                            <span class="b">trustusbank-bank-vendors</span> <span class="h">│</span>
-<span class="h">│   ┌───────────────────────────────┐</span>             <span class="r">┌─────────────────────┐</span>  <span class="h">│</span>
-<span class="h">│   │</span> account-mcp · transaction-mcp  <span class="h">│</span>             <span class="r">│</span> currency-converter   <span class="r">│</span>  <span class="h">│</span>
-<span class="h">│   │</span> ticket-mcp                     <span class="h">│</span>             <span class="r">│  (third-party)</span>      <span class="r">│</span>  <span class="h">│</span>
-<span class="h">│   └───────────────────────────────┘</span>             <span class="r">└─────────────────────┘</span>  <span class="h">│</span>
-<span class="h">│</span>                                                                       <span class="h">│</span>
-<span class="h">│  </span><span class="b">external-attacker</span>                       <span class="b">trustusbank-observability</span>     <span class="h">│</span>
-<span class="h">│   ┌─────────────────┐</span>                    <span class="b">┌──────────────────────────┐</span>   <span class="h">│</span>
-<span class="h">│   │</span> mock-attacker    <span class="h">│  ◄─</span>BLOCKED<span class="h">─</span>     <span class="b">│</span> Grafana · Prom · Loki    <span class="b">│</span>   <span class="h">│</span>
-<span class="h">│   │</span> (C2 receiver)    <span class="h">│</span> by ztunnel        <span class="b">│</span> Tempo · MailHog          <span class="b">│</span>   <span class="h">│</span>
-<span class="h">│   └─────────────────┘</span>                    <span class="b">└──────────────────────────┘</span>   <span class="h">│</span>
-<span class="h">└──────────────────────────────────────────────────────────────────────┘</span></div>
+<!-- Single-cluster topology — flow-oriented CSS layout. -->
+<style>
+  .stopo { position: relative; margin: 28px 0 24px; }
+  .stopo .cluster {
+    border: 2px solid #0a1a3a; border-radius: 14px;
+    background: #f8fafc;
+    padding: 18px 20px 22px;
+    position: relative;
+  }
+  .stopo .cluster-hdr {
+    display: flex; justify-content: space-between; align-items: center;
+    font-weight: 700; color: #0a1a3a; font-size: 14px;
+    margin-bottom: 16px;
+    border-bottom: 1px dashed rgba(10,26,58,0.20); padding-bottom: 8px;
+  }
+  .stopo .cluster-hdr .tag {
+    font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase;
+    background: rgba(10,26,58,0.08); color: #0a1a3a;
+    padding: 3px 8px; border-radius: 10px;
+  }
+  .stopo .body { display: grid; grid-template-columns: 1fr 320px; gap: 20px; }
+  .stopo .pipeline { display: flex; flex-direction: column; gap: 4px; }
+  .stopo .ns {
+    background: #fff; border-radius: 10px; padding: 10px 14px;
+    border: 2px solid #cbd5e1;
+    position: relative;
+  }
+  .stopo .ns.frontend { border-color: #22c55e; background: #f0fdf4; }
+  .stopo .ns.agents   { border-color: #fbbf24; background: #fffbeb; }
+  .stopo .ns.platform { border-color: #c084fc; background: #faf5ff; }
+  .stopo .ns.mcp      { border-color: #1cb5d3; background: #ecfeff; }
+  .stopo .ns.vendor   { border-color: #f97316; background: #fff7ed; }
+  .stopo .ns.attacker { border-color: #dc2626; background: #fef2f2; border-style: dashed; }
+  .stopo .ns .nshdr {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+  }
+  .stopo .ns .nm {
+    font-family: ui-monospace, monospace; font-size: 11px; color: #475569;
+    text-transform: lowercase; letter-spacing: 0.02em; font-weight: 600;
+  }
+  .stopo .ns .role {
+    font-size: 9.5px; letter-spacing: 0.10em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 10px; font-weight: 700;
+  }
+  .stopo .ns.frontend .role { background: rgba(34,197,94,0.15); color: #166534; }
+  .stopo .ns.agents .role   { background: rgba(251,191,36,0.18); color: #92400e; }
+  .stopo .ns.platform .role { background: rgba(192,132,252,0.18); color: #6b21a8; }
+  .stopo .ns.mcp .role      { background: rgba(28,181,211,0.18); color: #0e7490; }
+  .stopo .ns.vendor .role   { background: rgba(249,115,22,0.18); color: #9a3412; }
+  .stopo .ns.attacker .role { background: rgba(220,38,38,0.18); color: #991b1b; }
+  .stopo .ns .pods {
+    font-size: 13px; color: #0f172a; line-height: 1.45;
+  }
+  .stopo .ns .pods code {
+    background: rgba(15,23,42,0.06); color: #0f172a; border: none;
+    padding: 1px 5px; font-size: 12px;
+  }
+  .stopo .arrow {
+    align-self: center; color: #475569;
+    font-family: ui-monospace, monospace; font-size: 11px;
+    padding: 4px 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .stopo .arrow .glyph { font-size: 16px; line-height: 1; color: #1cb5d3; }
+  .stopo .arrow .label { font-weight: 600; color: #0e7490; font-size: 11.5px; }
+  .stopo .fanout {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .stopo .side {
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .stopo .blocked-bar {
+    border: 2px dashed #dc2626; background: rgba(220,38,38,0.06);
+    border-radius: 10px; padding: 10px 14px; font-size: 12.5px;
+    color: #991b1b; display: flex; align-items: center; gap: 10px;
+  }
+  .stopo .blocked-bar .badge {
+    font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase;
+    background: #dc2626; color: white;
+    padding: 3px 8px; border-radius: 10px; font-weight: 700; flex-shrink: 0;
+  }
+  .stopo .blocked-bar .why { color: #7f1d1d; font-family: ui-monospace, monospace; font-size: 11px; }
+  .stopo .legend {
+    margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+    font-size: 12.5px;
+  }
+  .stopo .legend .item {
+    background: #fff; border: 1px solid var(--card-border);
+    border-radius: 6px; padding: 6px 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .stopo .legend .item .swatch {
+    width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0;
+    border: 1.5px solid;
+  }
+  @media (max-width: 900px) {
+    .stopo .body { grid-template-columns: 1fr; }
+    .stopo .fanout { grid-template-columns: 1fr; }
+    .stopo .legend { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="stopo">
+  <div class="cluster">
+    <div class="cluster-hdr">
+      <span>kind cluster <code>trustusbank</code> · one API server · 7 application namespaces + <code>istio-system</code></span>
+      <span class="tag">ambient mesh on all 7 app namespaces</span>
+    </div>
+
+    <div class="body">
+      <!-- Left: top-to-bottom data flow -->
+      <div class="pipeline">
+
+        <div class="ns frontend">
+          <div class="nshdr">
+            <span class="role">frontend</span>
+            <span class="nm">trustusbank-bank-frontend</span>
+          </div>
+          <div class="pods"><b>chatbot</b> (nginx + React) — proxies <code>/api/a2a/*</code> to kagent</div>
+        </div>
+
+        <div class="arrow"><span class="glyph">▼</span><span class="label">A2A · POST /</span></div>
+
+        <div class="ns agents">
+          <div class="nshdr">
+            <span class="role">agents</span>
+            <span class="nm">trustusbank-bank-agents</span>
+          </div>
+          <div class="pods"><b>support-bot</b> · <b>fraud-bot</b> · <b>triage-bot</b> — kagent Agent CRDs, ADK runtime</div>
+        </div>
+
+        <div class="arrow"><span class="glyph">▼</span><span class="label">MCP · /mcp/&lt;tool&gt;</span></div>
+
+        <div class="ns platform">
+          <div class="nshdr">
+            <span class="role">platform · waypoint</span>
+            <span class="nm">trustusbank-platform</span>
+          </div>
+          <div class="pods"><b>agentgateway</b> (L7 waypoint, CEL allowlist on <code>mcp.tool.name</code>) · kagent controller + UI · agentregistry · postgres</div>
+        </div>
+
+        <div class="arrow"><span class="glyph">▼</span><span class="label">HTTPRoute · /mcp/&lt;name&gt;</span></div>
+
+        <div class="fanout">
+          <div class="ns mcp">
+            <div class="nshdr">
+              <span class="role">first-party</span>
+              <span class="nm">trustusbank-bank-mcp</span>
+            </div>
+            <div class="pods"><b>account-mcp</b> · <b>transaction-mcp</b> · <b>ticket-mcp</b><br>FastMCP · Python · trusted</div>
+          </div>
+
+          <div class="ns vendor">
+            <div class="nshdr">
+              <span class="role">third-party</span>
+              <span class="nm">trustusbank-bank-vendors</span>
+            </div>
+            <div class="pods"><b>currency-converter</b> — clean image OR rugpulled image<br>Go ADK · distinct SPIFFE SA</div>
+          </div>
+        </div>
+
+        <div class="blocked-bar">
+          <span class="badge">DENY L4</span>
+          <span><b>currency-converter ➜ mock-attacker</b> egress blocked by ztunnel <span class="why">AuthorizationPolicy on src.identity</span></span>
+        </div>
+
+        <div class="ns attacker">
+          <div class="nshdr">
+            <span class="role">attack zone</span>
+            <span class="nm">external-attacker</span>
+          </div>
+          <div class="pods"><b>mock-attacker</b> — C2 receiver. NOT ambient — proves the deny is at the source side, not destination admission</div>
+        </div>
+
+      </div>
+
+      <!-- Right rail: things that observe everything -->
+      <div class="side">
+        <div class="ns" style="border-color:#0a1a3a; background:#f1f5f9;">
+          <div class="nshdr">
+            <span class="role" style="background:rgba(10,26,58,0.10); color:#0a1a3a;">control plane</span>
+            <span class="nm">istio-system</span>
+          </div>
+          <div class="pods">
+            <b>istiod</b> · <b>ztunnel</b> (DS) · <b>istio-cni-node</b><br>
+            SPIFFE trust domain <code>cluster.local</code>
+          </div>
+        </div>
+
+        <div class="ns" style="border-color:#eab308; background:#fefce8;">
+          <div class="nshdr">
+            <span class="role" style="background:rgba(234,179,8,0.18); color:#854d0e;">observability</span>
+            <span class="nm">trustusbank-observability</span>
+          </div>
+          <div class="pods">
+            <b>Grafana</b> · <b>Prometheus</b> · <b>Loki</b> · <b>Tempo</b> · <b>MailHog</b> · <b>OTel collector</b><br>
+            Where the DORA Art. 17 evidence trail lands
+          </div>
+        </div>
+
+        <div style="border-radius:10px; padding:10px 12px; font-size:12px; color:#475569; background:#fff; border:1px dashed rgba(15,23,42,0.20);">
+          <b style="color:#0f172a">SPIFFE everywhere.</b> Every pod gets <code>spiffe://cluster.local/ns/&lt;ns&gt;/sa/&lt;sa&gt;</code>. The deny rule above pins on the source SA, not on IPs — restart the converter, the deny still applies.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="item"><span class="swatch" style="background:#f0fdf4; border-color:#22c55e;"></span>frontend</div>
+    <div class="item"><span class="swatch" style="background:#fffbeb; border-color:#fbbf24;"></span>agents (kagent A2A)</div>
+    <div class="item"><span class="swatch" style="background:#faf5ff; border-color:#c084fc;"></span>platform · waypoint</div>
+    <div class="item"><span class="swatch" style="background:#ecfeff; border-color:#1cb5d3;"></span>first-party MCP</div>
+    <div class="item"><span class="swatch" style="background:#fff7ed; border-color:#f97316;"></span>third-party MCP (vendor)</div>
+    <div class="item"><span class="swatch" style="background:#fef2f2; border-color:#dc2626; border-style:dashed;"></span>attack zone (blocked egress)</div>
+  </div>
+</div>
 
 <p>Everything lives in one Kubernetes API server. Cross-namespace traffic still passes through ztunnel (every namespace except <code>kube-system</code>/<code>istio-system</code>/<code>local-path-storage</code> is labelled <code>istio.io/dataplane-mode=ambient</code>), so SPIFFE identity is preserved hop-by-hop and L4 authorization works at the wire.</p>
 
@@ -490,7 +679,7 @@ transactions, and convert my balance to USD."</pre>
 
 <hr>
 
-<p class="lede">If you've finished this and want to see the same demo with cross-cluster identity, peering, and Gloo Mesh federation — the <a href="training-multicluster.html">multi-cluster walkthrough</a> picks up where this ends. The <a href="https://github.com/tjorourke/solo-demo-agentic-dora">repo</a> is checked in; every script and YAML referenced here is live in the codebase.</p>
+<p class="lede">If you've finished this and want to see the same demo with cross-cluster identity, peering, and Gloo Mesh federation — the <a href="multi-cluster.html">multi-cluster walkthrough</a> picks up where this ends. The <a href="https://github.com/tjorourke/solo-demo-agentic-dora">repo</a> is checked in; every script and YAML referenced here is live in the codebase.</p>
 
 </main>
 </body>
