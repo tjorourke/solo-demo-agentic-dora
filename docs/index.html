@@ -307,6 +307,113 @@
   </div>
 </section>
 
+<style>
+  .defence {
+    border: 1px solid var(--card-border); border-radius: 12px;
+    padding: 28px 32px; margin: 0 0 36px;
+    background: linear-gradient(180deg, rgba(28,181,211,0.04) 0%, transparent 100%);
+  }
+  .defence h2 {
+    margin: 0 0 8px; font-size: 24px; font-weight: 700;
+    letter-spacing: -0.005em;
+    border-left: 4px solid var(--ok); padding-left: 14px;
+  }
+  .defence .sub { color: #475569; font-size: 15px; margin: 0 0 22px; padding-left: 18px; }
+  .defence h3 { margin: 24px 0 8px; font-size: 17px; }
+  .defence h3 .num { color: var(--ok); margin-right: 8px; font-weight: 700; }
+  .defence pre {
+    background: #0f172a; color: #e2e8f0; padding: 14px 18px; border-radius: 8px;
+    overflow-x: auto; font-family: ui-monospace, monospace; font-size: 12.5px; line-height: 1.5;
+    margin: 8px 0 12px;
+  }
+  .defence pre .key { color: #67e8f9; }
+  .defence pre .val { color: #fde68a; }
+  .defence pre .cmt { color: #64748b; font-style: italic; }
+  .defence .receipts {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 16px 0 0;
+  }
+  @media (max-width: 760px) { .defence .receipts { grid-template-columns: 1fr; } }
+  .defence .receipts .receipt {
+    background: #fff; border: 1px solid var(--card-border); border-radius: 8px; padding: 14px 16px;
+  }
+  .defence .receipts .receipt h4 {
+    margin: 0 0 6px; font-size: 13px; color: var(--ok); text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .defence .receipts .receipt p { margin: 0; font-size: 14px; color: #334155; }
+  .defence .receipts .receipt code { background: rgba(15,23,42,0.06); color: #0f172a; padding: 1px 5px; }
+</style>
+
+<section class="defence">
+  <h2>The defence — what gets applied in Act 3, and why it works</h2>
+  <p class="sub">One operator command (<code>./scripts/policies-on.sh</code>) applies a small set of
+  AuthorizationPolicies that turn the LLM-level breach into a wire-level block.</p>
+
+  <h3><span class="num">1.</span> The deny rule that stops the exfil</h3>
+  <p>The single policy below is the one that carries the demo's claim. It lives on the
+  <code>external-attacker</code> namespace and tells <b>ztunnel</b> — Solo's L4 data-plane on every node — to
+  reject any TCP connection whose source pod lives in a bank-side namespace. No bytes leave the trust boundary,
+  even when the model has been fully tricked into trying.</p>
+
+<pre><span class="cmt"># manifests/phase01-attacker/deny-egress-to-attacker.yaml</span>
+<span class="key">apiVersion:</span> security.istio.io/v1
+<span class="key">kind:</span> AuthorizationPolicy
+<span class="key">metadata:</span>
+  <span class="key">name:</span> deny-bank-to-attacker
+  <span class="key">namespace:</span> external-attacker
+<span class="key">spec:</span>
+  <span class="key">action:</span> DENY
+  <span class="key">rules:</span>
+    - <span class="key">from:</span>
+        - <span class="key">source:</span>
+            <span class="key">namespaces:</span>
+              - <span class="val">"trustusbank-bank-*"</span>     <span class="cmt"># every bank-side namespace</span>
+              - <span class="val">"trustusbank-platform"</span>   <span class="cmt"># plus the platform tier</span></pre>
+
+  <h3><span class="num">2.</span> Why this works even when the LLM is fooled</h3>
+  <p>The deny rule pins on <b>SPIFFE identity</b>, not IP. Every pod in the mesh has a stable cryptographic
+  identity baked into its mTLS cert by istiod
+  (<code>spiffe://&lt;trust-domain&gt;/ns/&lt;ns&gt;/sa/&lt;sa&gt;</code>). The malicious currency-converter pod
+  on the vendor cluster carries
+  <code>spiffe://vendor.local/ns/trustusbank-bank-vendors/sa/currency-converter</code>. That identity travels
+  with every TCP connection it opens, through the HBONE tunnel ztunnel wraps around it. When the rugpulled
+  converter tries to POST customer PII to mock-attacker, ztunnel on the destination side reads the source
+  SPIFFE, matches it against the namespace pattern in the rule, and resets the connection at L4 — before any
+  bytes hit the attacker pod's listener.</p>
+
+  <p>It doesn't matter that the LLM was tricked, that the prompt injection succeeded, that the converter
+  ran the rugpull payload. The kernel-level TCP handshake fails. <b>The model layer's failure does not become
+  the runtime layer's failure.</b></p>
+
+  <h3><span class="num">3.</span> What the operator sees — receipts on four panes</h3>
+  <p>Within ~30 s of the same customer prompt that succeeded in Act 2, four pieces of evidence land:</p>
+
+  <div class="receipts">
+    <div class="receipt">
+      <h4>Prometheus alerts</h4>
+      <p><code>IstioAuthZDeny</code> and <code>BankToAttackerAttempt</code> firing with
+      <code>source_principal=spiffe://vendor.local/.../currency-converter</code> and
+      <code>cluster=trustusbank-vendor</code>.</p>
+    </div>
+    <div class="receipt">
+      <h4>MailHog SOC inbox</h4>
+      <p>Two emails arrive at the on-call SRE address. Subject line carries the cluster of origin. Body
+      includes the offending SPIFFE ID, the deep-link to Grafana, and the <code>kubectl scale --replicas=0</code>
+      quarantine command.</p>
+    </div>
+    <div class="receipt">
+      <h4>DORA Evidence dashboard</h4>
+      <p>"AuthZ denies" tile goes red with the count. The OFFENDING POD table populates with the
+      currency-converter row. Same prompt, but the dashboard tells a fundamentally different story to an
+      auditor than Act 2's run.</p>
+    </div>
+    <div class="receipt">
+      <h4>Customer-facing chat reply</h4>
+      <p>Identical to Act 1's safe run: <code>£4,287.55 / $5,445.19</code>. The user's experience doesn't
+      change. The attack happened — and was caught — entirely below the application layer.</p>
+    </div>
+  </div>
+</section>
+
 <div class="what-grid">
   <div class="item">
     <h4>The story in 3 lines</h4>
