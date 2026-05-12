@@ -40,11 +40,29 @@ spec:
         - name: external-attacker
 EOF
 
-log_step "M09.2 — WorkspaceSettings (federation enabled, mesh-wide import/export)"
-# Field is options.federation, not serviceScope. Federation+enabled generates
-# .mesh.internal hostnames for each selected Service in the workspace.
-# serviceSelector picks the Services to expose — we use a broad namespace-
-# prefix selector to cover every trustusbank-* Service.
+log_step "M09.2 — WorkspaceSettings (federation declared, opt-in via label)"
+# Federation is enabled so the mgmt-plane UI shows Workspaces / Insights /
+# Global Services / Routes across all 3 clusters. But the serviceSelector
+# is intentionally NARROW: only Services explicitly labelled with
+# solo.io/expose-cross-cluster=true get autogen ServiceEntries.
+#
+# Why not a broad "namespace: trustusbank-*" selector?
+#   - kagent's BYO Agent pattern creates same-name Services on consumer and
+#     producer clusters (e.g. fraud-bot exists on bank as a real pod AND on
+#     edge as a stub for kagent CRD validation). A broad selector makes
+#     Solo's federation translator union the local .svc.cluster.local
+#     hostname into the autogen ServiceEntry and route it to the producer
+#     cluster's east/west GW.
+#   - In kind, the east/west GW's WorkloadEntry addresses don't populate
+#     reliably, so the federated path can fail outright, leaving everything
+#     (including the local pod on the same cluster) unreachable.
+#   - Lateral-hack EndpointSlices (see manifests/multi/lateral-hack.yaml)
+#     carry the cross-cluster traffic deterministically, and ztunnel's
+#     PreferNetwork picks the local pod when it exists.
+#
+# Net: declare federation, keep the model visible in the UI, deliver traffic
+# via the lateral hack. Opt specific Services into autogen ServiceEntries
+# by adding solo.io/expose-cross-cluster=true on the producer Service.
 kctx "$BANK_CLUSTER" apply -f - <<EOF
 apiVersion: admin.gloo.solo.io/v2
 kind: WorkspaceSettings
@@ -55,8 +73,10 @@ spec:
   options:
     federation:
       enabled: true
+      hostSuffix: mesh.internal
       serviceSelector:
-        - namespace: 'trustusbank-*'
+        - labels:
+            solo.io/expose-cross-cluster: "true"
   exportTo:
     - workspaces:
         - name: trustusbank
@@ -65,15 +85,17 @@ spec:
         - name: trustusbank
 EOF
 
-log_step "M09.3 — re-apply solo.io/service-scope=global on cross-cluster namespaces"
-# Bank publishes its services so edge can reach fraud-bot/triage-bot/MCP/agentgateway/kagent-ui.
-kctx "$BANK_CLUSTER" label ns "$NS_BANK_AGENTS" solo.io/service-scope=global --overwrite >/dev/null
-kctx "$BANK_CLUSTER" label ns "$NS_BANK_MCP"    solo.io/service-scope=global --overwrite >/dev/null
-kctx "$BANK_CLUSTER" label ns "$NS_PLATFORM"    solo.io/service-scope=global --overwrite >/dev/null
-# Vendor publishes currency-converter so bank's agentgateway can route to it.
-kctx "$VENDOR_CLUSTER" label ns "$NS_BANK_VENDORS" solo.io/service-scope=global --overwrite >/dev/null
-# Edge publishes its bank-agents stub (so bank could call back if needed).
-kctx "$EDGE_CLUSTER"   label ns "$NS_BANK_AGENTS" solo.io/service-scope=global --overwrite >/dev/null
+log_step "M09.3 — DO NOT apply solo.io/service-scope=global on any namespace"
+# Old design used namespace-level service-scope. That blanket-published every
+# Service in those namespaces, including ones (kagent-ui, kagent-controller,
+# kagent-postgresql, BYO stubs) that should be local-only. The result was
+# autogen ServiceEntries that took over local DNS via the
+# solo.io/service-takeover label - cluster-local traffic got routed via the
+# east/west GW and connection-reset.
+#
+# We intentionally leave namespaces unlabelled. If a real production demo
+# wants federation for a specific service, label that Service - not the
+# namespace.
 kctx "$EDGE_CLUSTER"   label ns "$NS_PLATFORM"    solo.io/service-scope=global --overwrite >/dev/null
 
 # Give the workspace controller a moment to reconcile.
