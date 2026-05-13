@@ -101,6 +101,45 @@ print(json.dumps(d))
 " | kubectl --context="$CTX" apply -f - >/dev/null 2>&1
 done
 
+log "    waiting 10s for the EAG controller to spawn per-agent waypoint Deployments"
+sleep 10
+
+# ---------- Operator-install waypoint patches ----------
+#
+# The enterprise-agentgateway waypoint pods need CLUSTER_ID set explicitly
+# when installed via gloo-operator. Without it, the agentgateway binary
+# defaults to ClusterID="Kubernetes" in its gRPC metadata, but istiod-gloo
+# is configured with CLUSTER_ID="$cluster" — the KubeJWTAuthenticator
+# rejects the mismatch ("client claims to be in cluster 'Kubernetes', but
+# we only know about local cluster '<cluster>'").
+#
+# Patch every per-agent waypoint Deployment we just programmed. Skip
+# silently for any agent without a deployment yet — the script is
+# idempotent and the operator will retry.
+CLUSTER_ID="$BANK_CLUSTER"
+log "patching waypoint Deployments to set CLUSTER_ID=$CLUSTER_ID"
+for ag in support-bot fraud-bot triage-bot; do
+  dep="agent-${ag}-waypoint"
+  if ! kubectl --context="$CTX" -n "$NS" get deploy "$dep" >/dev/null 2>&1; then
+    continue
+  fi
+  # Idempotent: only add CLUSTER_ID if missing.
+  already=$(kubectl --context="$CTX" -n "$NS" get deploy "$dep" \
+    -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="CLUSTER_ID")].value}' 2>/dev/null)
+  if [[ "$already" == "$CLUSTER_ID" ]]; then
+    log_ok "    $dep already has CLUSTER_ID=$CLUSTER_ID"
+    continue
+  fi
+  kubectl --context="$CTX" -n "$NS" patch deploy "$dep" --type=json \
+    -p "[{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/env/-\",\"value\":{\"name\":\"CLUSTER_ID\",\"value\":\"$CLUSTER_ID\"}}]" \
+    2>&1 | sed 's/^/    /'
+done
+log "    waiting for waypoint pods to roll out with new env"
+for ag in support-bot fraud-bot triage-bot; do
+  dep="agent-${ag}-waypoint"
+  kubectl --context="$CTX" -n "$NS" rollout status deploy/"$dep" --timeout=60s 2>&1 | sed 's/^/    /' || true
+done
+
 sleep 3
 log_step "Verifying translation status"
 # Each AccessPolicy reports state = Applied | Failed in .status.state.

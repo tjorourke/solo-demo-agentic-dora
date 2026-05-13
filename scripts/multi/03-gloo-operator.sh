@@ -145,10 +145,15 @@ metadata:
   labels:
     app.kubernetes.io/part-of: trustusbank
 spec:
-  # Identity tuple — set distinctly per cluster for multi-cluster identity.
+  # Identity tuple — cluster+network set distinctly per cluster.
+  # trustDomain is fixed to cluster.local because the enterprise-agentgateway
+  # waypoint binary hardcodes "cluster.local" in its TRUST_DOMAIN env (no
+  # chart knob to override). Multi-cluster identity is still distinguishable
+  # via clusterID + shared root CA — the trust-domain field doesn't have to
+  # differ per cluster for that to work.
   cluster: $cluster
   network: $cluster
-  trustDomain: $td
+  trustDomain: cluster.local
 
   # Mesh shape.
   version: "$ISTIO_VERSION"
@@ -196,6 +201,44 @@ for cluster in "${CLUSTERS[@]}"; do
     esac
     sleep 5
   done
+done
+
+# ---------- Operator-install integration patches ----------
+#
+# The gloo-operator + enterprise-agentgateway combination needs three
+# patches that aren't present in the helm-based install path. These are
+# integration gaps with the operator's istiod naming and the EAG
+# waypoint's hardcoded defaults. Apply each on every cluster.
+#
+# 1. istiod alias Service. The operator deploys istiod as `istiod-gloo`;
+#    the EAG waypoint hardcodes CA_ADDRESS=https://istiod.istio-system.svc:15012.
+#    Without an alias, the waypoint can't reach the CA at all.
+#
+# (The other two — TRUST_DOMAIN and CLUSTER_ID env vars on waypoint pods —
+# are patched at AccessPolicy-on time via policies-kagent-on.sh, since
+# the per-agent waypoints don't exist until kagent labels their Agents.)
+log_step "patching istio-system with `istiod` alias Service (operator names it `istiod-gloo`)"
+for cluster in "${CLUSTERS[@]}"; do
+  ctx="$(cluster_context "$cluster")"
+  log "  [$cluster] applying istiod alias"
+  kubectl --context="$ctx" apply -f - <<EOF >/dev/null
+apiVersion: v1
+kind: Service
+metadata:
+  name: istiod
+  namespace: istio-system
+  labels:
+    app: istiod
+spec:
+  selector:
+    app: istiod
+    istio.io/rev: gloo
+  ports:
+    - { name: grpc-xds,        port: 15010, protocol: TCP }
+    - { name: https-dns,       port: 15012, protocol: TCP }
+    - { name: https-webhook,   port: 443,   protocol: TCP }
+    - { name: http-monitoring, port: 15014, protocol: TCP }
+EOF
 done
 
 # ---------- Verify the four mesh components are up ----------
