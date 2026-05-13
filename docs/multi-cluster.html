@@ -933,24 +933,48 @@ kubectl -n istio-system create secret generic cacerts \
   --from-file=bank/ca-cert.pem --from-file=bank/ca-key.pem \
   --from-file=bank/root-cert.pem --from-file=bank/cert-chain.pem</pre></details>
 
-<h3><span class="step-num">3</span>M03 — Solo Enterprise for Istio (Ambient) on each cluster</h3>
-<p>Pre-pulls 4 Solo Istio images (pilot, proxyv2, install-cni, ztunnel) on the host, <code>kind load</code>s into each cluster, installs Gateway API CRDs, then helm-installs base / istiod / cni / ztunnel from the OCI charts at <code>us-docker.pkg.dev/soloio-img/istio-helm/*</code>.</p>
+<h3><span class="step-num">3</span>M03 — Gloo Operator + ServiceMeshController on each cluster</h3>
+<p>Production-best-practice install path. Gloo Operator (helm chart
+<code>gloo-operator-helm/gloo-operator</code> 0.5.2) goes into the <code>gloo-system</code>
+namespace once per cluster. Then a single declarative <code>ServiceMeshController</code> CR per
+cluster tells the operator to reconcile base + istiod + cni + ztunnel as one
+lifecycle. App teams never touch <code>istio-system</code>.</p>
 
-<details class="yaml"><summary>the istiod install per cluster</summary>
-<pre>helm --kube-context=kind-trustusbank-bank upgrade --install istiod \
-  oci://us-docker.pkg.dev/soloio-img/istio-helm/istiod \
-  --namespace istio-system --version 1.29.2-patch0-solo \
-  --set profile=ambient \
-  --set env.PILOT_ENABLE_IP_AUTOALLOCATE=true \
-  --set env.DISABLE_LEGACY_MULTICLUSTER=true \
-  --set env.PILOT_SKIP_VALIDATE_TRUST_DOMAIN=true \
-  --set global.multiCluster.clusterName=trustusbank-bank \
-  --set global.network=trustusbank-bank \
-  --set meshConfig.trustDomain=bank.local \
-  --set platforms.peering.enabled=true \
-  --set license.value=$SOLO_ISTIO_LICENSE_KEY</pre></details>
+<p>What the script does, per cluster:</p>
+<ol>
+  <li>Pre-pulls the 4 Solo Istio images on the host, <code>kind load</code>s into the cluster.</li>
+  <li>Installs the operator from <code>oci://us-docker.pkg.dev/solo-public/gloo-operator-helm/gloo-operator</code>.</li>
+  <li>Creates a one-time <code>solo-istio-license</code> Secret in <code>istio-system</code> holding the Solo Istio license key.</li>
+  <li>Applies the <code>ServiceMeshController</code> CR below.</li>
+  <li>Waits for <code>.status.phase = Installed</code>.</li>
+</ol>
 
-<div class="callout"><b>Gotcha:</b> The chart has no <code>global.trustDomain</code> key (it's silently dropped). Use <code>meshConfig.trustDomain</code>.</div>
+<details class="yaml" open><summary>the ServiceMeshController CR per cluster</summary>
+<pre>apiVersion: operator.gloo.solo.io/v1
+kind: ServiceMeshController
+metadata:
+  name: managed-istio
+spec:
+  cluster: trustusbank-bank
+  network: trustusbank-bank
+  trustDomain: bank.local
+  version: "1.29.2-patch0-solo"
+  dataplaneMode: Ambient
+  distribution: Standard
+  installNamespace: istio-system
+  scalingProfile: Demo
+  trafficCaptureMode: Auto
+  onConflict: Force
+  image:
+    registry: us-docker.pkg.dev
+    repository: soloio-img/istio</pre></details>
+
+<div class="callout"><b>Why this is the production pattern:</b> IT runs the operator with a
+service account that has <code>cluster-admin</code> in <code>istio-system</code>. App teams have
+no helm access there. Mesh upgrades become editing one field
+(<code>.spec.version</code>); the operator handles canary, drift-correction, and self-healing.
+<code>kubectl get servicemeshcontroller -A</code> is the single status pane across every
+cluster.</div>
 
 <h3><span class="step-num">4</span>M04 — east/west gateways + cross-cluster peering</h3>
 <p>Two helm installs of the <code>peering</code> chart per cluster: once with <code>eastwest.create=true</code> for the local east/west GW, once with <code>remote.create=true</code> listing the other two clusters as peers. NodePorts pinned to 30015 (hbone) and 30016 (xds) so addresses are deterministic.</p>
