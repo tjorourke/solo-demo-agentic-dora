@@ -15,6 +15,11 @@ config:
   oauth2:
     skipApprovalScreen: true
     alwaysShowLoginScreen: false
+    # passwordConnector enables grant_type=password on the /token endpoint
+    # so service workloads (e.g. the chatbot frontend on the edge cluster)
+    # can fetch a JWT without an interactive login. The token represents
+    # the staticPassword user named admin@kagent.local.
+    passwordConnector: local
   enablePasswordDB: true
   staticPasswords:
     - email: admin@kagent.local

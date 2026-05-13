@@ -1,0 +1,66 @@
+# AccessPolicy: who's allowed to invoke support-bot.
+#
+# Why this matters for the rug-pull demo:
+#   support-bot is the customer-facing agent that orchestrates calls to
+#   third-party MCP servers (currency-converter is the rug-pull target).
+#   Without an Enterprise control plane, ANY caller — a misbehaving agent,
+#   a leaked API token, an internal tool — could invoke support-bot and
+#   trigger the vendor MCP path. AccessPolicy declares "only these
+#   identities may invoke this agent". Everything else is denied at the
+#   kagent-enterprise controller, BEFORE the agent's LLM sees the request,
+#   BEFORE the vendor MCP gets a tool call. A denied invocation becomes
+#   an auditable event the SOC pipeline alerts on.
+#
+# This is one of three independent kill-switches:
+#   1. cosign signature verification at admission (image-layer defence)
+#   2. agentgateway policy (network/protocol-layer defence)
+#   3. kagent AccessPolicy (agent-runtime-layer defence — this file)
+# See docs/index.html "Options to defeat the rug-pull" for the full picture.
+#
+# Note on scope: the current AccessPolicy CRD (v1alpha1) targets
+# kind=MCPServer for kagent-managed in-cluster MCP pods, or kind=Agent for
+# any Agent CR. Our currency-converter is a RemoteMCPServer (proxied
+# through agentgateway from the vendor cluster) so we attach the policy
+# to support-bot itself — restricting WHO can invoke the agent — which is
+# the same defence at a slightly different layer.
+apiVersion: policy.kagent-enterprise.solo.io/v1alpha1
+kind: AccessPolicy
+metadata:
+  name: support-bot-callers-allowlist
+  namespace: trustusbank-bank-agents
+  labels:
+    app.kubernetes.io/part-of: trustusbank
+    dora.kagent/control: art-17-runtime-allowlist
+spec:
+  action: ALLOW
+  targetRef:
+    kind: Agent
+    name: support-bot
+  from:
+    subjects:
+      # Allow A2A from triage-bot (the in-cluster orchestrator that
+      # legitimately fans out to support-bot when triaging a ticket).
+      - kind: Agent
+        name: triage-bot
+        namespace: trustusbank-bank-agents
+---
+# A2A: triage-bot legitimately calls fraud-bot when escalating suspected
+# unauthorized transactions. Anyone else is denied.
+apiVersion: policy.kagent-enterprise.solo.io/v1alpha1
+kind: AccessPolicy
+metadata:
+  name: fraud-bot-callers-allowlist
+  namespace: trustusbank-bank-agents
+  labels:
+    app.kubernetes.io/part-of: trustusbank
+    dora.kagent/control: art-17-runtime-allowlist
+spec:
+  action: ALLOW
+  targetRef:
+    kind: Agent
+    name: fraud-bot
+  from:
+    subjects:
+      - kind: Agent
+        name: triage-bot
+        namespace: trustusbank-bank-agents

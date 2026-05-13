@@ -9,6 +9,12 @@ kind: Agent
 metadata:
   name: support-bot
   namespace: trustusbank-bank-agents
+  labels:
+    # kagent.solo.io/waypoint=true tells the Enterprise controller to program
+    # the namespace's Istio waypoint with this Agent's AccessPolicy. Without
+    # the label, AccessPolicy translation fails with "target Agent does not
+    # have the kagent.solo.io/waypoint label".
+    kagent.solo.io/waypoint: "true"
 spec:
   type: Declarative
   declarative:

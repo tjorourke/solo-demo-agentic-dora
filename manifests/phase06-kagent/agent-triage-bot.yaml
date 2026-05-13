@@ -9,6 +9,8 @@ kind: Agent
 metadata:
   name: triage-bot
   namespace: trustusbank-bank-agents
+  labels:
+    kagent.solo.io/waypoint: "true"
 spec:
   type: Declarative
   declarative:
