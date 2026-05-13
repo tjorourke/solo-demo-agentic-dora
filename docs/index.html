@@ -1253,6 +1253,16 @@
         <code>scripts/policies-kagent-on.sh</code> retargets to the per-agent waypoint
         <code>Gateway</code> as a post-step.</td>
       </tr>
+      <tr>
+        <td>UI image</td>
+        <td>OSS UI image (<code>cr.kagent.dev/kagent-dev/kagent/ui</code>)</td>
+        <td>Same — the <code>kagent-enterprise</code> chart re-uses the OSS UI image. The footer still
+        reads "is an open source project". <b>This is by design</b>: the UI is identity-agnostic and
+        talks to whatever controller it's pointed at. Solo's Enterprise differentiation lives in
+        the controller binary (<code>kagent-enterprise-controller:0.4.0</code>), the
+        <code>policy.kagent-enterprise.solo.io/AccessPolicy</code> CRD, waypoint enforcement, and
+        the dex + oauth2-proxy SSO gate — none of which the UI footer reflects.</td>
+      </tr>
     </tbody>
   </table>
 
