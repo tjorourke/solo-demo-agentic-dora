@@ -40,29 +40,24 @@ spec:
         - name: external-attacker
 EOF
 
-log_step "M09.2 — WorkspaceSettings (federation declared, opt-in via label)"
-# Federation is enabled so the mgmt-plane UI shows Workspaces / Insights /
-# Global Services / Routes across all 3 clusters. But the serviceSelector
-# is intentionally NARROW: only Services explicitly labelled with
-# solo.io/expose-cross-cluster=true get autogen ServiceEntries.
+log_step "M09.2 — WorkspaceSettings (NO federation — Solo Istio peering owns that now)"
+# Federation is INTENTIONALLY DISABLED here. As of this version, federation
+# in Solo Istio Ambient is owned by istiod-native peering (east-west GW +
+# istio-remote-secret-*), and services are addressable as:
+#   <svc>.<ns>.mesh.internal                (when labelled istio.io/global=true)
+#   <svc>.<ns>.svc.<cluster>.mesh.internal  (always, cluster-scoped)
 #
-# Why not a broad "namespace: trustusbank-*" selector?
-#   - kagent's BYO Agent pattern creates same-name Services on consumer and
-#     producer clusters (e.g. fraud-bot exists on bank as a real pod AND on
-#     edge as a stub for kagent CRD validation). A broad selector makes
-#     Solo's federation translator union the local .svc.cluster.local
-#     hostname into the autogen ServiceEntry and route it to the producer
-#     cluster's east/west GW.
-#   - In kind, the east/west GW's WorkloadEntry addresses don't populate
-#     reliably, so the federated path can fail outright, leaving everything
-#     (including the local pod on the same cluster) unreachable.
-#   - Lateral-hack EndpointSlices (see manifests/multi/lateral-hack.yaml)
-#     carry the cross-cluster traffic deterministically, and ztunnel's
-#     PreferNetwork picks the local pod when it exists.
+# Enabling Solo Mesh's federation translator on top of that causes the
+# translator to emit ServiceEntries (named `vd-*`) on every consumer
+# cluster claiming the SAME hostnames but with synthetic VIPs and zero
+# endpoints (because the translator's gateway-discovery doesn't recognise
+# the ztunnel-based east-west GW). The cluster-scoped hostname then
+# resolves to a dead VIP and traffic resets.
 #
-# Net: declare federation, keep the model visible in the UI, deliver traffic
-# via the lateral hack. Opt specific Services into autogen ServiceEntries
-# by adding solo.io/expose-cross-cluster=true on the producer Service.
+# Solo Mesh stays in the picture for GOVERNANCE only — Workspace
+# (above) defines the multi-cluster RBAC/import boundary; AccessPolicy
+# enforces at the per-agent waypoint Gateway. Neither needs the
+# federation translator.
 kctx "$BANK_CLUSTER" apply -f - <<EOF
 apiVersion: admin.gloo.solo.io/v2
 kind: WorkspaceSettings
@@ -70,13 +65,6 @@ metadata:
   name: trustusbank
   namespace: gloo-mesh
 spec:
-  options:
-    federation:
-      enabled: true
-      hostSuffix: mesh.internal
-      serviceSelector:
-        - labels:
-            solo.io/expose-cross-cluster: "true"
   exportTo:
     - workspaces:
         - name: trustusbank
@@ -85,18 +73,40 @@ spec:
         - name: trustusbank
 EOF
 
-log_step "M09.3 — DO NOT apply solo.io/service-scope=global on any namespace"
-# Old design used namespace-level service-scope. That blanket-published every
-# Service in those namespaces, including ones (kagent-ui, kagent-controller,
-# kagent-postgresql, BYO stubs) that should be local-only. The result was
-# autogen ServiceEntries that took over local DNS via the
-# solo.io/service-takeover label - cluster-local traffic got routed via the
-# east/west GW and connection-reset.
+log_step "M09.2b — purge any leftover federation ServiceEntries the translator emitted"
+# If a previous install had federation: enabled, the translator wrote
+# `vd-*` ServiceEntries into every workspace namespace on every cluster.
+# Disabling federation in WorkspaceSettings stops new ones but doesn't
+# garbage-collect the existing ones. Delete them explicitly so the
+# cluster-scoped mesh.internal hostnames go back to istiod's auto-generated
+# (with-endpoints) ServiceEntries.
+for cluster in "${CLUSTERS[@]}"; do
+  kctx "$cluster" get serviceentry -A \
+    -l reconciler.mesh.gloo.solo.io/name=translator -o name 2>/dev/null \
+    | while read -r se; do
+        ns=$(echo "$se" | sed -nE 's|.*/(.*)|\1|p')
+        kctx "$cluster" delete "$se" --ignore-not-found >/dev/null 2>&1 || true
+      done
+done
+# Also remove any leftover VirtualDestination CRs (they referenced the
+# now-removed federation path).
+for cluster in "${CLUSTERS[@]}"; do
+  kctx "$cluster" get virtualdestination -A -o name 2>/dev/null \
+    | xargs -I{} kctx "$cluster" delete {} --ignore-not-found 2>/dev/null \
+    | head -5 || true
+done
+
+log_step "M09.3 — label producer Services for Solo Istio GLOBAL federation"
+# In Solo Istio Ambient, the `istio.io/global=true` Service label triggers
+# the auto-provisioned `<svc>.<ns>.mesh.internal` global hostname. The
+# istio-gloo configmap's serviceScopeConfigs picks this up.
+# (Cluster-scoped `<svc>.<ns>.svc.<cluster>.mesh.internal` works without
+# any label — it's always available.)
 #
-# We intentionally leave namespaces unlabelled. If a real production demo
-# wants federation for a specific service, label that Service - not the
-# namespace.
-kctx "$EDGE_CLUSTER"   label ns "$NS_PLATFORM"    solo.io/service-scope=global --overwrite >/dev/null
+# Apply only to producer-side Services that should be reachable from
+# every cluster's mesh DNS.
+kctx "$BANK_CLUSTER"   -n trustusbank-bank-agents  label svc support-bot        istio.io/global=true --overwrite >/dev/null 2>&1 || true
+kctx "$VENDOR_CLUSTER" -n trustusbank-bank-vendors label svc currency-converter istio.io/global=true --overwrite >/dev/null 2>&1 || true
 
 # Give the workspace controller a moment to reconcile.
 sleep 20

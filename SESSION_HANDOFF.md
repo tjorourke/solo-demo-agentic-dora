@@ -5,11 +5,18 @@
 
 ## TL;DR
 
-The TrustUsBank / agentic-DORA demo is **functionally green** on three live kind clusters. All three rug-pull defence layers (cosign / agentgateway / kagent AccessPolicy) are working. The chatbot returns the customer balance end-to-end.
+The TrustUsBank / agentic-DORA demo is **fully green, SPIFFE-preserved end-to-end** on three live kind clusters. All three rug-pull defence layers (cosign / agentgateway / kagent AccessPolicy) are working. The chatbot returns the customer balance end-to-end via Solo Istio Ambient peering — **no more lateral-hack, no more SPIFFE-stripping NodePort SNAT.**
 
-**One open piece of work**: cross-cluster traffic between clusters currently goes via a "lateral hack" (NodePort + manual EndpointSlices) instead of Solo Istio's east-west HBONE peering. The federation infrastructure is correctly authored — Workspace, Segment, VirtualDestination, per-Service `solo.io/expose-cross-cluster=true` labels, and ServiceEntries with proper SPIFFE `subjectAltNames` are all generated. **The gap is that Solo Mesh's mgmt-server federation translator doesn't auto-discover the east-west Gateway created by Solo Istio's `peering` helm chart**, so the matching `WorkloadEntry` per remote pod is never emitted, and cross-cluster traffic resets at the federated VIP.
+**The session that closed the federation gap**: Solo Istio's Ambient peering needs every one of the following to be in place (codified in install scripts now). Without any one of them, cross-cluster falls back to either silent failure or the lateral-hack:
 
-The lateral-hack is a documented Solo Mesh / Solo Istio integration gap, not a deficiency in our config.
+1. **Enterprise Solo Istio license** in `secrets/secrets-envs.sh` as `MESH_LICENSE_KEY` (the trial license has `addOns: []` and is rejected for MultiCluster). Wired as `SOLO_LICENSE_KEY` env on `istiod-gloo`.
+2. **Intermediate CAs all signed with SAN `spiffe://cluster.local/...`** (not `<cluster>.local`). istiod's cross-cluster cert validation fails silently if the intermediate's SAN doesn't match the runtime trust domain.
+3. **Peering chart's `gateway.istio.io/trust-domain` annotation = `cluster.local`** on every peer Gateway (was hardcoded per-cluster in `04-peering.sh`).
+4. **`topology.istio.io/network=<cluster>` label on every workload namespace**, not just `istio-system`. Without it istiod can't classify pods' networks and never rewrites cross-cluster endpoints to the east-west GW.
+5. **`L7_ENABLED=true` on ztunnel** and **`PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES=false` on istiod-gloo** — patched in `03-gloo-operator.sh` (SMC schema doesn't expose them).
+6. **`istio-remote-secret-*` Secrets** cross-applied to every consumer cluster, holding a kubeconfig + long-lived token for the remote's `istio-reader-service-account`. The peering chart only provides the data-plane half; this is the control-plane half. New `04b-remote-secrets.sh`.
+
+Federation now works via Solo Istio native discovery: services labelled `istio.io/global=true` get the auto-provisioned `<svc>.<ns>.mesh.internal` global hostname; cluster-scoped is `<svc>.<ns>.svc.<cluster>.mesh.internal`. Solo Mesh's `VirtualDestination`/`Workspace.federation` translator is **no longer in the data path** — it stays for governance only (`Workspace`, `WorkspaceSettings`, `AccessPolicy`).
 
 ---
 
@@ -29,10 +36,10 @@ All three are running Solo Enterprise for Istio (Ambient mode) `1.29.2-patch0` i
 
 | Cluster | Workloads |
 |---|---|
-| **edge** | `chatbot` (nginx + SPA) ONLY; cross-cluster stubs in `trustusbank-bank-agents` for the lateral-hack |
+| **edge** | `chatbot` (nginx + SPA) ONLY. No more cross-cluster stubs — Solo Istio peering provides the cross-cluster path natively. |
 | **bank** | Solo Enterprise for kagent 0.4.0 (controller + UI + postgres) + dex + oauth2-proxy + agentregistry + agentgateway + 3 MCP servers (account, transaction, ticket) + 3 Agents (support-bot, fraud-bot, triage-bot) + per-agent waypoints + observability stack (Prom/Loki/Tempo/Grafana/MailHog) |
 | **vendor** | currency-converter MCP (the rug-pull target, gets swapped to `:1.0.0-rugpull` during Act 2) + mock-attacker (the C2 sink) |
-| **gloo-mesh** (on bank) | gloo-mesh-mgmt-server + redis + UI + relay-agent x3 (one per cluster) |
+| **gloo-mesh** (on bank) | gloo-mesh-mgmt-server + redis + UI + relay-agent x3 (one per cluster). Used for **governance only** (Workspace, AccessPolicy) — federation no longer goes through `VirtualDestination`. |
 
 ### Defence layers — all three working
 
@@ -40,9 +47,25 @@ All three are running Solo Enterprise for Istio (Ambient mode) `1.29.2-patch0` i
 2. **agentgateway policy (gateway)** — `AgentgatewayPolicy` CRs on the agentgateway HTTPRoutes filter MCP tool calls. Toggle: `scripts/policies-on.sh` / `policies-off.sh`.
 3. **kagent AccessPolicy (agent runtime)** — `AccessPolicy` CRs at the per-agent Istio waypoint Gateway. Currently has fraud-bot allowlist (triage-bot only). Toggle: `scripts/policies-kagent-on.sh` / `policies-kagent-off.sh`. **VERIFIED:** triage→fraud HTTP 200, support→fraud HTTP 403.
 
-### Cross-cluster connectivity — interim path
+### Cross-cluster connectivity — Solo Istio Ambient peering (production-correct)
 
-`scripts/multi/apply-lateral-hack.sh` plants stub Services + EndpointSlices that route via bank/vendor NodePorts. Detects current node IPs at apply-time via `docker inspect` (kind rebuilds change them). **SPIFFE is stripped on the SNAT hop** — so cross-cluster AccessPolicy with `kind: ServiceAccount` subject can't match. Intra-cluster AccessPolicy is unaffected.
+Data plane: each cluster's east-west GW is a `gatewayClassName: istio-eastwest`
+Gateway with ports 15008 (HBONE) + 15012 (XDS-TLS), exposed via NodePort on
+the kind docker network. Peer Gateway CRs (`gatewayClassName: istio-remote`)
+declare each remote cluster's address. SPIFFE is preserved end-to-end via
+HBONE; the chatbot's ServiceAccount identity reaches the destination's
+per-agent waypoint AccessPolicy intact.
+
+Control plane: `istio-remote-secret-trustusbank-<cluster>` Secret in every
+peer's `istio-system` holds a kubeconfig + long-lived `istio-reader-service-account`
+token, so each istiod-gloo can read remote Services/Endpoints/Pods. Without
+this, federation silently produces zero endpoints. Codified in
+`scripts/multi/04b-remote-secrets.sh`.
+
+Federation hostnames (auto-provisioned by istiod):
+- `<svc>.<ns>.mesh.internal` — global (when producer Service has
+  `istio.io/global=true`)
+- `<svc>.<ns>.svc.<cluster>.mesh.internal` — cluster-scoped (always available)
 
 ---
 

@@ -7,8 +7,11 @@
 # cluster signed by the root, each cluster gets a cacerts secret in
 # istio-system before istiod is installed.
 #
-# Per-cluster trust domains are <cluster>.local (edge.local, bank.local,
-# vendor.local). istiod will mint SPIFFE IDs under those domains.
+# Trust domain is `cluster.local` on EVERY cluster. The Solo Enterprise for
+# Istio peering binary and the enterprise-agentgateway waypoint hardcode
+# `cluster.local` (no chart knob to override), so the intermediate SAN must
+# match. Multi-cluster identity is still unique per cluster via clusterID +
+# the per-cluster intermediate signing key. See CLAUDE.md gap notes.
 #
 # Output is in .certs/ at the repo root (gitignored). Re-running this is
 # idempotent — existing certs are kept and re-applied to clusters.
@@ -38,40 +41,55 @@ else
     -subj "/O=Istio/CN=Root CA" 2>/dev/null
 fi
 
-# Cluster-trustdomain mapping. Trust domain == short cluster role, not the
-# full kind cluster name, so SPIFFE URIs read cleanly:
-#   spiffe://bank.local/ns/.../sa/...
-declare_trust_domain() {
+# All clusters share trust domain `cluster.local`. The directory under .certs/
+# is a per-cluster label so the keys/certs land in separate dirs, but the
+# SPIFFE SAN on the intermediate is always cluster.local.
+trust_domain_san() { echo "cluster.local"; }
+
+declare_dir_label() {
   case "$1" in
     "$EDGE_CLUSTER")   echo edge   ;;
     "$BANK_CLUSTER")   echo bank   ;;
     "$VENDOR_CLUSTER") echo vendor ;;
-    *) die "no trust domain for $1" ;;
+    *) die "no dir label for $1" ;;
   esac
 }
 
-# 2. Per-cluster intermediate CAs.
+# 2. Per-cluster intermediate CAs (all SANs are spiffe://cluster.local/...)
 for cluster in "${CLUSTERS[@]}"; do
-  td="$(declare_trust_domain "$cluster")"
-  cdir="$CERTS_DIR/$td"
+  label="$(declare_dir_label "$cluster")"
+  td="$(trust_domain_san)"
+  cdir="$CERTS_DIR/$label"
   mkdir -p "$cdir"
 
+  # If the intermediate exists but its SAN is for an old per-cluster trust
+  # domain (edge.local / bank.local / vendor.local), regenerate it.
+  needs_regen=true
   if [[ -f "$cdir/ca-cert.pem" && -f "$cdir/ca-key.pem" ]]; then
-    log_ok "intermediate CA for $cluster ($td.local) already exists"
+    if openssl x509 -in "$cdir/ca-cert.pem" -noout -ext subjectAltName \
+        | grep -q "spiffe://${td}/ns/istio-system/sa/citadel"; then
+      needs_regen=false
+    else
+      log_warn "intermediate CA for $cluster has stale SAN — regenerating"
+    fi
+  fi
+
+  if [[ "$needs_regen" == "false" ]]; then
+    log_ok "intermediate CA for $cluster ($td) already exists"
   else
-    log_step "generating intermediate CA for $cluster (trust domain $td.local)"
-    openssl genrsa -out "$cdir/ca-key.pem" 4096 2>/dev/null
+    log_step "generating intermediate CA for $cluster (SAN spiffe://$td/...)"
+    [[ -f "$cdir/ca-key.pem" ]] || openssl genrsa -out "$cdir/ca-key.pem" 4096 2>/dev/null
 
     openssl req -new -key "$cdir/ca-key.pem" -out "$cdir/ca.csr" \
-      -subj "/O=Istio/CN=Intermediate CA $td" 2>/dev/null
+      -subj "/O=Istio/CN=Intermediate CA $label" 2>/dev/null
 
     # Cert extensions: it's a CA, plus SPIFFE URI SAN identifying the
-    # citadel SA in the cluster's istio-system. The URI SAN is what lets
-    # remote clusters validate this intermediate.
+    # citadel SA in the cluster's istio-system. All clusters share the
+    # same trust domain (cluster.local) — see header comment for why.
     cat > "$cdir/ca-ext.cnf" <<EXT
 basicConstraints = critical, CA:TRUE
 keyUsage = critical, keyCertSign, cRLSign
-subjectAltName = URI:spiffe://$td.local/ns/istio-system/sa/citadel
+subjectAltName = URI:spiffe://$td/ns/istio-system/sa/citadel
 EXT
 
     openssl x509 -req -days 3650 \
@@ -90,8 +108,8 @@ done
 
 # 3. Apply cacerts secret to each cluster's istio-system namespace.
 for cluster in "${CLUSTERS[@]}"; do
-  td="$(declare_trust_domain "$cluster")"
-  cdir="$CERTS_DIR/$td"
+  label="$(declare_dir_label "$cluster")"
+  cdir="$CERTS_DIR/$label"
 
   log_step "applying cacerts secret to $cluster:istio-system"
   kctx "$cluster" create namespace istio-system --dry-run=client -o yaml \
@@ -108,4 +126,5 @@ for cluster in "${CLUSTERS[@]}"; do
 done
 
 log_ok "Phase M02 (shared CA + per-cluster intermediates) complete"
-log "  trust roots: edge.local, bank.local, vendor.local — all chained to one root in .certs/root-cert.pem"
+log "  trust domain: cluster.local on every cluster (SAN of intermediates is spiffe://cluster.local/...)"
+log "  per-cluster identity: differentiated by clusterID + per-cluster signing keys, not by trust domain"

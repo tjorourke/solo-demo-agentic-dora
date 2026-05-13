@@ -11,6 +11,12 @@ kubeconfig
 # Multi-cluster shared CA — generated per-environment, never committed
 .certs/
 
+# Solo license files — one per product, never committed. See secrets/README.md.
+secrets/*.lic
+secrets/*.jwt
+secrets/*.key
+secrets/secrets-envs.sh
+
 # Evidence is generated, not source
 evidence/phase*/
 !evidence/.gitkeep

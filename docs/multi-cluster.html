@@ -128,7 +128,11 @@
   </div>
 </div>
 
-<p class="lede">If you're standing up an agentic AI deployment across multiple clusters and need to understand how Solo Enterprise for Istio Ambient, the Solo management plane, kagent, and agentgateway fit together, this is the doc that walks it top to bottom: three kind clusters, federated trust, east/west peering, the Workspace model, HBONE on the wire, waypoints in the data plane, and every CRD you'll meet along the way. Every YAML block expands inline.</p>
+<p class="lede">If you're standing up an agentic AI deployment across multiple clusters and need to understand how Solo Enterprise for Istio Ambient, the Solo management plane, kagent, and agentgateway fit together, this is the doc that walks it top to bottom: three kind clusters, shared root CA, east/west HBONE peering, the istiod-native cross-cluster control plane (<code>istio-remote-secret-*</code>), Workspace governance, waypoints in the data plane, and every CRD you'll meet along the way. Every YAML block expands inline.</p>
+
+<div class="callout" style="background:#fef3c7;border:1px solid #fbbf24;color:#78350f;">
+<b>What changed in this version:</b> federation is now owned by Solo Istio's <b>native Ambient peering</b> (one east-west GW + <code>istio-remote-secret-*</code> per peer). Solo Mesh's <code>VirtualDestination</code>/<code>WorkspaceSettings.federation</code> path is <b>no longer in the data path</b> — it produced ServiceEntries with zero endpoints in Ambient mode. Solo Mesh stays for <b>governance only</b> (<code>Workspace</code> + <code>AccessPolicy</code>). The previous "lateral-hack" (NodePort + EndpointSlice stubs that stripped SPIFFE) is <b>gone</b> — SPIFFE is preserved end-to-end through the east-west GW, so cross-cluster <code>AccessPolicy</code> with <code>kind: ServiceAccount</code> subjects works.
+</div>
 
 <div class="toc">
   <h3>Contents</h3>
@@ -140,7 +144,7 @@
     <li><a href="#workspace">Solo Workspaces &amp; Segments</a></li>
     <li><a href="#walk">Step-by-step build (M00 → M11) + operator helpers</a></li>
     <li><a href="#demo">The supply-chain attack demo</a></li>
-    <li><a href="#distributed">Distributing 3 agents across 3 clusters (lateral hack + federation-hijack fix)</a></li>
+    <li><a href="#distributed">Distributing 3 agents across 3 clusters (Solo Istio peering wire)</a></li>
     <li><a href="#flow">Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</a></li>
   </ol>
 </div>
@@ -149,7 +153,7 @@
 
 <h2 id="topology"><span class="num">1.</span> The 3-cluster topology</h2>
 
-<p>Three kind clusters on the shared <code>kind</code> docker network. Each is an independent Kubernetes cluster, each runs its own Solo Enterprise for Istio (Ambient) control plane (<code>istiod</code>, <code>istio-cni</code>, <code>ztunnel</code>), and each has a distinct SPIFFE trust domain. They peer via an east/west Gateway per cluster (HBONE on TCP/15008, xDS on 15012) and are federated by a single Solo management plane co-located on <code>bank</code>.</p>
+<p>Three kind clusters on the shared <code>kind</code> docker network. Each is an independent Kubernetes cluster, each runs its own Solo Enterprise for Istio (Ambient) control plane (<code>istiod</code>, <code>istio-cni</code>, <code>ztunnel</code>). All three share the SPIFFE trust domain <code>cluster.local</code> (the enterprise-agentgateway waypoint binary hardcodes that); per-cluster identity is differentiated via <code>clusterID</code> + per-cluster intermediate signing keys. Clusters peer via an east/west Gateway per cluster (HBONE on TCP/15008, xDS on 15012) AND via cross-applied <code>istio-remote-secret-*</code> Secrets so istiod-gloo can read remote Services/Endpoints. A single Solo management plane is co-located on <code>bank</code> for <em>governance</em> (Workspace + AccessPolicy) — federation is istiod-native.</p>
 
 <!-- Cluster topology — mgmt plane co-located inside bank, clean SVG connectors. -->
 <style>
@@ -222,28 +226,22 @@
     <!-- EDGE -->
     <div class="cl edge">
       <div class="hdr"><span class="name">cluster-edge</span> <span class="pill pill-edge">edge</span></div>
-      <div class="td">trust: edge.local · net: trustusbank-edge</div>
+      <div class="td">trust: cluster.local · net: trustusbank-edge</div>
 
       <div class="ns">trustusbank-bank-frontend</div>
-      <ul><li>chatbot (nginx) — calls bank's agents via A2A direct</li></ul>
-
-      <div class="ns">trustusbank-bank-agents</div>
-      <ul><li>support-bot · fraud-bot · triage-bot Service stubs</li><li>(EndpointSlices → bank NodePorts 30090/91/94)</li></ul>
-
-      <div class="ns">trustusbank-platform</div>
-      <ul><li>trustusbank-agentgw stub Service</li><li>(EndpointSlice → bank NodePort 30092)</li></ul>
+      <ul><li>chatbot (nginx + SPA)</li><li>calls support-bot via <code>&lt;svc&gt;.&lt;ns&gt;.mesh.internal</code> over HBONE</li></ul>
 
       <div class="ns">control plane</div>
-      <ul><li>istiod · ztunnel · istio-cni</li><li>gloo-mesh-agent</li></ul>
+      <ul><li>istiod-gloo · ztunnel · istio-cni</li><li>gloo-mesh-agent (governance only)</li></ul>
 
-      <div class="gwbar"><span class="lbl">istio-eastwest GW</span> <span>:15008 HBONE</span></div>
+      <div class="gwbar"><span class="lbl">istio-eastwest GW</span> <span>:15008 HBONE · :15012 XDS</span></div>
       <div class="relay-badge"><span class="arr">↗</span> gloo-mesh-agent → bank :30416</div>
     </div>
 
     <!-- BANK -->
     <div class="cl bank">
       <div class="hdr"><span class="name">cluster-bank</span> <span class="pill pill-bank">bank · mgmt</span></div>
-      <div class="td">trust: bank.local · net: trustusbank-bank</div>
+      <div class="td">trust: cluster.local · net: trustusbank-bank</div>
 
       <div class="ns">trustusbank-bank-agents</div>
       <ul><li>support-bot · fraud-bot · triage-bot (real)</li><li>per-agent waypoint (AccessPolicy enforcement)</li></ul>
@@ -274,7 +272,7 @@
     <!-- VENDOR -->
     <div class="cl vendor">
       <div class="hdr"><span class="name">cluster-vendor</span> <span class="pill pill-vendor">vendor</span></div>
-      <div class="td">trust: vendor.local · net: trustusbank-vendor</div>
+      <div class="td">trust: cluster.local · net: trustusbank-vendor</div>
 
       <div class="ns">trustusbank-bank-vendors</div>
       <ul><li>currency-converter (clean + rugpull)</li><li>waypoint</li></ul>
@@ -293,7 +291,7 @@
   <div class="legend">
     <div class="item cyan"><span class="dot"></span><b>East/west HBONE :15008</b> — every pair of clusters' istio-eastwest GWs peer over HBONE. SNI carries destination cluster.</div>
     <div class="item purple"><span class="dot"></span><b>Mgmt-plane relay :30416</b> — each cluster's gloo-mesh-agent dials bank's mgmt-server. Bank's agent talks to its own mgmt-server locally.</div>
-    <div class="item green"><span class="dot"></span><b>Northbound</b> — browser → chatbot in edge. Edge is the only cluster that takes external traffic.</div>
+    <div class="item green"><span class="dot"></span><b>istiod-native peering</b> — <code>istio-remote-secret-*</code> cross-applied between every pair of clusters; each istiod reads remote Services/Endpoints + auto-generates the cross-cluster ServiceEntry / WorkloadEntry. Federation is istiod-owned.</div>
   </div>
 </div>
 
@@ -301,15 +299,15 @@
 
 <table class="inv">
 <colgroup><col class="k-cluster"><col><col class="k-status"></colgroup>
-<thead><tr><th>Cluster</th><th>Role</th><th>Trust domain</th></tr></thead>
+<thead><tr><th>Cluster</th><th>Role</th><th>Network · trust domain</th></tr></thead>
 <tbody>
-<tr><td><div><span class="pill pill-edge">edge</span></div><div style="margin-top:4px"><code>trustusbank-edge</code></div></td><td>Customer-facing. Browser hits the chatbot here. Northbound traffic enters the mesh on this cluster.</td><td><code>edge.local</code></td></tr>
-<tr><td><div><span class="pill pill-bank">bank</span></div><div style="margin-top:4px"><code>trustusbank-bank</code></div></td><td>The bank's own infrastructure. Agents, MCP servers, agentgateway, agentregistry, observability, and (co-located here) the Solo management plane.</td><td><code>bank.local</code></td></tr>
-<tr><td><div><span class="pill pill-vendor">vendor</span></div><div style="margin-top:4px"><code>trustusbank-vendor</code></div></td><td>Third-party / untrusted. Holds the rogue <code>currency-converter</code> MCP server and the mock attacker that receives exfiltrated PII.</td><td><code>vendor.local</code></td></tr>
+<tr><td><div><span class="pill pill-edge">edge</span></div><div style="margin-top:4px"><code>trustusbank-edge</code></div></td><td>Customer-facing. Browser hits the chatbot here. Northbound traffic enters the mesh on this cluster.</td><td><code>net: trustusbank-edge</code><br><code>trust: cluster.local</code></td></tr>
+<tr><td><div><span class="pill pill-bank">bank</span></div><div style="margin-top:4px"><code>trustusbank-bank</code></div></td><td>The bank's own infrastructure. Agents, MCP servers, agentgateway, agentregistry, observability, and (co-located here) the Solo management plane.</td><td><code>net: trustusbank-bank</code><br><code>trust: cluster.local</code></td></tr>
+<tr><td><div><span class="pill pill-vendor">vendor</span></div><div style="margin-top:4px"><code>trustusbank-vendor</code></div></td><td>Third-party / untrusted. Holds the rogue <code>currency-converter</code> MCP server and the mock attacker that receives exfiltrated PII.</td><td><code>net: trustusbank-vendor</code><br><code>trust: cluster.local</code></td></tr>
 </tbody>
 </table>
 
-<p>The three trust domains map cleanly to three SPIFFE prefixes. Every workload identity (<code>spiffe://&lt;td&gt;/ns/&lt;ns&gt;/sa/&lt;sa&gt;</code>) carries its cluster of origin. That's the foundation everything else — east/west routing, authorization policies, audit — is built on.</p>
+<p>All three clusters share the trust domain <code>cluster.local</code>. The enterprise-agentgateway waypoint binary hardcodes <code>TRUST_DOMAIN=cluster.local</code> and Solo Istio's peering cert-chain validation requires the intermediate CA's SAN to match the runtime trust domain — so per-cluster trust domains (<code>edge.local</code> / <code>bank.local</code> / <code>vendor.local</code>) break BOTH the waypoint AND federation. Per-cluster identity is differentiated via <b>network</b> (<code>topology.istio.io/network=&lt;cluster&gt;</code>) and via the per-cluster intermediate signing key — both visible to istiod, both unique. Every workload identity still reads <code>spiffe://cluster.local/ns/&lt;ns&gt;/sa/&lt;sa&gt;</code>; the cluster of origin is conveyed via the network label, not the trust domain.</p>
 
 <hr>
 
@@ -326,7 +324,7 @@
 <tr><td><code>istio-eastwest</code></td><td>istio-eastwest Gateway (Deployment + NodePort Service :30015 hbone, :30016 xds)</td><td>Inbound peer endpoint for the other two clusters</td></tr>
 <tr><td><code>gloo-mesh</code></td><td>gloo-mesh-agent (1 pod)</td><td>Relay to bank's mgmt-server</td></tr>
 <tr><td><code>trustusbank-bank-frontend</code> <small>ambient</small></td><td>chatbot (nginx)</td><td>Customer-facing SPA. Nginx proxies <code>/api/a2a/&lt;ns&gt;/&lt;agent&gt;/</code> directly to the target agent's A2A JSON-RPC port on bank (no kagent controller in the path)</td></tr>
-<tr><td><code>trustusbank-bank-agents</code> <small>ambient</small></td><td>Service stubs: support-bot, fraud-bot, triage-bot, trustusbank-agentgw</td><td>Empty-Endpoints local Services. EndpointSlices in <code>manifests/multi/lateral-hack.yaml</code> point them at bank's NodePorts so <code>&lt;agent&gt;.&lt;ns&gt;.svc.cluster.local</code> resolves from edge</td></tr>
+<tr><td><code>trustusbank-bank-frontend</code> <small>ambient</small></td><td>chatbot (nginx + SPA)</td><td>The chatbot proxies <code>POST /api/a2a/&lt;ns&gt;/&lt;agent&gt;/</code> to <code>http://&lt;agent&gt;.&lt;ns&gt;.mesh.internal:8080/</code> — Solo Istio's auto-provisioned global federation hostname (the producer Service must carry <code>istio.io/global=true</code>). Traffic flows over HBONE through the east-west GW to bank, with the chatbot's SPIFFE identity intact for cross-cluster <code>AccessPolicy</code>.</td></tr>
 </tbody>
 </table>
 
@@ -461,7 +459,7 @@ spec:
       protocol: HTTP
       targetPort: 8080
   subjectAltNames:
-    - spiffe://bank.local/ns/trustusbank-bank-mcp/sa/account-mcp
+    - spiffe://cluster.local/ns/trustusbank-bank-mcp/sa/account-mcp
   workloadSelector:
     labels:
       admin.solo.io/segment: default
@@ -477,30 +475,34 @@ spec:
 <thead><tr><th>Kind</th><th>Group</th><th>What it does</th></tr></thead>
 <tbody>
 <tr><td><code>Workspace</code></td><td>admin.gloo.solo.io/v2</td><td>The tenancy boundary. Lists clusters + namespace selectors that belong to one app team or policy boundary. Lives in <code>gloo-mesh</code>.</td></tr>
-<tr><td><code>WorkspaceSettings</code></td><td>admin.gloo.solo.io/v2</td><td>The policy for a Workspace. Federation on/off, host suffix, east/west gateway selector, service isolation. Lives in a namespace the Workspace selects (not in gloo-mesh).</td></tr>
+<tr><td><code>WorkspaceSettings</code></td><td>admin.gloo.solo.io/v2</td><td>The policy for a Workspace — import/export, AccessPolicy scope. <b>No <code>federation</code> block</b> in this architecture — federation is owned by Solo Istio peering.</td></tr>
 <tr><td><code>KubernetesCluster</code></td><td>admin.gloo.solo.io/v2</td><td>Registers a workload cluster with the mgmt server. Without this the relay rejects the agent.</td></tr>
 <tr><td><code>RootTrustPolicy</code></td><td>admin.gloo.solo.io/v2</td><td>(Optional in our setup) tells Solo's CA manager to federate a trust root across the mesh. We do this manually with the cacerts secret pattern from the Istio Makefile.</td></tr>
-<tr><td><code>VirtualDestination</code></td><td>networking.gloo.solo.io/v2</td><td>(Optional alternate path) declare a virtual host that fronts multiple real backends across clusters — used when you want explicit aliasing instead of namespace-sameness.</td></tr>
-<tr><td><code>Segment</code></td><td>admin.solo.io/v1alpha1</td><td><b>Critical, easy to miss.</b> Names a routing segment with a DNS suffix. Without a Segment in <code>istio-system</code> labelled on the namespace, federation can't generate global hostnames.</td></tr>
+<tr><td><code>VirtualDestination</code></td><td>networking.gloo.solo.io/v2</td><td><b>Not used in this architecture.</b> Solo Mesh's <code>VirtualDestination</code> federation translator emits ServiceEntries that fight with Solo Istio peering on Ambient (the translator's gateway-discovery doesn't recognise the ztunnel-based east-west GW, producing 0-endpoint SEs). We removed it.</td></tr>
 </tbody>
 </table>
 
-<details class="yaml"><summary>example — the four CRDs that wire cross-cluster routing together</summary>
-<pre># 1. Register the cluster (must be applied to mgmt cluster BEFORE the agent starts).
+<details class="yaml"><summary>example — Solo Mesh governance CRDs (federation is istiod-native, not in WorkspaceSettings)</summary>
+<pre># 1. Register every cluster (applied to bank — the mgmt cluster).
 apiVersion: admin.gloo.solo.io/v2
 kind: KubernetesCluster
-metadata:
-  name: trustusbank-edge
-  namespace: gloo-mesh
-spec:
-  clusterDomain: cluster.local
+metadata: { name: trustusbank-edge,   namespace: gloo-mesh }
+spec: { clusterDomain: cluster.local }
 ---
-# 2. Define the tenancy boundary.
+apiVersion: admin.gloo.solo.io/v2
+kind: KubernetesCluster
+metadata: { name: trustusbank-bank,   namespace: gloo-mesh }
+spec: { clusterDomain: cluster.local }
+---
+apiVersion: admin.gloo.solo.io/v2
+kind: KubernetesCluster
+metadata: { name: trustusbank-vendor, namespace: gloo-mesh }
+spec: { clusterDomain: cluster.local }
+---
+# 2. Tenancy boundary.
 apiVersion: admin.gloo.solo.io/v2
 kind: Workspace
-metadata:
-  name: trustusbank
-  namespace: gloo-mesh
+metadata: { name: trustusbank, namespace: gloo-mesh }
 spec:
   workloadClusters:
     - name: trustusbank-edge
@@ -510,36 +512,14 @@ spec:
     - name: trustusbank-vendor
       namespaces: [{ name: 'trustusbank-*' }, { name: external-attacker }]
 ---
-# 3. Policy for the Workspace (must live in a namespace selected by the Workspace,
-#    e.g. trustusbank-platform — NOT in gloo-mesh).
+# 3. Governance settings — no federation block, deliberately.
+#    Federation is owned by Solo Istio peering (M04 + M04b).
 apiVersion: admin.gloo.solo.io/v2
 kind: WorkspaceSettings
-metadata:
-  name: trustusbank
-  namespace: trustusbank-platform
+metadata: { name: trustusbank, namespace: gloo-mesh }
 spec:
-  options:
-    serviceIsolation: { enabled: false }
-    eastWestGateways:
-      - selector:
-          labels:
-            istio.io/expose-istiod: "15012"
-    federation:
-      enabled: true
-      hostSuffix: mesh.internal
-      serviceSelector:
-        - namespace: 'trustusbank-*'
-  exportTo: [{ workspaces: [{ name: trustusbank }] }]
-  importFrom: [{ workspaces: [{ name: trustusbank }] }]
----
-# 4. Segment names the routing domain. Applied to every cluster's istio-system.
-apiVersion: admin.solo.io/v1alpha1
-kind: Segment
-metadata:
-  name: global
-  namespace: istio-system
-spec:
-  domain: global</pre></details>
+  exportTo:   [{ workspaces: [{ name: trustusbank }] }]
+  importFrom: [{ workspaces: [{ name: trustusbank }] }]</pre></details>
 
 <h3>Group D: kagent (Solo Enterprise variant)</h3>
 
@@ -786,34 +766,27 @@ spec:
 
 <h2 id="workspace"><span class="num">5.</span> Solo Workspaces &amp; Segments</h2>
 
-<p>This is the conceptual model that took me longest to internalise, so it's worth taking time over.</p>
+<p>This section explains the role Solo Mesh's <code>Workspace</code> plays in the current architecture: <b>governance scope, not federation</b>. Federation is owned by Solo Istio's istiod-native peering (see section 4 above).</p>
 
-<h3>Why Workspaces exist</h3>
+<h3>Workspaces define tenancy boundaries, not federation</h3>
 
-<p>Plain Istio multi-cluster says "Services with the same name+namespace across clusters merge into one logical Service". That's elegant but fragile in a real org: team A's <code>payments</code> Service in namespace <code>billing</code> on cluster-X and team B's unrelated <code>payments</code> Service in namespace <code>billing</code> on cluster-Y would also merge, and nobody asked for that.</p>
+<p>A <code>Workspace</code> is a named set of <i>(cluster, namespaces)</i> tuples — the units that belong to one team or policy boundary. Solo Mesh uses it to scope <code>AccessPolicy</code>, audit, and the UI's "global view". It does <b>not</b> own the cross-cluster data path in this architecture.</p>
 
-<p>Solo's management plane wraps Istio with a tenancy layer. A <code>Workspace</code> is a named set of <i>(cluster, namespaces)</i> tuples — the units that belong to one team or policy boundary. Federation only happens <i>within</i> a Workspace (or between Workspaces that explicitly import/export each other).</p>
-
-<h3>The four resources you need</h3>
+<h3>The three resources you need (federation REMOVED)</h3>
 
 <table class="inv">
 <colgroup><col class="k-num"><col class="k-kind"><col class="k-where"><col></colgroup>
 <thead><tr><th>#</th><th>Resource</th><th>Lives in</th><th>Job</th></tr></thead>
 <tbody>
 <tr><td>1</td><td><code>KubernetesCluster</code></td><td>mgmt cluster, <code>gloo-mesh</code> ns</td><td>Registers each workload cluster. Mgmt rejects relay calls from clusters not registered here.</td></tr>
-<tr><td>2</td><td><code>Workspace</code></td><td>mgmt cluster, <code>gloo-mesh</code> ns</td><td>Defines the cluster + namespace footprint of the tenancy.</td></tr>
-<tr><td>3</td><td><code>WorkspaceSettings</code></td><td><b>One of the namespaces the Workspace selects</b> (NOT gloo-mesh)</td><td>Policy for the Workspace — federation on/off, host suffix, east/west GW selector, service isolation.</td></tr>
-<tr><td>4</td><td><code>Segment</code> + namespace label</td><td>Every cluster's <code>istio-system</code>, with <code>admin.solo.io/segment=&lt;name&gt;</code> on the namespace</td><td>Names the routing domain. Without this, federated services have no global hostname to publish.</td></tr>
+<tr><td>2</td><td><code>Workspace</code></td><td>mgmt cluster, <code>gloo-mesh</code> ns</td><td>Defines the cluster + namespace footprint of the tenancy. <b>Spans all three clusters here.</b></td></tr>
+<tr><td>3</td><td><code>WorkspaceSettings</code></td><td><code>gloo-mesh</code> ns (one per Workspace)</td><td>Governance settings — import/export between workspaces, AccessPolicy scope. <b>No <code>federation</code> block</b> — federation is istiod's job.</td></tr>
 </tbody>
 </table>
 
-<div class="callout"><b>Gotcha #1 I hit:</b> WorkspaceSettings in <code>gloo-mesh</code> namespace is rejected with "no workspace settings found for workspace X". It must be applied into a workload namespace selected by the Workspace. There IS a <code>global</code>-named WorkspaceSettings convention but it doesn't replace the per-workspace one.</div>
+<div class="callout"><b>Why no <code>federation</code> block?</b> Earlier versions of this demo used <code>WorkspaceSettings.spec.options.federation</code> with a <code>serviceSelector</code>. The translator emitted <code>ServiceEntries</code> with the right SPIFFE SANs but <b>zero endpoints</b> — its gateway-discovery code doesn't recognise the ztunnel-based Ambient east-west GW. Re-enabling federation here would cause those zero-endpoint SEs to hijack the cluster-scoped <code>.mesh.internal</code> hostnames and break traffic. Federation is now owned by Solo Istio peering (<code>istio-remote-secret-*</code> + east-west GW), and <code>WorkspaceSettings</code> stays minimal.</div>
 
-<div class="callout"><b>Gotcha #2 I hit:</b> The doc-level field name <code>spec.options.serviceScope</code> doesn't exist in the CRD. Read the live schema with <code>kubectl get crd workspacesettings.admin.gloo.solo.io -o yaml</code>. The real field is <code>spec.options.federation</code>.</div>
-
-<div class="callout"><b>Gotcha #3 I hit:</b> Federation needs <code>options.eastWestGateways</code> with a selector matching the actual east/west Gateway resource's labels. Our peering chart labels the Gateway with <code>istio.io/expose-istiod: "15012"</code>, so the selector is on that label, not on a generic <code>istio: eastwestgateway</code>.</div>
-
-<details class="yaml"><summary>example — the full minimal Workspace + WorkspaceSettings + Segment trio</summary>
+<details class="yaml"><summary>example — minimal Workspace + WorkspaceSettings (governance only)</summary>
 <pre># On the mgmt cluster (bank):
 apiVersion: admin.gloo.solo.io/v2
 kind: KubernetesCluster
@@ -844,32 +817,23 @@ apiVersion: admin.gloo.solo.io/v2
 kind: WorkspaceSettings
 metadata:
   name: trustusbank
-  namespace: trustusbank-platform   # MUST be a namespace the Workspace selects
+  namespace: gloo-mesh
 spec:
-  options:
-    serviceIsolation: { enabled: false }
-    eastWestGateways:
-      - selector: { labels: { 'istio.io/expose-istiod': "15012" } }
-    federation:
-      enabled: true
-      hostSuffix: mesh.internal
-      serviceSelector: [{ namespace: 'trustusbank-*' }]
-  exportTo: [{ workspaces: [{ name: trustusbank }] }]
-  importFrom: [{ workspaces: [{ name: trustusbank }] }]
+  # NO federation block on purpose — see callout above.
+  # Solo Istio Ambient peering owns the cross-cluster data path.
+  exportTo:   [{ workspaces: [{ name: trustusbank }] }]
+  importFrom: [{ workspaces: [{ name: trustusbank }] }]</pre></details>
 
-# On every workload cluster (edge, bank, vendor):
----
-apiVersion: admin.solo.io/v1alpha1
-kind: Segment
-metadata: { name: global, namespace: istio-system }
-spec: { domain: global }
-# plus: kubectl label ns istio-system admin.solo.io/segment=global</pre></details>
+<h3>How a Service becomes reachable cross-cluster</h3>
 
-<h3>What federation does once it's wired</h3>
+<p>Federation is a property of the <b>Service</b>, set by labels istiod reads:</p>
 
-<p>For every Service in the Workspace, the mgmt-server generates a <code>ServiceEntry</code> on every cluster with the hostname <code>&lt;svc&gt;.&lt;ns&gt;.&lt;hostSuffix&gt;</code> (e.g. <code>account-mcp.trustusbank-bank-mcp.mesh.internal</code>). It also generates a <code>WorkloadEntry</code> in each remote cluster, labelled with <code>network: &lt;source cluster&gt;</code> so the local ztunnel knows to send traffic via the right east/west GW.</p>
+<ul>
+  <li>Default — every Service is auto-published cluster-locally as <code>&lt;svc&gt;.&lt;ns&gt;.svc.cluster.local</code>. Istiod-native peering makes it reachable from peer clusters too (DNS resolution comes from the local cluster's own k8s DNS; HBONE routing goes through the east-west GW transparently).</li>
+  <li><code>istio.io/global=true</code> — Service is published as the <b>global</b> hostname <code>&lt;svc&gt;.&lt;ns&gt;.mesh.internal</code>. Istiod (per the <code>istio-gloo</code> ConfigMap's <code>serviceScopeConfigs</code>) auto-creates a single logical Service that aggregates endpoints from every cluster. This is what the chatbot uses to call support-bot.</li>
+</ul>
 
-<p>Per-Service or per-namespace labels then control opt-in:</p>
+<p>No <code>VirtualDestination</code>, no <code>solo.io/expose-cross-cluster</code> label, no Segment. The istiod-native peering machinery does all the heavy lifting.</p>
 <ul>
   <li><code>solo.io/service-scope: global</code> — promote a single Service into the global namespace; takes precedence over namespace-level config.</li>
   <li><code>solo.io/service-takeover: true</code> — let the regular <code>&lt;svc&gt;.&lt;ns&gt;.svc.cluster.local</code> hostname also resolve cross-cluster (otherwise the global hostname is the only path).</li>
@@ -926,7 +890,7 @@ openssl req -new -key bank/ca-key.pem -out bank/ca.csr \
 cat > bank/ca-ext.cnf &lt;&lt;EOF
 basicConstraints = critical, CA:TRUE
 keyUsage = critical, keyCertSign, cRLSign
-subjectAltName = URI:spiffe://bank.local/ns/istio-system/sa/citadel
+subjectAltName = URI:spiffe://cluster.local/ns/istio-system/sa/citadel
 EOF
 openssl x509 -req -days 3650 -in bank/ca.csr \
   -CA root-cert.pem -CAkey root-key.pem -CAcreateserial \
@@ -965,8 +929,8 @@ metadata:
 spec:
   cluster: trustusbank-bank
   network: trustusbank-bank
-  trustDomain: bank.local
-  version: "1.29.2-patch0-solo"
+  trustDomain: cluster.local       # all clusters share — see callout
+  version: "1.29.2-patch0"
   dataplaneMode: Ambient
   distribution: Standard
   installNamespace: istio-system
@@ -976,6 +940,66 @@ spec:
   image:
     registry: us-docker.pkg.dev
     repository: soloio-img/istio</pre></details>
+
+<p>After the SMC has reconciled, the script applies <b>three patches</b> the operator doesn't author automatically (SMC's schema doesn't expose them, but its reconciler leaves user-added env alone):</p>
+
+<details class="yaml" open><summary>1. SOLO_LICENSE_KEY env on istiod-gloo + PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES=false</summary>
+<pre># MultiCluster is a license-gated feature. The Solo Istio binary
+# (pilot-discovery) reads `SOLO_LICENSE_KEY` (verified via `strings` on
+# the binary — `LICENSE_KEY` / `GLOO_LICENSE_KEY` are NOT used). The
+# license must be enterprise (`lt: ent`, e.g. `product: gloo-mesh`);
+# a trial license (`product: gloo-trial`, `addOns: []`) is rejected and
+# istiod logs "SKIPPING FEATURE MultiCluster".
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: istiod-gloo, namespace: istio-system }
+spec:
+  template:
+    spec:
+      containers:
+      - name: discovery
+        env:
+        - name: SOLO_LICENSE_KEY
+          valueFrom:
+            secretKeyRef: { name: solo-istio-license, key: license }
+        - name: PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES
+          value: "false"   # required for peering per Solo troubleshooting</pre></details>
+
+<details class="yaml"><summary>2. L7_ENABLED=true on ztunnel</summary>
+<pre># Required for Ambient multi-cluster per the Solo troubleshooting doc.
+# Without it ztunnel can't forward L7-aware HBONE through waypoints.
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: { name: ztunnel, namespace: istio-system }
+spec:
+  template:
+    spec:
+      containers:
+      - name: istio-proxy
+        env:
+        - name: L7_ENABLED
+          value: "true"</pre></details>
+
+<details class="yaml"><summary>3. <code>istiod</code> alias Service</summary>
+<pre># Gloo Operator names istiod 'istiod-gloo' but the
+# enterprise-agentgateway waypoint binary hardcodes
+# CA_ADDRESS=https://istiod.istio-system.svc:15012. Alias Service
+# fixes that without touching either binary.
+
+apiVersion: v1
+kind: Service
+metadata: { name: istiod, namespace: istio-system, labels: { app: istiod } }
+spec:
+  selector: { app: istiod, istio.io/rev: gloo }
+  ports:
+    - { name: grpc-xds,        port: 15010, protocol: TCP }
+    - { name: https-dns,       port: 15012, protocol: TCP }
+    - { name: https-webhook,   port: 443,   protocol: TCP }
+    - { name: http-monitoring, port: 15014, protocol: TCP }</pre></details>
+
+<div class="callout" style="background:#fef3c7;border:1px solid #fbbf24;color:#78350f;"><b>Why <code>trustDomain: cluster.local</code> on every cluster?</b> The enterprise-agentgateway waypoint binary hardcodes <code>TRUST_DOMAIN=cluster.local</code> (no chart knob). Solo Istio peering's cert-chain validation requires the intermediate CA's URI SAN to match the runtime trust domain. Distinct per-cluster trust domains (<code>edge.local</code>, etc.) break BOTH the waypoint AND federation. Multi-cluster identity stays unique via <code>cluster</code> + <code>network</code> + the per-cluster intermediate signing key.</div>
 
 <div class="callout"><b>Why this is the production pattern:</b> IT runs the operator with a
 service account that has <code>cluster-admin</code> in <code>istio-system</code>. App teams have
@@ -1002,7 +1026,11 @@ cluster.</div>
 remote: { create: false }</pre></details>
 
 <details class="yaml"><summary>remote peer references (one peer entry per other cluster)</summary>
-<pre># Applied on bank, pointing at edge and vendor
+<pre># Applied on bank, pointing at edge and vendor.
+# trustDomain MUST be `cluster.local` to match the runtime trust domain
+# on every peer (see M02). Distinct per-cluster trust domains break
+# istiod's cert-chain validation and federation silently produces zero
+# endpoints.
 eastwest: { create: false }
 remote:
   create: true
@@ -1010,24 +1038,72 @@ remote:
     - name: peer-trustusbank-edge
       cluster: trustusbank-edge
       network: trustusbank-edge
-      address: 172.22.0.8        # discovered from `docker inspect`
+      address: 172.22.0.3        # discovered from `docker inspect`
       addressType: IPAddress
-      trustDomain: edge.local
+      trustDomain: cluster.local
       preferredDataplaneServiceType: nodeport
       nodeport: 30016
     - name: peer-trustusbank-vendor
       cluster: trustusbank-vendor
       network: trustusbank-vendor
-      address: 172.22.0.13
+      address: 172.22.0.8
       addressType: IPAddress
-      trustDomain: vendor.local
+      trustDomain: cluster.local
       preferredDataplaneServiceType: nodeport
       nodeport: 30016</pre></details>
 
-<div class="callout"><b>Gotcha:</b> istiod's peering controller refuses to publish remote endpoints unless <code>istio-system</code> is labelled with <code>topology.istio.io/network=&lt;cluster&gt;</code>. Look for "fetched namespace istio-system but 'topology.istio.io/network' is not set" in istiod logs.</div>
+<h3><span class="step-num">4b</span>M04b — istio-remote-secret-* (cross-cluster control plane)</h3>
 
-<h3><span class="step-num">5</span>M05 — namespaces + ambient labels</h3>
-<p>Creates each namespace on the right cluster per the placement table. Adds <code>istio.io/dataplane-mode=ambient</code> on workload namespaces. Special case: <code>trustusbank-bank-agents</code> is created on both edge and bank (placeholder for future per-cluster agent placement).</p>
+<p>The peering chart only does the <b>data</b> plane (east-west GW + remote-peer Gateway CRs pointing at peer node IPs). For multi-cluster <b>control-plane</b> discovery — where each cluster's istiod-gloo reads <code>Services</code>/<code>Endpoints</code>/<code>Pods</code> from the other clusters' Kubernetes APIs — we also need an <code>istio-remote-secret-&lt;cluster&gt;</code> Secret in every consumer cluster's <code>istio-system</code>, containing a kubeconfig with a long-lived token bound to the producer's <code>istio-reader-service-account</code>.</p>
+
+<p>Without these, <code>kubectl logs deploy/istiod-gloo</code> shows <code>Number of remote clusters: 0</code> on every cluster — no remote services land in the registry, no endpoint shards exist, and federation silently returns zero endpoints.</p>
+
+<details class="yaml" open><summary>per-cluster cross-applied remote-secrets</summary>
+<pre># Each cluster's `istio-reader-service-account` already has the right
+# cluster-wide read RBAC (istio-reader-clusterrole). We mint a 10-year
+# token bound to it, wrap it in a kubeconfig pointing at that cluster's
+# API on the kind docker network, and apply the resulting Secret to
+# every OTHER cluster's istio-system.
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: istio-remote-secret-trustusbank-bank
+  namespace: istio-system
+  labels:
+    istio/multiCluster: "true"
+  annotations:
+    networking.istio.io/cluster: trustusbank-bank
+type: Opaque
+stringData:
+  trustusbank-bank: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+    - cluster:
+        certificate-authority-data: &lt;base64 of bank's kube-root-ca.crt&gt;
+        server: https://172.22.0.5:6443
+      name: trustusbank-bank
+    contexts:
+    - context: { cluster: trustusbank-bank, user: trustusbank-bank }
+      name: trustusbank-bank
+    current-context: trustusbank-bank
+    users:
+    - name: trustusbank-bank
+      user:
+        token: &lt;long-lived token from `kubectl create token istio-reader-service-account --duration 87600h`&gt;</pre></details>
+
+<p>After every consumer cluster has remote-secrets for each producer, restart <code>istiod-gloo</code> and look for the log line:</p>
+
+<pre style="background:#f0fdf4;padding:8px;border-radius:6px;color:#166534;font-size:12.5px">"Add cluster" cluster=trustusbank-bank
+"Number of remote clusters: 2"
+"Created mesh watcher for remote cluster \"trustusbank-bank\""</pre>
+
+<h3><span class="step-num">5</span>M05 — namespaces + topology.istio.io/network labels</h3>
+
+<p>Creates each namespace on the right cluster per the placement table. Adds <code>istio.io/dataplane-mode=ambient</code> on workload namespaces AND <code>topology.istio.io/network=&lt;cluster&gt;</code> on every workload namespace (NOT just <code>istio-system</code>).</p>
+
+<div class="callout"><b>Gotcha:</b> if the network label is set only on <code>istio-system</code>, istiod can't classify what network a remote workload's pod belongs to. The endpoint-rewriting logic that points cross-cluster pods at the producer's east-west GW never fires, and cross-cluster services silently resolve to a VIP with zero endpoints. The label MUST be on every workload namespace that's part of the mesh.</div>
 
 <h3><span class="step-num">6</span>M06 — observability stack on bank</h3>
 <p>Reuses the existing single-cluster <a href="https://github.com/tjorourke/solo-demo-agentic-dora/blob/main/scripts/03-observability.sh"><code>scripts/03-observability.sh</code></a> by switching kubectl context to bank first. Prom/Loki/Tempo/Grafana/OTel-collector/Promtail/MailHog/Alertmanager all land on bank.</p>
@@ -1048,11 +1124,8 @@ remote:
 2. Agent fails with "cluster X is not registered" unless each cluster is pre-declared as a KubernetesCluster CRD before the agent starts.<br>
 3. Workload-cluster agents reject <code>telemetryCollector.enabled: true</code> without an explicit OTLP endpoint. Disabled until cross-cluster OTel ship is wired.</div>
 
-<h3><span class="step-num">9</span>M09 — Workspace + WorkspaceSettings + Segment</h3>
-<p>Activates federation. See the YAML in section 5 above for the complete trio.</p>
-
-<h3><span class="step-num">10</span>M10 — Federation hijack fix on edge</h3>
-<p>Re-runnable cleanup that drops <code>solo.io/service-scope=global</code> from <code>trustusbank-platform</code> on cluster-edge, deletes the four <code>autogen.global.*</code> ServiceEntries that hijacked the local hostname, and bounces <code>kagent-ui</code> + <code>kagent-controller</code> so they re-enrol in ztunnel. See §8.5 below for the full root-cause walkthrough.</p>
+<h3><span class="step-num">9</span>M09 — Workspace + WorkspaceSettings (governance only, no federation)</h3>
+<p>Activates Solo Mesh governance. <b>No federation block</b> on <code>WorkspaceSettings</code> — federation is owned by Solo Istio peering (M04 / M04b). See section 5 above for the YAML. The producer Services that should be reachable cross-cluster as <code>&lt;svc&gt;.&lt;ns&gt;.mesh.internal</code> get labelled <code>istio.io/global=true</code> at this stage too.</p>
 
 <h3><span class="step-num">11</span>M11 — Multi-cluster observability + alerting pipeline</h3>
 <p>Wires the standard Solo telemetry pipeline so ztunnel deny counters on vendor (where the demo's deny actually fires) reach the Prometheus + AlertManager + MailHog stack on bank — and the customer-facing demo claim ("blocked, with receipts") is provable in a single Grafana dashboard.</p>
@@ -1337,7 +1410,7 @@ and convert my balance to USD.</pre>
 #   from:
 #     - source:
 #         principals:
-#           - "spiffe://vendor.local/ns/trustusbank-bank-vendors/sa/currency-converter"
+#           - "spiffe://cluster.local/ns/trustusbank-bank-vendors/sa/currency-converter"
 # ztunnel on vendor enforces it whether the source is on the same node, a
 # different node, or coming back to vendor from another cluster via the
 # east/west GW. The SPIFFE identity stays attached to the wire.
@@ -1347,13 +1420,13 @@ and convert my balance to USD.</pre>
 
 <ul>
   <li><b>Tab 2 (mock-attacker)</b>: stays at zero. ztunnel rejected the HBONE handshake from currency-converter (the LLM is still fooled — it still tried).</li>
-  <li><b>Tab 5 (Prometheus)</b>: both alerts firing with <code>source_principal=spiffe://vendor.local/ns/trustusbank-bank-vendors/sa/currency-converter</code>.</li>
+  <li><b>Tab 5 (Prometheus)</b>: both alerts firing with <code>source_principal=spiffe://cluster.local/ns/trustusbank-bank-vendors/sa/currency-converter</code>.</li>
   <li><b>Tab 6 (MailHog)</b>: two alert emails per attempt.</li>
   <li><b>Tab 4 (DORA Evidence)</b>: green for "exfil blocked", red counter for denies, offending pod table populated.</li>
   <li><b>Tab 8 (Solo mgmt plane UI → Insights)</b>: the deny shows up here too with the cluster + workspace pivot. Single view across all three clusters — the multi-cluster value-add.</li>
 </ul>
 
-<div class="callout info"><b>What's specifically multi-cluster here.</b> In single-cluster mode the deny rule has a <code>cluster.local</code> trust prefix. In multi-cluster mode it's <code>vendor.local</code> — and the rule still works because the SPIFFE identity travels with the HBONE handshake all the way back to vendor's ztunnel. That's the federated-trust story you can't tell with OSS Istio or plain Kubernetes NetworkPolicy.</div>
+<div class="callout info"><b>What's specifically multi-cluster here.</b> Every workload identity uses <code>spiffe://cluster.local/ns/&lt;ns&gt;/sa/&lt;sa&gt;</code> regardless of cluster — what differentiates cross-cluster callers is the <code>network</code> attribute (set via <code>topology.istio.io/network</code>) and the <code>clusterID</code>. The rule still works cross-cluster because the SPIFFE identity travels with the HBONE handshake all the way back to vendor's ztunnel. That's the federated-trust story you can't tell with OSS Istio or plain Kubernetes NetworkPolicy.</div>
 
 <h4>Closing <span style="color:var(--muted); font-size: 14px; font-weight: 400">(~30 sec)</span></h4>
 
@@ -1495,7 +1568,7 @@ and convert my balance to USD.</pre>
   <div class="col">
     <h5>Act 3 <span class="tag t3">defence on</span></h5>
     <img src="img/screenshots/act3-grafana.png" alt="Grafana Act 3: AuthZ denies firing, OFFENDING POD populated">
-    <p class="caption"><b>AuthZ denies: 3.16</b> (red). <b>Exfil attempts: 6.32</b> (still climbing — the LLM keeps trying). OFFENDING POD table now populated with the <code>spiffe://vendor.local/.../currency-converter</code> identity. <b>Same prompt, completely different evidence story.</b></p>
+    <p class="caption"><b>AuthZ denies: 3.16</b> (red). <b>Exfil attempts: 6.32</b> (still climbing — the LLM keeps trying). OFFENDING POD table now populated with the <code>spiffe://cluster.local/.../currency-converter</code> identity (caller's network <code>trustusbank-vendor</code> in the same row). <b>Same prompt, completely different evidence story.</b></p>
   </div>
 </div>
 
@@ -1568,144 +1641,30 @@ and convert my balance to USD.</pre>
   </div>
 </div>
 
-<h3>The lateral hack — manual cross-cluster Endpoints</h3>
+<h3>Cross-cluster wire — pure Solo Istio Ambient peering</h3>
 
-<p>Solo Mesh's federation auto-publishes Services across clusters via <code>.mesh.internal</code> hostnames, but in our setup the federation's <code>WorkloadEntry</code> address propagation didn't complete (the auto-generated entries have <code>network: trustusbank-bank</code> with no <code>address</code>, so ztunnel has no upstream to forward to). The pragmatic fix is to skip the federation layer for these specific Services and plant <b>manual EndpointSlices</b> on edge that point the stub Services at bank node IPs + NodePort. Plain TCP, no HBONE on this hop, no trust-bundle to align.</p>
+<p>Solo Istio Ambient peering does the cross-cluster wire end-to-end. Once the M02 → M05 stack is in place (shared root CA with <code>cluster.local</code> SAN, peering chart with the east-west GW + remote peer references, <code>istio-remote-secret-*</code> for control-plane discovery, <code>topology.istio.io/network</code> labels on every workload namespace, enterprise license unlocking the MultiCluster feature), istiod auto-generates everything:</p>
 
-<details class="yaml"><summary>bank-side: expose the destination Services as NodePort</summary>
-<pre># fraud-bot Service in trustusbank-bank-agents
-kubectl --context=kind-trustusbank-bank -n trustusbank-bank-agents patch svc fraud-bot \
-  --type=merge -p '{"spec":{"type":"NodePort","ports":[
-    {"name":"http","port":8080,"targetPort":8080,"nodePort":30090,"protocol":"TCP"}
-  ]}}'
+<ul>
+  <li>Cluster-local hostname <code>&lt;svc&gt;.&lt;ns&gt;.svc.cluster.local</code> resolves locally (k8s DNS) and routes over HBONE via the east-west GW when the destination pod lives in a remote network.</li>
+  <li>Global hostname <code>&lt;svc&gt;.&lt;ns&gt;.mesh.internal</code> is provisioned for any Service labelled <code>istio.io/global=true</code>. Auto-aggregated across all peered clusters.</li>
+</ul>
 
-# triage-bot Service in trustusbank-bank-agents
-kubectl --context=kind-trustusbank-bank -n trustusbank-bank-agents patch svc triage-bot \
-  --type=merge -p '{"spec":{"type":"NodePort","ports":[
-    {"name":"http","port":8080,"targetPort":8080,"nodePort":30091,"protocol":"TCP"}
-  ]}}'
+<p>SPIFFE is preserved end-to-end — the source pod's SPIFFE identity (e.g. <code>spiffe://cluster.local/ns/trustusbank-bank-frontend/sa/chatbot</code> from edge) is presented at the destination's per-agent waypoint, and the <code>AccessPolicy</code> with <code>kind: ServiceAccount</code> subject matches. The chatbot → support-bot E2E proves this: a request from the chatbot pod on edge reaches support-bot's pod on bank via HBONE through the east-west GW, with the chatbot's SA identity intact.</p>
 
-# trustusbank-agentgw in trustusbank-platform
-kubectl --context=kind-trustusbank-bank -n trustusbank-platform patch svc trustusbank-agentgw \
-  --type=merge -p '{"spec":{"type":"NodePort","ports":[
-    {"name":"http","port":8080,"targetPort":8080,"nodePort":30092,"protocol":"TCP"}
-  ]}}'</pre></details>
+<details class="yaml" open><summary>verification — chatbot → support-bot HTTP 200, SPIFFE-aware AccessPolicy enforcement</summary>
+<pre># From edge, hit the global federation hostname:
+$ kubectl --context=kind-trustusbank-edge -n trustusbank-bank-frontend \
+    exec deploy/chatbot -c chatbot -- \
+    curl -sS -o /dev/null -w 'HTTP %{http_code} time=%{time_total}s\n' \
+    http://support-bot.trustusbank-bank-agents.mesh.internal:8080/.well-known/agent-card.json
+HTTP 200 time=0.026s
+# (= AccessPolicy on bank allowed the chatbot SA — SPIFFE preserved
+#    end-to-end through the east-west GW. Intra-cluster enforcement
+#    on the same waypoint still denies support → fraud with HTTP 403.)
+</pre></details>
 
-<details class="yaml"><summary>edge-side: manual EndpointSlices pointing the stubs at bank — <code>manifests/multi/lateral-hack.yaml</code></summary>
-<pre># Bank node IP on the shared kind docker network: 172.22.0.8
-apiVersion: discovery.k8s.io/v1
-kind: EndpointSlice
-metadata:
-  name: fraud-bot-xc
-  namespace: trustusbank-bank-agents
-  labels: { kubernetes.io/service-name: fraud-bot }
-addressType: IPv4
-ports: [{ name: http, port: 30090, protocol: TCP }]
-endpoints:
-  - addresses: ["172.22.0.8"]
-    conditions: { ready: true }
----
-apiVersion: discovery.k8s.io/v1
-kind: EndpointSlice
-metadata:
-  name: triage-bot-xc
-  namespace: trustusbank-bank-agents
-  labels: { kubernetes.io/service-name: triage-bot }
-addressType: IPv4
-ports: [{ name: http, port: 30091, protocol: TCP }]
-endpoints:
-  - addresses: ["172.22.0.8"]
-    conditions: { ready: true }
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: trustusbank-agentgw
-  namespace: trustusbank-platform
-spec:
-  ports: [{ name: http, port: 8080, targetPort: 30092, protocol: TCP }]
----
-apiVersion: discovery.k8s.io/v1
-kind: EndpointSlice
-metadata:
-  name: trustusbank-agentgw-xc
-  namespace: trustusbank-platform
-  labels: { kubernetes.io/service-name: trustusbank-agentgw }
-addressType: IPv4
-ports: [{ name: http, port: 30092, protocol: TCP }]
-endpoints:
-  - addresses: ["172.22.0.8"]
-    conditions: { ready: true }</pre></details>
-
-<h3>L4 verification — the hack works</h3>
-
-<p>From inside the <code>support-bot</code> pod on edge, dialing the FQDN of each cross-cluster target:</p>
-
-<pre>$ kubectl --context=kind-trustusbank-edge -n trustusbank-bank-agents exec deploy/support-bot -- \
-    curl -s -o /dev/null -w '%{http_code} time=%{time_total}s\n' --max-time 10 \
-    http://trustusbank-agentgw.trustusbank-platform.svc.cluster.local:8080/
-404 time=0.010s          # reached bank's agentgateway (no route for /)
-
-$ kubectl --context=kind-trustusbank-edge -n trustusbank-bank-agents exec deploy/support-bot -- \
-    curl -s -o /dev/null -w '%{http_code} time=%{time_total}s\n' --max-time 10 \
-    http://fraud-bot.trustusbank-bank-agents.svc.cluster.local:8080/
-405 time=0.027s          # reached bank's fraud-bot pod (Method Not Allowed on GET — A2A wants POST)</pre>
-
-<p>Status codes prove the hops landed on the real bank-side destinations. <code>404</code> from agentgateway's HTTPRoute table and <code>405</code> from fraud-bot's A2A server — both authentic, both delivered cross-cluster.</p>
-
-<h3>L7 gotcha — federation hijacking the local kagent stack</h3>
-
-<p>After the lateral hack landed, the <code>chatbot → support-bot</code> A2A path broke with <code>RemoteProtocolError: Server disconnected without sending a response</code>. The path is entirely local on cluster-edge — frontend nginx → <code>kagent-ui.trustusbank-platform.svc.cluster.local:8080</code> → <code>kagent-controller</code>. Neither hop should touch bank.</p>
-
-<p>ztunnel's connection log gave the away:</p>
-
-<pre>warn  access  connection failed
-  src.addr=10.10.1.39:41674       (chatbot)
-  dst.addr=10.110.240.216:8080    (kagent-ui ClusterIP)
-  direction="outbound"
-  error="unknown network gateway: GatewayAddress {
-    destination: Hostname(NamespacedHostname {
-      namespace: \"istio-eastwest\",
-      hostname: \"node.istio-eastwest.trustusbank-bank.mesh.internal\"
-    }), hbone_mtls_port: 15008
-  } not found"</pre>
-
-<p>Solo's federation discovery had unioned the local FQDN into the global <code>ServiceEntry</code> for <code>kagent-ui</code>, so ztunnel decided to forward the packet to <i>bank's east/west gateway</i> instead of the local pod. Bank's east/west GW hostname couldn't be resolved on edge — connection reset.</p>
-
-<p>Two-step fix on edge:</p>
-
-<ol>
-  <li>Drop <code>solo.io/service-scope=global</code> from <code>trustusbank-platform</code> — edge's kagent stack is local-only.</li>
-  <li>Delete the existing autogen entries so the bad union is removed; the Solo management plane's discovery loop won't recreate them now that the namespace isn't global.</li>
-</ol>
-
-<details class="yaml"><summary>scripts/multi/10-fix-federation-hijack.sh</summary>
-<pre>CTX_E="kind-trustusbank-edge"
-
-# ambient on platform ns so edge kagent pods get SPIFFE
-kubectl --context=$CTX_E label ns trustusbank-platform \
-  istio.io/dataplane-mode=ambient --overwrite
-
-# remove global scope — edge kagent stack is local-only
-kubectl --context=$CTX_E label ns trustusbank-platform \
-  solo.io/service-scope-
-
-# delete the hijacked autogen entries
-for n in kagent-controller kagent-postgresql kagent-ui \
-         kagent-kmcp-controller-manager-metrics-service; do
-  kubectl --context=$CTX_E -n istio-system delete serviceentry \
-    "autogen.global.trustusbank-platform.$n" --ignore-not-found
-  kubectl --context=$CTX_E -n istio-system delete workloadentry \
-    "autogen.trustusbank-bank.trustusbank-platform.$n" --ignore-not-found
-done
-
-# bounce kagent so it picks up ztunnel enrolment
-kubectl --context=$CTX_E -n trustusbank-platform \
-  rollout restart deploy/kagent-ui deploy/kagent-controller</pre></details>
-
-<p>After the fix, the same E2E request returns Claude-authored text in &lt; 2 s, and a tool-call trace shows a real cross-cluster A2A handoff from <code>support-bot</code> (edge) into <code>fraud-bot</code> (bank) plus three MCP tool calls via the agentgateway waypoint.</p>
-
-<div class="callout ok"><b>Takeaway:</b> federation autogen entries can shadow local Services if you accidentally widen a namespace's scope. If a service is only ever consumed inside one cluster, keep it out of <code>solo.io/service-scope=global</code> — otherwise ztunnel will follow the federation edge hop even when the pod is right there on the local node.</div>
+<div class="callout ok"><b>Earlier in this demo</b>, cross-cluster traffic went through a "lateral hack" — NodePort + manual <code>EndpointSlice</code> stubs that delivered packets but stripped SPIFFE on the SNAT hop, so cross-cluster <code>AccessPolicy</code> with <code>kind: ServiceAccount</code> subjects couldn't enforce. That's gone now. Solo Istio Ambient peering owns the wire, SPIFFE is preserved, and the cross-cluster path is observable end-to-end via ztunnel access logs and Grafana panels.</div>
 
 <hr>
 

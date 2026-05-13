@@ -29,13 +29,11 @@ HELM_REPO=us-docker.pkg.dev/soloio-img/istio-helm
 EW_HBONE_NODEPORT=30015
 EW_XDS_NODEPORT=30016
 
-trust_domain_for() {
-  case "$1" in
-    "$EDGE_CLUSTER")   echo edge.local   ;;
-    "$BANK_CLUSTER")   echo bank.local   ;;
-    "$VENDOR_CLUSTER") echo vendor.local ;;
-  esac
-}
+# All clusters share trust domain `cluster.local` (see 02-shared-ca.sh
+# header). Peer-remote Gateway annotations declare the REMOTE cluster's
+# trust domain — and that must match what the remote istiod actually
+# uses, which is `cluster.local` on every cluster.
+trust_domain_for() { echo cluster.local; }
 
 # istiod's peering controller refuses to publish remote endpoints unless
 # istio-system is labelled with the cluster's network. The helm chart does

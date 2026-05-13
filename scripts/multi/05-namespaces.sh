@@ -25,12 +25,20 @@ done
 # kagent + Agent CRDs; the cluster that doesn't run the pod uses replicas=0
 # stubs so cross-cluster A2A handoffs validate against a local CRD while
 # the actual traffic is mesh-routed to the cluster with replicas=1).
+#
+# IMPORTANT: every workload namespace must also carry the
+# `topology.istio.io/network=<cluster>` label. Without it, the remote
+# istiod (reached via istio-remote-secret) sees pods with no network, so
+# the endpoint-rewriting that points cross-cluster pods at the producer's
+# east-west GW never fires — federated services then resolve to a VIP
+# with zero endpoints and traffic resets.
 for ns in "${AMBIENT_NAMESPACES[@]}"; do
   if [[ "$ns" == "$NS_BANK_AGENTS" ]]; then
     for c in "$EDGE_CLUSTER" "$BANK_CLUSTER"; do
       log "create+label $ns (ambient) on $c"
       kctx "$c" create ns "$ns" --dry-run=client -o yaml | kctx "$c" apply -f - >/dev/null
       kctx "$c" label ns "$ns" istio.io/dataplane-mode=ambient --overwrite >/dev/null
+      kctx "$c" label ns "$ns" "topology.istio.io/network=$c" --overwrite >/dev/null
     done
     continue
   fi
@@ -38,11 +46,21 @@ for ns in "${AMBIENT_NAMESPACES[@]}"; do
   log "create+label $ns (ambient) on $cluster"
   kctx "$cluster" create ns "$ns" --dry-run=client -o yaml | kctx "$cluster" apply -f - >/dev/null
   kctx "$cluster" label ns "$ns" istio.io/dataplane-mode=ambient --overwrite >/dev/null
+  kctx "$cluster" label ns "$ns" "topology.istio.io/network=$cluster" --overwrite >/dev/null
+done
+
+# Platform + observability namespaces are NOT ambient but still need the
+# network label so istiod can classify their pods for cross-cluster
+# discovery (e.g. trustusbank-agentgw is referenced from edge).
+for ns in "$NS_PLATFORM" "$NS_OBS"; do
+  cluster="$(cluster_of_ns "$ns")"
+  kctx "$cluster" label ns "$ns" "topology.istio.io/network=$cluster" --overwrite >/dev/null
 done
 
 # external-attacker namespace on vendor (NOT ambient — it's "outside the bank's trust").
 kctx "$VENDOR_CLUSTER" create ns external-attacker --dry-run=client -o yaml \
   | kctx "$VENDOR_CLUSTER" apply -f - >/dev/null
+kctx "$VENDOR_CLUSTER" label ns external-attacker "topology.istio.io/network=$VENDOR_CLUSTER" --overwrite >/dev/null
 log_ok "external-attacker namespace on $VENDOR_CLUSTER (deliberately not ambient)"
 
 log_step "namespace inventory per cluster"

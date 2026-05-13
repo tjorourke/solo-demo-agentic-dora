@@ -32,21 +32,19 @@ done
 PHASES=(
   "M00:00-prereqs.sh:Multi-cluster prereqs (license, gcloud, registry pull)"
   "M01:01-clusters.sh:Three kind clusters + shared registry"
-  "M02:02-shared-ca.sh:Shared root CA + per-cluster intermediates"
-  "M03:03-gloo-operator.sh:Gloo Operator + ServiceMeshController per cluster (Solo Istio Ambient)"
-  "M04:04-peering.sh:East/west gateways + cross-cluster peering"
-  "M05:05-namespaces.sh:Namespaces + ambient labels per placement"
+  "M02:02-shared-ca.sh:Shared root CA + per-cluster intermediates (cluster.local SAN)"
+  "M03:03-gloo-operator.sh:Gloo Operator + ServiceMeshController + SOLO_LICENSE_KEY + L7_ENABLED"
+  "M04:04-peering.sh:East-west GWs + remote-peer Gateway CRs (data plane)"
+  "M04b:04b-remote-secrets.sh:istio-remote-secret-* — cross-cluster kubeconfigs (control plane)"
+  "M05:05-namespaces.sh:Namespaces + ambient + topology.istio.io/network labels"
   "M06:06-observability.sh:Observability stack on bank"
   "M07:07-workloads.sh:Workloads dispatched to right cluster"
-  "M08:08-gloo-mesh.sh:Gloo Mesh management plane (mgmt+agents)"
-  "M09:09-workspace.sh:Workspace + WorkspaceSettings (activates cross-cluster service-scope)"
-  "M10:10-fix-federation-hijack.sh:Stop Gloo Mesh federation hijacking edge-local kagent stack"
-  # Upcoming phases — uncomment as they land:
-  # "M05:05-namespaces.sh:Namespaces + ambient labels per cluster"
-  # "M06:06-observability.sh:Observability in bank, OTel ship from edge+vendor"
-  # "M07:07-workloads.sh:Per-cluster workload deploys (wraps single phases)"
-  # "M08:08-cross-cluster-discovery.sh:VirtualDestinations + RemoteMCPServer URLs"
-  # "M09:09-policies.sh:AuthorizationPolicies + Solo deny-rules (multi-cluster)"
+  "M08:08-gloo-mesh.sh:Gloo Mesh management plane (mgmt+agents) — Workspace/AccessPolicy"
+  "M09:09-workspace.sh:Workspace + WorkspaceSettings (Solo Mesh governance scope)"
+  # Note: 10-fix-federation-hijack.sh is no longer needed once Solo Istio
+  # peering owns federation (was a Solo-Mesh-translator workaround).
+  # apply-lateral-hack.sh is gone too — Solo Istio peering provides the
+  # SPIFFE-preserving cross-cluster path natively now.
 )
 
 log_step "multi-cluster deploy starting"

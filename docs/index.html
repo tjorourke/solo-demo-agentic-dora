@@ -281,20 +281,22 @@
     <h3>Multi-cluster walkthrough</h3>
     <p class="summary">
       Same demo split across three kind clusters — <code>edge</code>, <code>bank</code>, <code>vendor</code>.
-      Shared-trust SPIFFE, east/west gateways, Solo Workspaces. Includes a real-world lateral hack for
-      cross-cluster A2A and the federation-hijack fix that took half a day to RC.
+      Shared-trust SPIFFE, Solo Istio Ambient peering (east/west HBONE + <code>istio-remote-secret-*</code>),
+      Solo Workspace governance, and cross-cluster <code>AccessPolicy</code> enforcement with SPIFFE
+      preserved end-to-end through the east-west GW.
     </p>
     <div class="stack">
       <code>3 clusters</code>
       <code>shared root CA</code>
       <code>east/west GWs</code>
+      <code>istio-remote-secret-*</code>
       <code>Solo mgmt plane</code>
     </div>
     <ul>
       <li>Three kind clusters with peered Solo Istio Ambient meshes</li>
-      <li>kagent agents distributed across edge + bank</li>
-      <li>Manual EndpointSlice "lateral hack" for cross-cluster A2A</li>
-      <li>Federation-hijack root-cause + permanent fix walkthrough</li>
+      <li>Native istiod cross-cluster discovery (no Solo Mesh federation translator)</li>
+      <li>Cross-cluster <code>AccessPolicy</code> with <code>kind: ServiceAccount</code> subjects — SPIFFE intact</li>
+      <li>License + namespace label + cert-chain checklist for working Ambient peering</li>
     </ul>
     <span class="cta">Open the multi-cluster walkthrough</span>
   </a>

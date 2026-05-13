@@ -57,14 +57,11 @@ ISTIO_VERSION_PLAIN="${SOLO_ISTIO_VERSION:-1.29.2-patch0-solo}"
 ISTIO_VERSION="${ISTIO_VERSION_PLAIN%-solo}"
 ISTIO_REGISTRY="us-docker.pkg.dev/soloio-img/istio"
 
-# Trust domain per cluster (matches what M02 baked into the intermediates).
-trust_domain_for() {
-  case "$1" in
-    "$EDGE_CLUSTER")   echo edge.local   ;;
-    "$BANK_CLUSTER")   echo bank.local   ;;
-    "$VENDOR_CLUSTER") echo vendor.local ;;
-  esac
-}
+# Trust domain is `cluster.local` on every cluster (matches what M02 baked
+# into the intermediates and what the enterprise-agentgateway waypoint
+# binary hardcodes). Per-cluster identity is differentiated via clusterID
+# + the per-cluster intermediate signing key, not the trust domain.
+trust_domain_for() { echo cluster.local; }
 
 # Images that need to land on each cluster's containerd.
 IMAGES=(
@@ -239,6 +236,77 @@ spec:
     - { name: https-webhook,   port: 443,   protocol: TCP }
     - { name: http-monitoring, port: 15014, protocol: TCP }
 EOF
+done
+
+# ---------- Multi-cluster env vars on istiod + ztunnel ----------
+#
+# The SMC schema doesn't expose knobs for these but the Solo troubleshooting
+# guide (use-cases/multi-cluster/troubleshooting-ambient-multicluster-peering.md)
+# lists them as REQUIRED for ambient peering. Without them:
+#   - istiod silently runs in single-cluster mode
+#   - ztunnel can't forward L7-aware HBONE traffic through waypoints
+#   - cross-cluster endpoints never get rewritten to the east-west GW
+# Patching the operator-managed Deployments directly is safe — SMC's
+# reconciler leaves env vars it didn't author alone.
+#
+# Also wires the Solo license. istiod-gloo's license discovery code reads
+# the env var `SOLO_LICENSE_KEY` (the binary's strings table confirms;
+# `LICENSE_KEY`/`GLOO_*_LICENSE_KEY` are not used). Without a VALID
+# license, istiod logs "SKIPPING FEATURE MultiCluster" and never
+# initiates peering. The license content must be from a non-trial enterprise
+# key — the gloo-trial license in particular is rejected.
+log_step "wiring SOLO_LICENSE_KEY + peering env vars into istiod-gloo and ztunnel"
+for cluster in "${CLUSTERS[@]}"; do
+  ctx="$(cluster_context "$cluster")"
+
+  # istiod-gloo: SOLO_LICENSE_KEY from the solo-istio-license Secret (key=license),
+  # plus the multi-cluster peering env var.
+  kubectl --context="$ctx" -n istio-system set env deploy istiod-gloo \
+    PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES=false >/dev/null
+
+  # SOLO_LICENSE_KEY can only be a secretKeyRef via a patch (kubectl set env
+  # --from=secret uses a key/secret pair but with a prefix, which mangles
+  # the var name).
+  kubectl --context="$ctx" -n istio-system patch deploy istiod-gloo --type='json' -p="$(cat <<JSON
+[
+  {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"SOLO_LICENSE_KEY","valueFrom":{"secretKeyRef":{"name":"solo-istio-license","key":"license"}}}}
+]
+JSON
+)" 2>&1 | grep -vE "patched|already" || true
+
+  # ztunnel: L7_ENABLED=true is required by the Solo doc for peering. We
+  # check first to keep the patch idempotent (the DaemonSet's env array
+  # rejects appending an existing name).
+  if ! kubectl --context="$ctx" -n istio-system get ds ztunnel -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="L7_ENABLED")].value}' 2>/dev/null | grep -q true; then
+    kubectl --context="$ctx" -n istio-system patch ds ztunnel --type='json' -p='[
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"L7_ENABLED","value":"true"}}
+    ]' >/dev/null
+  fi
+
+  log_ok "  [$cluster] env wiring applied"
+done
+
+# Wait for rollouts so the next phase sees a steady mesh.
+for cluster in "${CLUSTERS[@]}"; do
+  ctx="$(cluster_context "$cluster")"
+  kubectl --context="$ctx" -n istio-system rollout status deploy/istiod-gloo --timeout=2m >/dev/null
+  kubectl --context="$ctx" -n istio-system rollout status ds/ztunnel    --timeout=2m >/dev/null
+done
+
+# Sanity-check the license actually validated. UNSET here means the
+# license isn't being recognised (wrong env var, expired, or wrong product).
+log_step "verifying VALID LICENSE on every cluster"
+for cluster in "${CLUSTERS[@]}"; do
+  ctx="$(cluster_context "$cluster")"
+  state=$(kubectl --context="$ctx" -n istio-system logs deploy/istiod-gloo --tail=200 2>/dev/null \
+    | grep -m1 "license state initialized" || true)
+  if [[ "$state" == *"OK"* ]]; then
+    log_ok "  [$cluster] $state"
+  else
+    log_warn "  [$cluster] $state"
+    log_warn "  Multi-cluster features will NOT work until the license validates."
+    log_warn "  Confirm SOLO_ISTIO_LICENSE_KEY is an enterprise (non-trial) Solo Mesh license."
+  fi
 done
 
 # ---------- Verify the four mesh components are up ----------
