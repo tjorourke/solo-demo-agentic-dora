@@ -622,6 +622,8 @@ spec:
 <tr><td><code>AgentgatewayBackend</code></td><td>agentgateway.dev</td><td>Declares an MCP upstream (one per MCP server). Carries the protocol (streamable-HTTP) and target Service.</td></tr>
 <tr><td><code>AgentgatewayPolicy</code></td><td>agentgateway.dev</td><td>Attached to a Gateway or HTTPRoute. JWT validation, tool allowlist, rate limit, prompt-guard, OTel tracing config.</td></tr>
 <tr><td><code>AgentgatewayParameters</code></td><td>agentgateway.dev</td><td>Lower-level gateway tuning (rarely touched).</td></tr>
+<tr><td><code>ServiceMeshController</code></td><td>operator.gloo.solo.io</td><td><b>NEW.</b> Gloo Operator's declarative mesh-install CR. One per cluster. Replaces 4 helm releases (base / istiod / cni / ztunnel). Spec: <code>cluster</code>, <code>network</code>, <code>trustDomain</code>, <code>version</code>, <code>dataplaneMode: Ambient</code>, <code>distribution: Standard</code>. The operator reconciles base + istiod + cni + ztunnel as one lifecycle. Mesh upgrades become editing <code>.spec.version</code>.</td></tr>
+<tr><td><code>GatewayController</code> / <code>KagentController</code> / <code>OtelController</code></td><td>operator.gloo.solo.io</td><td>Sibling CRs for the same operator. Not used in this demo; they're the declarative installers for the agentgateway + kagent + OTel components when you don't want to manage their helm charts yourself.</td></tr>
 </tbody>
 </table>
 
@@ -686,6 +688,12 @@ spec:
           - 'mcp.tool.name == "get_profile"'
           - 'mcp.method == "tools/list"'
           - 'mcp.method == "initialize"'</pre></details>
+
+<p style="background: #f1f5f9; border-left: 3px solid #0284c7; padding: 12px 18px; border-radius: 0 6px 6px 0; margin: 18px 0;">
+📦 <b>Want the YAML for everything in this walkthrough?</b>
+<a href="downloads/trustusbank-multi-cluster.zip" download style="font-weight: 600;">Download the multi-cluster bundle (.zip, ~44 KB)</a>
+— every manifest grouped by phase, with a README explaining each file and the CRDs it touches.
+</p>
 
 <hr>
 
