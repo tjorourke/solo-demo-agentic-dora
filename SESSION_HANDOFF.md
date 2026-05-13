@@ -100,7 +100,30 @@ curl -sS --max-time 30 -X POST http://localhost:80/api/a2a/trustusbank-bank-agen
 # Expect: "The balance for customer account **12345** is **£4,287.55 GBP**."
 ```
 
-If any of those fail, run `scripts/multi/apply-lateral-hack.sh` first — kind sometimes shuffles node IPs after Docker restarts.
+If any of those fail, check `kubectl get smc -A` is all `SUCCEEDED` and that each istiod's log includes `Number of remote clusters: 2` and `VALID LICENSE: gloo-mesh Enterprise`. See the "All Solo Istio native peering" sections in CLAUDE.md / docs/multi-cluster.html for the full diagnostic checklist.
+
+---
+
+## How to open every UI in one shot
+
+```bash
+scripts/port-forward.sh
+```
+
+That kills any old port-forwards and starts a fresh set. Open the URLs it prints — most useful for the multi-cluster demo:
+
+| URL | UI | What |
+|---|---|---|
+| http://localhost:18015 | **Solo Mesh / Gloo Mesh UI** | Workspaces · all 3 clusters · cross-cluster service graph · AccessPolicy enforcement view · dependencies — the **proper enterprise management UI** for the whole stack |
+| http://localhost:18007 | kagent UI (bank — fraud-bot + triage-bot) | Agent CRUD; OIDC-gated via dex + oauth2-proxy |
+| http://localhost:18017 | kagent UI (edge — support-bot) | Same UI, edge cluster |
+| http://localhost:18009 | chatbot (the customer demo) | Hits support-bot via A2A direct, SPIFFE-checked at the waypoint |
+| http://localhost:18001 | Grafana | Dashboards + KagentAccessPolicyDeny panels |
+| http://localhost:18002 | Prometheus | Raw metrics + alert state |
+| http://localhost:18007 | MailHog (SOC inbox) | AlertmanagerConfig sends DORA Art. 17 alerts here |
+| http://localhost:18006 | agentregistry | Solo's signed-image registry |
+
+The Solo Mesh UI on 18015 is the one most people are looking for — it's NOT the simple kagent UI (which has the "is an open source project" footer); it's the full enterprise management dashboard for Workspaces, AccessPolicy, multi-cluster topology, service graphs, and the audit feeds.
 
 ---
 

@@ -153,6 +153,16 @@
 
 <h2 id="topology"><span class="num">1.</span> The 3-cluster topology</h2>
 
+<div class="callout" style="background:#ecfdf5;border:1px solid #059669;color:#064e3b;">
+<b>Want to see the live cluster?</b> Run <code>scripts/port-forward.sh</code> once and open
+<a href="http://localhost:18015"><b>http://localhost:18015</b></a> for the
+<b>Solo Mesh management UI</b> — workspaces, all 3 clusters, cross-cluster service graph,
+AccessPolicy enforcement view, dependencies. This is the proper enterprise dashboard for
+the whole stack. (The kagent UI on <a href="http://localhost:18007">localhost:18007</a> is
+just the agent-CRUD view and reuses the OSS UI image, hence the "open source project"
+footer — see the landing page for the full chart-vs-controller distinction.)
+</div>
+
 <p>Three kind clusters on the shared <code>kind</code> docker network. Each is an independent Kubernetes cluster, each runs its own Solo Enterprise for Istio (Ambient) control plane (<code>istiod</code>, <code>istio-cni</code>, <code>ztunnel</code>). All three share the SPIFFE trust domain <code>cluster.local</code> (the enterprise-agentgateway waypoint binary hardcodes that); per-cluster identity is differentiated via <code>clusterID</code> + per-cluster intermediate signing keys. Clusters peer via an east/west Gateway per cluster (HBONE on TCP/15008, xDS on 15012) AND via cross-applied <code>istio-remote-secret-*</code> Secrets so istiod-gloo can read remote Services/Endpoints. A single Solo management plane is co-located on <code>bank</code> for <em>governance</em> (Workspace + AccessPolicy) — federation is istiod-native.</p>
 
 <!-- Cluster topology — mgmt plane co-located inside bank, clean SVG connectors. -->
