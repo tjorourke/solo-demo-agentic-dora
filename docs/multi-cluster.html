@@ -225,13 +225,13 @@
       <div class="td">trust: edge.local · net: trustusbank-edge</div>
 
       <div class="ns">trustusbank-bank-frontend</div>
-      <ul><li>chatbot (nginx)</li></ul>
-
-      <div class="ns">trustusbank-platform</div>
-      <ul><li>kagent-ui · controller (local)</li></ul>
+      <ul><li>chatbot (nginx) — calls bank's agents via A2A direct</li></ul>
 
       <div class="ns">trustusbank-bank-agents</div>
-      <ul><li>support-bot (real pod)</li><li>fraud-bot · triage-bot (stubs)</li></ul>
+      <ul><li>support-bot · fraud-bot · triage-bot Service stubs</li><li>(EndpointSlices → bank NodePorts 30090/91/94)</li></ul>
+
+      <div class="ns">trustusbank-platform</div>
+      <ul><li>trustusbank-agentgw stub Service</li><li>(EndpointSlice → bank NodePort 30092)</li></ul>
 
       <div class="ns">control plane</div>
       <ul><li>istiod · ztunnel · istio-cni</li><li>gloo-mesh-agent</li></ul>
@@ -246,13 +246,13 @@
       <div class="td">trust: bank.local · net: trustusbank-bank</div>
 
       <div class="ns">trustusbank-bank-agents</div>
-      <ul><li>fraud-bot · triage-bot (real)</li></ul>
+      <ul><li>support-bot · fraud-bot · triage-bot (real)</li><li>per-agent waypoint (AccessPolicy enforcement)</li></ul>
 
       <div class="ns">trustusbank-bank-mcp</div>
       <ul><li>account · transaction · ticket MCP</li><li>waypoint (L7)</li></ul>
 
       <div class="ns">trustusbank-platform</div>
-      <ul><li>agentgateway · agentregistry</li><li>kagent-ctrl (federated)</li></ul>
+      <ul><li>Enterprise kagent (controller · UI · postgres)</li><li>dex IdP · oauth2-proxy (kagent UI SSO)</li><li>agentgateway · agentregistry</li></ul>
 
       <div class="ns">trustusbank-observability</div>
       <ul><li>Prom · Loki · Tempo · Grafana · OTel</li></ul>
@@ -325,9 +325,8 @@
 <tr><td><code>istio-system</code></td><td>istiod, istio-cni-node × N, ztunnel × N</td><td>Solo Istio Ambient control + data plane</td></tr>
 <tr><td><code>istio-eastwest</code></td><td>istio-eastwest Gateway (Deployment + NodePort Service :30015 hbone, :30016 xds)</td><td>Inbound peer endpoint for the other two clusters</td></tr>
 <tr><td><code>gloo-mesh</code></td><td>gloo-mesh-agent (1 pod)</td><td>Relay to bank's mgmt-server</td></tr>
-<tr><td><code>trustusbank-bank-frontend</code> <small>ambient</small></td><td>chatbot (nginx)</td><td>Customer-facing SPA + reverse proxy</td></tr>
-<tr><td><code>trustusbank-platform</code></td><td>(empty + kagent-ui stub Service)</td><td>Service stub so chatbot's nginx upstream resolves; mesh routes to bank</td></tr>
-<tr><td><code>trustusbank-bank-agents</code> <small>ambient</small></td><td>(empty)</td><td>Reserved for future per-cluster agent placement</td></tr>
+<tr><td><code>trustusbank-bank-frontend</code> <small>ambient</small></td><td>chatbot (nginx)</td><td>Customer-facing SPA. Nginx proxies <code>/api/a2a/&lt;ns&gt;/&lt;agent&gt;/</code> directly to the target agent's A2A JSON-RPC port on bank (no kagent controller in the path)</td></tr>
+<tr><td><code>trustusbank-bank-agents</code> <small>ambient</small></td><td>Service stubs: support-bot, fraud-bot, triage-bot, trustusbank-agentgw</td><td>Empty-Endpoints local Services. EndpointSlices in <code>manifests/multi/lateral-hack.yaml</code> point them at bank's NodePorts so <code>&lt;agent&gt;.&lt;ns&gt;.svc.cluster.local</code> resolves from edge</td></tr>
 </tbody>
 </table>
 
@@ -339,8 +338,8 @@
 <tr><td><code>istio-system</code></td><td>istiod, istio-cni, ztunnel</td><td>Ambient control + data plane</td></tr>
 <tr><td><code>istio-eastwest</code></td><td>istio-eastwest GW (local) + 2 peer Gateways (peer-edge, peer-vendor)</td><td>Inbound + outbound peer references</td></tr>
 <tr><td><code>gloo-mesh</code></td><td><b>gloo-mesh-mgmt-server</b>, redis, UI, telemetry-gateway, telemetry-collector × N, prometheus-server, gloo-mesh-agent</td><td>The Solo management plane lives here. (Helm chart and binary names retain the <code>gloo-mesh-*</code> identifiers from the previous brand.)</td></tr>
-<tr><td><code>trustusbank-platform</code></td><td>agentgateway, trustusbank-agentgw, agentregistry + postgres, kagent-controller, kagent-ui, kagent-kmcp-controller-manager, kagent-postgresql</td><td>MCP wire + catalog + agent control plane. Authentication moved from Keycloak-issued JWTs to mesh-native SPIFFE identity at the waypoint.</td></tr>
-<tr><td><code>trustusbank-bank-agents</code> <small>ambient</small></td><td>support-bot, fraud-bot, triage-bot (each as a <code>kagent</code> <code>Agent</code> CRD that spawns a Pod)</td><td>The three agents that run the demo's flow</td></tr>
+<tr><td><code>trustusbank-platform</code></td><td>agentgateway, trustusbank-agentgw, agentregistry + postgres, kagent-controller, kagent-ui, kagent-postgresql, <b>dex</b> (OIDC IdP), <b>oauth2-proxy</b> (SSO front-door for kagent UI)</td><td>MCP wire + catalog + agent control plane (Solo Enterprise for kagent 0.4.0). dex + oauth2-proxy gate the kagent UI; service-to-service calls (chatbot → agent) authenticate via mesh SPIFFE at the waypoint, not via OIDC.</td></tr>
+<tr><td><code>trustusbank-bank-agents</code> <small>ambient</small></td><td><b>support-bot</b>, fraud-bot, triage-bot (each as a <code>kagent</code> <code>Agent</code> CRD that spawns a Pod) + per-agent waypoint Gateways</td><td>All three agents now live next to data on bank (production-best-practice for regulated workloads). Each agent has its own waypoint Gateway that enforces the <code>policy.kagent-enterprise.solo.io/AccessPolicy</code> CRs.</td></tr>
 <tr><td><code>trustusbank-bank-mcp</code> <small>ambient</small></td><td>account-mcp, transaction-mcp, ticket-mcp, waypoint</td><td>Three internal MCP tool servers + L7 waypoint</td></tr>
 <tr><td><code>trustusbank-observability</code></td><td>prometheus, grafana, loki, tempo, mailhog, alertmanager, otel-collector, promtail (DS), node-exporter (DS), kube-state-metrics</td><td>Single observability stack for all 3 clusters</td></tr>
 </tbody>
@@ -561,7 +560,8 @@ breakdown and helm values gists.</p>
 <tr><td><code>MCPServer</code></td><td>kagent.dev</td><td>In-cluster MCP server (uses local image, alternative to RemoteMCPServer).</td></tr>
 <tr><td><code>SandboxAgent</code></td><td>kagent.dev</td><td>Sandboxed agent execution (not used in demo).</td></tr>
 <tr><td><code>ToolServer</code></td><td>kagent.dev</td><td>Lower-level alternative to RemoteMCPServer.</td></tr>
-<tr><td><code>AccessPolicy</code></td><td>policy.kagent-enterprise.solo.io</td><td><b>Enterprise-only.</b> Per-tool / per-arg AuthZ on top of the OSS Agent / MCPServer wiring. Not enforced in this demo, but the CRD ships with the Enterprise chart.</td></tr>
+<tr><td><code>AccessPolicy</code></td><td>policy.kagent-enterprise.solo.io</td><td><b>Enterprise-only.</b> Declares who may invoke a given Agent (OIDC user, ServiceAccount, or another Agent). The controller translates each AccessPolicy into an <code>EnterpriseAgentgatewayPolicy</code> attached to the per-agent waypoint Gateway — so enforcement happens at the wire (403 at the waypoint) before the agent's LLM runs. <b>Enforced in this demo:</b> see <code>manifests/phase06-kagent-accesspolicy/</code> and <code>scripts/policies-kagent-on.sh</code>.</td></tr>
+<tr><td><code>EnterpriseAgentgatewayPolicy</code></td><td>enterpriseagentgateway.solo.io</td><td><b>Enterprise-only.</b> The lower-level policy CR the kagent controller generates from each AccessPolicy. Targets a Gateway, applies CEL match expressions like <code>source.identity.namespace == "X" &amp;&amp; source.identity.serviceAccount == "Y"</code>. Use AccessPolicy at the top layer; these get written for you.</td></tr>
 </tbody>
 </table>
 
