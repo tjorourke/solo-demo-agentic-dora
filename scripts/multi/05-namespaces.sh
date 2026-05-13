@@ -49,11 +49,15 @@ for ns in "${AMBIENT_NAMESPACES[@]}"; do
   kctx "$cluster" label ns "$ns" "topology.istio.io/network=$cluster" --overwrite >/dev/null
 done
 
-# Platform + observability namespaces are NOT ambient but still need the
-# network label so istiod can classify their pods for cross-cluster
-# discovery (e.g. trustusbank-agentgw is referenced from edge).
+# Platform namespace MUST also be ambient — the agentgateway pod lives
+# there and calls cross-cluster MCP backends via `.mesh.internal`
+# hostnames. Those hostnames only resolve inside the mesh (ztunnel does
+# DNS interception), so a non-ambient agentgateway pod fails MCP
+# initialise with "backends required DNS resolution which failed" —
+# breaking the currency-converter rug-pull path end to end.
 for ns in "$NS_PLATFORM" "$NS_OBS"; do
   cluster="$(cluster_of_ns "$ns")"
+  kctx "$cluster" label ns "$ns" istio.io/dataplane-mode=ambient --overwrite >/dev/null
   kctx "$cluster" label ns "$ns" "topology.istio.io/network=$cluster" --overwrite >/dev/null
 done
 
