@@ -19,7 +19,14 @@ require_cmd "${REQUIRED[@]}"
 OPTIONAL=(istioctl arctl kagent)
 for c in "${OPTIONAL[@]}"; do
   if command -v "$c" >/dev/null 2>&1; then
-    log_ok "$c: $($c version 2>&1 | head -1 || echo present)"
+    # istioctl version dials the running cluster's istiod by default —
+    # hangs if no kube context exists yet (e.g. during a fresh rebuild
+    # right after kind delete). --remote=false makes it local-only.
+    case "$c" in
+      istioctl) ver_out=$("$c" version --remote=false 2>&1 | head -1) ;;
+      *)        ver_out=$("$c" version 2>&1 | head -1) ;;
+    esac
+    log_ok "$c: ${ver_out:-present}"
   else
     log_warn "$c not installed — install before deploy-all reaches its phase"
   fi
