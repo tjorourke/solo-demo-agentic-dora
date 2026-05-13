@@ -143,9 +143,9 @@
     <li><a href="#hbone">HBONE + waypoint: how the wire works</a></li>
     <li><a href="#workspace">Solo Workspaces &amp; Segments</a></li>
     <li><a href="#walk">Step-by-step build (M00 → M11) + operator helpers</a></li>
-    <li><a href="#demo">The supply-chain attack demo</a></li>
     <li><a href="#distributed">Distributing 3 agents across 3 clusters (Solo Istio peering wire)</a></li>
     <li><a href="#flow">Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</a></li>
+    <li><a href="#demo">The supply-chain attack demo (full rug-pull walk-through)</a></li>
   </ol>
 </div>
 
@@ -908,9 +908,22 @@ kubectl -n istio-system create secret generic cacerts \
 <h3><span class="step-num">3</span>M03 — Gloo Operator + ServiceMeshController on each cluster</h3>
 <p>Production-best-practice install path. Gloo Operator (helm chart
 <code>gloo-operator-helm/gloo-operator</code> 0.5.2) goes into the <code>gloo-system</code>
-namespace once per cluster. Then a single declarative <code>ServiceMeshController</code> CR per
-cluster tells the operator to reconcile base + istiod + cni + ztunnel as one
-lifecycle. App teams never touch <code>istio-system</code>.</p>
+namespace once per cluster. The operator installs the <code>ServiceMeshController</code>
+CRD and watches it. A single declarative <code>ServiceMeshController</code> CR per
+cluster then tells the operator to reconcile <code>istio-base</code> + <code>istiod</code> +
+<code>istio-cni</code> + <code>ztunnel</code> as one lifecycle. App teams never touch
+<code>istio-system</code>.</p>
+
+<div class="callout"><b>Where to find the Solo Istio install YAML in the bundle:</b><br>
+<code>shared/03-servicemeshcontroller.example.yaml</code> — the SMC CR (one per cluster).<br>
+<code>shared/02-solo-istio-license.example.yaml</code> — the <code>solo-istio-license</code> Secret template.<br>
+<code>shared/01-cacerts-secret.example.yaml</code> — the <code>cacerts</code> Secret template (per-cluster intermediate, SAN <code>spiffe://cluster.local/...</code>).<br>
+<code>trustusbank-{edge,bank,vendor}/00-istiod-license-env-patch.yaml</code> — post-install patch that wires <code>SOLO_LICENSE_KEY</code> + <code>PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES=false</code> into the operator-managed istiod-gloo Deployment.<br>
+<code>trustusbank-{edge,bank,vendor}/00-ztunnel-l7-env-patch.yaml</code> — post-install patch that wires <code>L7_ENABLED=true</code> into the operator-managed ztunnel DaemonSet.<br>
+<code>trustusbank-{edge,bank,vendor}/00-istiod-alias-service.yaml</code> — the <code>istiod</code> alias Service.<br>
+<br>
+The Gloo Operator chart itself is a helm install (not a CRD), shown below.
+</div>
 
 <p>What the script does, per cluster:</p>
 <ol>
@@ -919,7 +932,17 @@ lifecycle. App teams never touch <code>istio-system</code>.</p>
   <li>Creates a one-time <code>solo-istio-license</code> Secret in <code>istio-system</code> holding the Solo Istio license key.</li>
   <li>Applies the <code>ServiceMeshController</code> CR below.</li>
   <li>Waits for <code>.status.phase = Installed</code>.</li>
+  <li>Patches istiod-gloo + ztunnel with the multi-cluster env vars + creates the <code>istiod</code> alias Service.</li>
 </ol>
+
+<details class="yaml"><summary>step 0 — install the Gloo Operator chart on each cluster</summary>
+<pre># Once per cluster. The operator's helm install is what creates the
+# `ServiceMeshController` CRD (and the operator pod that watches it).
+helm install gloo-operator \
+  oci://us-docker.pkg.dev/solo-public/gloo-operator-helm/gloo-operator \
+  --version 0.5.2 \
+  --namespace gloo-system --create-namespace \
+  --wait --timeout 3m</pre></details>
 
 <details class="yaml" open><summary>the ServiceMeshController CR per cluster</summary>
 <pre>apiVersion: operator.gloo.solo.io/v1
@@ -1209,7 +1232,176 @@ k9s --context=kind-trustusbank-vendor     # ⌘3</pre></details>
 
 <hr>
 
-<h2 id="demo"><span class="num">7.</span> The supply-chain attack demo</h2>
+<h2 id="distributed"><span class="num">7.</span> Distributing the 3 agents across 3 clusters</h2>
+
+<p>kagent's <code>Agent</code> CRD validates tool references against the <i>local</i> cluster's API server — there's no <code>cluster</code> field on a <code>type: Agent</code> tool. To put <code>support-bot</code> on cluster-edge while <code>fraud-bot</code> and <code>triage-bot</code> live on cluster-bank, you need (a) a local Agent CRD for every name <code>support-bot</code> references, plus (b) a way to route the actual A2A wire across clusters.</p>
+
+<p>The trick: kagent's <code>type: BYO</code> Agent <b>does</b> accept <code>replicas: 0</code>. That creates the Agent CRD (kagent's validator passes) plus a backing <code>Service</code> with no local endpoints — exactly the shape we need for cross-cluster mesh routing.</p>
+
+<style>
+  .dist { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0; }
+  .dist .col { background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 10px; padding: 14px 16px; }
+  .dist .col.edge { border-color: #22d3ee; }
+  .dist .col.bank { border-color: #fbbf24; background: #fffbeb; }
+  .dist h5 { margin: 0 0 6px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .dist .role { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+  .dist .role.real { background: #dcfce7; color: #166534; }
+  .dist .role.stub { background: #f1f5f9; color: #475569; }
+  .dist ul { margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; }
+  .dist li { margin-bottom: 3px; }
+  .dist .meta { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
+  @media (max-width: 760px) { .dist { grid-template-columns: 1fr; } }
+</style>
+
+<div class="dist">
+  <div class="col edge">
+    <h5>cluster-edge — Agent CRDs <span class="pill pill-edge">edge</span></h5>
+    <div><b>support-bot</b> <span class="role real">real · replicas=1</span></div>
+    <div class="meta">type: Declarative · running pod · serves <code>POST /</code> on :8080</div>
+    <ul><li>customer's first-line agent</li><li>tools: account-mcp, transaction-mcp, currency-converter, Agent:fraud-bot</li></ul>
+    <div style="margin-top: 10px"><b>fraud-bot</b> <span class="role stub">stub · replicas=0</span></div>
+    <div class="meta">type: BYO · image: pause:3.9 · 0 pods · Service exists for routing</div>
+    <div style="margin-top: 6px"><b>triage-bot</b> <span class="role stub">stub · replicas=0</span></div>
+    <div class="meta">type: BYO · image: pause:3.9 · 0 pods · Service exists for routing</div>
+  </div>
+
+  <div class="col bank">
+    <h5>cluster-bank — Agent CRDs <span class="pill pill-bank">bank</span></h5>
+    <div><b>fraud-bot</b> <span class="role real">real · replicas=1</span></div>
+    <div class="meta">type: Declarative · running pod · MCP tool: transaction-mcp</div>
+    <ul><li>scores transaction risk 0-100</li><li>hands off to triage-bot if risk &gt; 70</li></ul>
+    <div style="margin-top: 10px"><b>triage-bot</b> <span class="role real">real · replicas=1</span></div>
+    <div class="meta">type: Declarative · running pod · MCP tool: ticket-mcp</div>
+    <ul><li>creates DORA Art. 17 incident records</li><li>notifies human via Slack/email</li></ul>
+    <div style="margin-top: 10px"><b>support-bot</b> <span class="role stub">stub · replicas=0</span></div>
+    <div class="meta">type: BYO · 0 pods · keeps local references valid (vendor-cluster code may A2A back here in future)</div>
+  </div>
+</div>
+
+<h3>Cross-cluster wire — pure Solo Istio Ambient peering</h3>
+
+<p>Solo Istio Ambient peering does the cross-cluster wire end-to-end. Once the M02 → M05 stack is in place (shared root CA with <code>cluster.local</code> SAN, peering chart with the east-west GW + remote peer references, <code>istio-remote-secret-*</code> for control-plane discovery, <code>topology.istio.io/network</code> labels on every workload namespace, enterprise license unlocking the MultiCluster feature), istiod auto-generates everything:</p>
+
+<ul>
+  <li>Cluster-local hostname <code>&lt;svc&gt;.&lt;ns&gt;.svc.cluster.local</code> resolves locally (k8s DNS) and routes over HBONE via the east-west GW when the destination pod lives in a remote network.</li>
+  <li>Global hostname <code>&lt;svc&gt;.&lt;ns&gt;.mesh.internal</code> is provisioned for any Service labelled <code>istio.io/global=true</code>. Auto-aggregated across all peered clusters.</li>
+</ul>
+
+<p>SPIFFE is preserved end-to-end — the source pod's SPIFFE identity (e.g. <code>spiffe://cluster.local/ns/trustusbank-bank-frontend/sa/chatbot</code> from edge) is presented at the destination's per-agent waypoint, and the <code>AccessPolicy</code> with <code>kind: ServiceAccount</code> subject matches. The chatbot → support-bot E2E proves this: a request from the chatbot pod on edge reaches support-bot's pod on bank via HBONE through the east-west GW, with the chatbot's SA identity intact.</p>
+
+<details class="yaml" open><summary>verification — chatbot → support-bot HTTP 200, SPIFFE-aware AccessPolicy enforcement</summary>
+<pre># From edge, hit the global federation hostname:
+$ kubectl --context=kind-trustusbank-edge -n trustusbank-bank-frontend \
+    exec deploy/chatbot -c chatbot -- \
+    curl -sS -o /dev/null -w 'HTTP %{http_code} time=%{time_total}s\n' \
+    http://support-bot.trustusbank-bank-agents.mesh.internal:8080/.well-known/agent-card.json
+HTTP 200 time=0.026s
+# (= AccessPolicy on bank allowed the chatbot SA — SPIFFE preserved
+#    end-to-end through the east-west GW. Intra-cluster enforcement
+#    on the same waypoint still denies support → fraud with HTTP 403.)
+</pre></details>
+
+<div class="callout ok"><b>Earlier in this demo</b>, cross-cluster traffic went through a "lateral hack" — NodePort + manual <code>EndpointSlice</code> stubs that delivered packets but stripped SPIFFE on the SNAT hop, so cross-cluster <code>AccessPolicy</code> with <code>kind: ServiceAccount</code> subjects couldn't enforce. That's gone now. Solo Istio Ambient peering owns the wire, SPIFFE is preserved, and the cross-cluster path is observable end-to-end via ztunnel access logs and Grafana panels.</div>
+
+<hr>
+
+<h2 id="flow"><span class="num">8.</span> Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</h2>
+
+<p>The waypoint is where AgentGateway earns its keep. In ambient mesh, every L7 hop between two services in different namespaces (or with policy enforcement enabled) goes <b>pod → source-node ztunnel → waypoint → destination-node ztunnel → pod</b>. Five components, five hops, all running native HBONE. Below is the exact path a request from <code>customer-agent</code> (in <code>ai-agents</code>) to <code>inventory-mcp</code> (in <code>ai-tools</code>) takes once the waypoint is wired in.</p>
+
+<style>
+  .flow { margin: 22px 0; }
+  .flow-row { display: grid; grid-template-columns: 1fr 56px 1fr 56px 1fr 56px 1fr 56px 1fr; align-items: stretch; gap: 0; margin: 8px 0; }
+  .flow-row .node { border: 2px solid #cbd5e1; border-radius: 10px; padding: 12px 14px; background: #f8fafc; min-height: 100%; }
+  .flow-row .node.pod   { border-color: #22c55e; background: #f0fdf4; }
+  .flow-row .node.zt    { border-color: #1cb5d3; background: #ecfeff; }
+  .flow-row .node.wp    { border-color: #a855f7; background: #faf5ff; }
+  .flow-row .node h5 { margin: 0 0 4px; font-size: 13px; font-weight: 700; }
+  .flow-row .node .what { font-size: 11.5px; color: var(--muted); margin-bottom: 6px; }
+  .flow-row .node ul { margin: 0; padding-left: 16px; font-size: 11.5px; line-height: 1.45; }
+  .flow-row .node ul li { margin-bottom: 1px; }
+  .flow-row .step { display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10.5px; color: #0e7490; font-family: ui-monospace, monospace; position: relative; }
+  .flow-row .step::before { content: ""; position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: #1cb5d3; transform: translateY(-50%); }
+  .flow-row .step::after  { content: "▶"; position: absolute; top: 50%; right: 4px; transform: translateY(-50%); color: #1cb5d3; font-size: 12px; }
+  .flow-row .step span { position: relative; z-index: 1; background: #fff; border: 1px solid #1cb5d3; border-radius: 14px; padding: 3px 6px; font-weight: 700; color: #0e7490; }
+  .flow-row .step .hint { background: transparent; border: none; margin-top: 4px; font-weight: 500; color: var(--muted); padding: 0 4px; text-align: center; line-height: 1.3; }
+  @media (max-width: 1100px) { .flow-row { grid-template-columns: 1fr; } .flow-row .step::before { display: none; } .flow-row .step::after { display: none; } .flow-row .step { padding: 8px 0; } }
+</style>
+
+<div class="flow">
+  <div class="flow-row">
+    <div class="node pod">
+      <h5>customer-agent Pod</h5>
+      <div class="what">in <code>ai-agents</code> ns, no sidecar</div>
+      <ul>
+        <li>plain TCP/HTTP</li>
+        <li>SA: <code>customer-agent</code></li>
+        <li>SPIFFE: <code>spiffe://cluster.local/ns/ai-agents/sa/customer-agent</code></li>
+      </ul>
+    </div>
+    <div class="step"><span>1</span><span class="hint">CNI iptables hijack</span></div>
+    <div class="node zt">
+      <h5>ztunnel (src node)</h5>
+      <div class="what">istio-system DaemonSet</div>
+      <ul>
+        <li>catches outbound</li>
+        <li>looks up dest svc → has waypoint?</li>
+        <li>yes → wrap in HBONE</li>
+        <li>mTLS client cert = pod's SPIFFE ID</li>
+      </ul>
+    </div>
+    <div class="step"><span>2</span><span class="hint">HBONE :15008<br>mTLS</span></div>
+    <div class="node wp">
+      <h5>AgentGateway waypoint</h5>
+      <div class="what"><code>enterprise-agentgateway-waypoint</code></div>
+      <ul>
+        <li>extracts <code>source.identity</code> from mTLS</li>
+        <li>evaluates CEL authz</li>
+        <li>applies rate limit, headers, transforms</li>
+        <li>deny → 403 here (0ms)</li>
+        <li>allow → forward via HBONE</li>
+      </ul>
+    </div>
+    <div class="step"><span>3</span><span class="hint">HBONE :15008<br>mTLS</span></div>
+    <div class="node zt">
+      <h5>ztunnel (dest node)</h5>
+      <div class="what">istio-system DaemonSet</div>
+      <ul>
+        <li>terminates HBONE</li>
+        <li>delivers raw TCP to dest pod</li>
+      </ul>
+    </div>
+    <div class="step"><span>4</span><span class="hint">plain TCP</span></div>
+    <div class="node pod">
+      <h5>inventory-mcp Pod</h5>
+      <div class="what">in <code>ai-tools</code> ns, no sidecar</div>
+      <ul>
+        <li>receives the request</li>
+        <li>has no idea a waypoint exists</li>
+        <li>returns 200</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<p>Three properties worth committing to memory:</p>
+
+<ul>
+  <li><b>The pod doesn't know.</b> No sidecar, no envoy, no application change. The CNI hijack at step 1 is transparent.</li>
+  <li><b>SPIFFE identity rides the TLS, not the payload.</b> By the time the waypoint sees the request at step 3, the source identity is already cryptographically verified — the waypoint's CEL policies read it from the connection, not from any HTTP header the caller could forge.</li>
+  <li><b>Deny is free.</b> A failed authorization check returns 403 at step 3 in 0ms. The destination ztunnel and pod never see the request.</li>
+</ul>
+
+<div class="callout info"><b>Why this is different from a north-south agentgateway.</b> The north-south Gateway in <code>trustusbank-platform</code> (kind <code>Gateway</code>, gatewayClassName <code>agentgateway</code>) terminates external client traffic and routes to MCP servers — it sits at the edge of the cluster. The waypoint is <i>inside</i> the data plane: every L7 hop in the mesh goes through it. Same control plane (the AgentGateway controller in <code>agentgateway-system</code>), two different placements.</div>
+
+<hr>
+
+<hr>
+
+<p class="lede">If this got you what you needed, good. If anything's wrong or unclear, the <a href="https://github.com/tjorourke/solo-demo-agentic-dora">repo is here</a> — every script referenced is checked in and every YAML in this doc is also live in the cluster. Welcome to Solo.</p>
+
+</main>
+<h2 id="demo"><span class="num">9.</span> The supply-chain attack demo</h2>
 
 <h3>Application-level A2A flow — what the chatbot triggers</h3>
 
@@ -1595,174 +1787,5 @@ and convert my balance to USD.</pre>
 
 <hr>
 
-<h2 id="distributed"><span class="num">8.</span> Distributing the 3 agents across 3 clusters</h2>
-
-<p>kagent's <code>Agent</code> CRD validates tool references against the <i>local</i> cluster's API server — there's no <code>cluster</code> field on a <code>type: Agent</code> tool. To put <code>support-bot</code> on cluster-edge while <code>fraud-bot</code> and <code>triage-bot</code> live on cluster-bank, you need (a) a local Agent CRD for every name <code>support-bot</code> references, plus (b) a way to route the actual A2A wire across clusters.</p>
-
-<p>The trick: kagent's <code>type: BYO</code> Agent <b>does</b> accept <code>replicas: 0</code>. That creates the Agent CRD (kagent's validator passes) plus a backing <code>Service</code> with no local endpoints — exactly the shape we need for cross-cluster mesh routing.</p>
-
-<style>
-  .dist { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0; }
-  .dist .col { background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 10px; padding: 14px 16px; }
-  .dist .col.edge { border-color: #22d3ee; }
-  .dist .col.bank { border-color: #fbbf24; background: #fffbeb; }
-  .dist h5 { margin: 0 0 6px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
-  .dist .role { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
-  .dist .role.real { background: #dcfce7; color: #166534; }
-  .dist .role.stub { background: #f1f5f9; color: #475569; }
-  .dist ul { margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; }
-  .dist li { margin-bottom: 3px; }
-  .dist .meta { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
-  @media (max-width: 760px) { .dist { grid-template-columns: 1fr; } }
-</style>
-
-<div class="dist">
-  <div class="col edge">
-    <h5>cluster-edge — Agent CRDs <span class="pill pill-edge">edge</span></h5>
-    <div><b>support-bot</b> <span class="role real">real · replicas=1</span></div>
-    <div class="meta">type: Declarative · running pod · serves <code>POST /</code> on :8080</div>
-    <ul><li>customer's first-line agent</li><li>tools: account-mcp, transaction-mcp, currency-converter, Agent:fraud-bot</li></ul>
-    <div style="margin-top: 10px"><b>fraud-bot</b> <span class="role stub">stub · replicas=0</span></div>
-    <div class="meta">type: BYO · image: pause:3.9 · 0 pods · Service exists for routing</div>
-    <div style="margin-top: 6px"><b>triage-bot</b> <span class="role stub">stub · replicas=0</span></div>
-    <div class="meta">type: BYO · image: pause:3.9 · 0 pods · Service exists for routing</div>
-  </div>
-
-  <div class="col bank">
-    <h5>cluster-bank — Agent CRDs <span class="pill pill-bank">bank</span></h5>
-    <div><b>fraud-bot</b> <span class="role real">real · replicas=1</span></div>
-    <div class="meta">type: Declarative · running pod · MCP tool: transaction-mcp</div>
-    <ul><li>scores transaction risk 0-100</li><li>hands off to triage-bot if risk &gt; 70</li></ul>
-    <div style="margin-top: 10px"><b>triage-bot</b> <span class="role real">real · replicas=1</span></div>
-    <div class="meta">type: Declarative · running pod · MCP tool: ticket-mcp</div>
-    <ul><li>creates DORA Art. 17 incident records</li><li>notifies human via Slack/email</li></ul>
-    <div style="margin-top: 10px"><b>support-bot</b> <span class="role stub">stub · replicas=0</span></div>
-    <div class="meta">type: BYO · 0 pods · keeps local references valid (vendor-cluster code may A2A back here in future)</div>
-  </div>
-</div>
-
-<h3>Cross-cluster wire — pure Solo Istio Ambient peering</h3>
-
-<p>Solo Istio Ambient peering does the cross-cluster wire end-to-end. Once the M02 → M05 stack is in place (shared root CA with <code>cluster.local</code> SAN, peering chart with the east-west GW + remote peer references, <code>istio-remote-secret-*</code> for control-plane discovery, <code>topology.istio.io/network</code> labels on every workload namespace, enterprise license unlocking the MultiCluster feature), istiod auto-generates everything:</p>
-
-<ul>
-  <li>Cluster-local hostname <code>&lt;svc&gt;.&lt;ns&gt;.svc.cluster.local</code> resolves locally (k8s DNS) and routes over HBONE via the east-west GW when the destination pod lives in a remote network.</li>
-  <li>Global hostname <code>&lt;svc&gt;.&lt;ns&gt;.mesh.internal</code> is provisioned for any Service labelled <code>istio.io/global=true</code>. Auto-aggregated across all peered clusters.</li>
-</ul>
-
-<p>SPIFFE is preserved end-to-end — the source pod's SPIFFE identity (e.g. <code>spiffe://cluster.local/ns/trustusbank-bank-frontend/sa/chatbot</code> from edge) is presented at the destination's per-agent waypoint, and the <code>AccessPolicy</code> with <code>kind: ServiceAccount</code> subject matches. The chatbot → support-bot E2E proves this: a request from the chatbot pod on edge reaches support-bot's pod on bank via HBONE through the east-west GW, with the chatbot's SA identity intact.</p>
-
-<details class="yaml" open><summary>verification — chatbot → support-bot HTTP 200, SPIFFE-aware AccessPolicy enforcement</summary>
-<pre># From edge, hit the global federation hostname:
-$ kubectl --context=kind-trustusbank-edge -n trustusbank-bank-frontend \
-    exec deploy/chatbot -c chatbot -- \
-    curl -sS -o /dev/null -w 'HTTP %{http_code} time=%{time_total}s\n' \
-    http://support-bot.trustusbank-bank-agents.mesh.internal:8080/.well-known/agent-card.json
-HTTP 200 time=0.026s
-# (= AccessPolicy on bank allowed the chatbot SA — SPIFFE preserved
-#    end-to-end through the east-west GW. Intra-cluster enforcement
-#    on the same waypoint still denies support → fraud with HTTP 403.)
-</pre></details>
-
-<div class="callout ok"><b>Earlier in this demo</b>, cross-cluster traffic went through a "lateral hack" — NodePort + manual <code>EndpointSlice</code> stubs that delivered packets but stripped SPIFFE on the SNAT hop, so cross-cluster <code>AccessPolicy</code> with <code>kind: ServiceAccount</code> subjects couldn't enforce. That's gone now. Solo Istio Ambient peering owns the wire, SPIFFE is preserved, and the cross-cluster path is observable end-to-end via ztunnel access logs and Grafana panels.</div>
-
-<hr>
-
-<h2 id="flow"><span class="num">9.</span> Component flow: pod ⇄ ztunnel ⇄ waypoint ⇄ pod</h2>
-
-<p>The waypoint is where AgentGateway earns its keep. In ambient mesh, every L7 hop between two services in different namespaces (or with policy enforcement enabled) goes <b>pod → source-node ztunnel → waypoint → destination-node ztunnel → pod</b>. Five components, five hops, all running native HBONE. Below is the exact path a request from <code>customer-agent</code> (in <code>ai-agents</code>) to <code>inventory-mcp</code> (in <code>ai-tools</code>) takes once the waypoint is wired in.</p>
-
-<style>
-  .flow { margin: 22px 0; }
-  .flow-row { display: grid; grid-template-columns: 1fr 56px 1fr 56px 1fr 56px 1fr 56px 1fr; align-items: stretch; gap: 0; margin: 8px 0; }
-  .flow-row .node { border: 2px solid #cbd5e1; border-radius: 10px; padding: 12px 14px; background: #f8fafc; min-height: 100%; }
-  .flow-row .node.pod   { border-color: #22c55e; background: #f0fdf4; }
-  .flow-row .node.zt    { border-color: #1cb5d3; background: #ecfeff; }
-  .flow-row .node.wp    { border-color: #a855f7; background: #faf5ff; }
-  .flow-row .node h5 { margin: 0 0 4px; font-size: 13px; font-weight: 700; }
-  .flow-row .node .what { font-size: 11.5px; color: var(--muted); margin-bottom: 6px; }
-  .flow-row .node ul { margin: 0; padding-left: 16px; font-size: 11.5px; line-height: 1.45; }
-  .flow-row .node ul li { margin-bottom: 1px; }
-  .flow-row .step { display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10.5px; color: #0e7490; font-family: ui-monospace, monospace; position: relative; }
-  .flow-row .step::before { content: ""; position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: #1cb5d3; transform: translateY(-50%); }
-  .flow-row .step::after  { content: "▶"; position: absolute; top: 50%; right: 4px; transform: translateY(-50%); color: #1cb5d3; font-size: 12px; }
-  .flow-row .step span { position: relative; z-index: 1; background: #fff; border: 1px solid #1cb5d3; border-radius: 14px; padding: 3px 6px; font-weight: 700; color: #0e7490; }
-  .flow-row .step .hint { background: transparent; border: none; margin-top: 4px; font-weight: 500; color: var(--muted); padding: 0 4px; text-align: center; line-height: 1.3; }
-  @media (max-width: 1100px) { .flow-row { grid-template-columns: 1fr; } .flow-row .step::before { display: none; } .flow-row .step::after { display: none; } .flow-row .step { padding: 8px 0; } }
-</style>
-
-<div class="flow">
-  <div class="flow-row">
-    <div class="node pod">
-      <h5>customer-agent Pod</h5>
-      <div class="what">in <code>ai-agents</code> ns, no sidecar</div>
-      <ul>
-        <li>plain TCP/HTTP</li>
-        <li>SA: <code>customer-agent</code></li>
-        <li>SPIFFE: <code>spiffe://cluster.local/ns/ai-agents/sa/customer-agent</code></li>
-      </ul>
-    </div>
-    <div class="step"><span>1</span><span class="hint">CNI iptables hijack</span></div>
-    <div class="node zt">
-      <h5>ztunnel (src node)</h5>
-      <div class="what">istio-system DaemonSet</div>
-      <ul>
-        <li>catches outbound</li>
-        <li>looks up dest svc → has waypoint?</li>
-        <li>yes → wrap in HBONE</li>
-        <li>mTLS client cert = pod's SPIFFE ID</li>
-      </ul>
-    </div>
-    <div class="step"><span>2</span><span class="hint">HBONE :15008<br>mTLS</span></div>
-    <div class="node wp">
-      <h5>AgentGateway waypoint</h5>
-      <div class="what"><code>enterprise-agentgateway-waypoint</code></div>
-      <ul>
-        <li>extracts <code>source.identity</code> from mTLS</li>
-        <li>evaluates CEL authz</li>
-        <li>applies rate limit, headers, transforms</li>
-        <li>deny → 403 here (0ms)</li>
-        <li>allow → forward via HBONE</li>
-      </ul>
-    </div>
-    <div class="step"><span>3</span><span class="hint">HBONE :15008<br>mTLS</span></div>
-    <div class="node zt">
-      <h5>ztunnel (dest node)</h5>
-      <div class="what">istio-system DaemonSet</div>
-      <ul>
-        <li>terminates HBONE</li>
-        <li>delivers raw TCP to dest pod</li>
-      </ul>
-    </div>
-    <div class="step"><span>4</span><span class="hint">plain TCP</span></div>
-    <div class="node pod">
-      <h5>inventory-mcp Pod</h5>
-      <div class="what">in <code>ai-tools</code> ns, no sidecar</div>
-      <ul>
-        <li>receives the request</li>
-        <li>has no idea a waypoint exists</li>
-        <li>returns 200</li>
-      </ul>
-    </div>
-  </div>
-</div>
-
-<p>Three properties worth committing to memory:</p>
-
-<ul>
-  <li><b>The pod doesn't know.</b> No sidecar, no envoy, no application change. The CNI hijack at step 1 is transparent.</li>
-  <li><b>SPIFFE identity rides the TLS, not the payload.</b> By the time the waypoint sees the request at step 3, the source identity is already cryptographically verified — the waypoint's CEL policies read it from the connection, not from any HTTP header the caller could forge.</li>
-  <li><b>Deny is free.</b> A failed authorization check returns 403 at step 3 in 0ms. The destination ztunnel and pod never see the request.</li>
-</ul>
-
-<div class="callout info"><b>Why this is different from a north-south agentgateway.</b> The north-south Gateway in <code>trustusbank-platform</code> (kind <code>Gateway</code>, gatewayClassName <code>agentgateway</code>) terminates external client traffic and routes to MCP servers — it sits at the edge of the cluster. The waypoint is <i>inside</i> the data plane: every L7 hop in the mesh goes through it. Same control plane (the AgentGateway controller in <code>agentgateway-system</code>), two different placements.</div>
-
-<hr>
-
-<hr>
-
-<p class="lede">If this got you what you needed, good. If anything's wrong or unclear, the <a href="https://github.com/tjorourke/solo-demo-agentic-dora">repo is here</a> — every script referenced is checked in and every YAML in this doc is also live in the cluster. Welcome to Solo.</p>
-
-</main>
 </body>
 </html>

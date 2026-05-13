@@ -222,15 +222,46 @@ cat > "$SHARED/README.md" <<'SHARED_README'
 Files in this folder apply to **every cluster** in the multi-cluster
 install (trustusbank-edge, trustusbank-bank, trustusbank-vendor).
 
-| File | Purpose |
-|---|---|
-| `00-namespaces-and-labels.yaml` | Workload namespaces with `istio.io/dataplane-mode=ambient` AND `topology.istio.io/network=<cluster>` labels (the network label is what lets istiod classify cross-cluster pods). |
-| `01-cacerts-secret.example.yaml` | Template for the `cacerts` Secret in `istio-system` — holds the per-cluster intermediate CA. All three intermediates MUST be signed with SAN `spiffe://cluster.local/...`. |
-| `02-solo-istio-license.example.yaml` | Template for the `solo-istio-license` Secret in `istio-system`. Must be an **enterprise** (non-trial) Solo Mesh license — the trial license has `product: gloo-trial` and istiod-gloo rejects it for the MultiCluster feature. |
-| `03-servicemeshcontroller.example.yaml` | The `ServiceMeshController` CR per cluster — declares cluster name, network, trust domain (`cluster.local` on every cluster). Gloo Operator reconciles this into the istiod / ztunnel / istio-cni Deployments. |
+## What gets Solo Istio onto a cluster (apply order)
+
+The actual Solo Istio (Ambient) install is a **two-step** flow:
+
+1. **Helm install the Gloo Operator** (this is a chart, not a YAML — the
+   bundle is YAML-only, so the install command is here):
+
+   ```bash
+   # Run once per cluster.
+   helm install gloo-operator \
+     oci://us-docker.pkg.dev/solo-public/gloo-operator-helm/gloo-operator \
+     --version 0.5.2 \
+     --namespace gloo-system --create-namespace \
+     --wait --timeout 3m
+   ```
+
+   The operator chart installs the `ServiceMeshController` CRD and the
+   operator pod that reconciles it.
+
+2. **Apply the manifests in this folder** (in numeric order):
+
+   | File | Purpose |
+   |---|---|
+   | `00-namespaces-and-labels.yaml` | Workload namespaces with `istio.io/dataplane-mode=ambient` AND `topology.istio.io/network=<cluster>` labels (the network label is what lets istiod classify cross-cluster pods). |
+   | `01-cacerts-secret.example.yaml` | Template for the `cacerts` Secret in `istio-system` — holds the per-cluster intermediate CA. All three intermediates MUST be signed with SAN `spiffe://cluster.local/...`. |
+   | `02-solo-istio-license.example.yaml` | Template for the `solo-istio-license` Secret. Must be an **enterprise** (non-trial) Solo Mesh license — the trial has `product: gloo-trial` and istiod-gloo rejects it for the MultiCluster feature. |
+   | `03-servicemeshcontroller.example.yaml` | The `ServiceMeshController` CR per cluster — declares cluster name, network, trust domain (`cluster.local` on every cluster). The operator reconciles this CR into istiod-gloo + istio-cni + ztunnel Deployments. |
+
+3. **Post-install patches** (in each cluster's folder) finish the wiring:
+   `00-istiod-license-env-patch.yaml` (wires `SOLO_LICENSE_KEY`),
+   `00-ztunnel-l7-env-patch.yaml` (wires `L7_ENABLED=true`),
+   `00-istiod-alias-service.yaml` (alias Service for the EAG waypoint binary).
+
+## What's templated vs literal
 
 The CA + license Secrets are templated because their content is
-environment-specific. Place real values where the placeholder shows.
+environment-specific. Replace each `<placeholder>` with a real value. The
+`ServiceMeshController` template has a `<CLUSTER_NAME>` placeholder for
+the same reason — one CR per cluster, set to `trustusbank-edge` /
+`trustusbank-bank` / `trustusbank-vendor` respectively.
 SHARED_README
 
 # Namespaces overview YAML (representative)
