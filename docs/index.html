@@ -241,7 +241,6 @@
 <nav class="toc-strip" aria-label="Page index">
   <span class="label">On this page</span>
   <a href="#walkthroughs">Walkthroughs</a>
-  <a href="#install-prereqs">Install prereqs</a>
   <a href="#attack">The attack</a>
   <a href="#defence">The defence</a>
   <a href="#components">Components</a>
@@ -353,18 +352,10 @@
   .install-prereqs .why { font-size: 13.5px; color: #57534e; margin-top: 8px; }
 </style>
 
-<aside class="install-prereqs" id="install-prereqs">
-  <h3>One-time setup: add <code>host.docker.internal</code> to <code>/etc/hosts</code></h3>
-  <p>The Enterprise kagent UI uses OpenID Connect for login (dex as the IdP, oauth2-proxy as the front door). The OIDC issuer URL has to be reachable
-  with the <i>same</i> hostname from <b>two different places</b>: from inside a kind pod (the kagent controller fetches the discovery doc at startup)
-  AND from your browser on macOS (which follows the redirect to the dex login form). <code>host.docker.internal</code> is the one hostname that
-  works from both — but only after you add the entry below.</p>
-  <pre>echo '127.0.0.1 host.docker.internal' | sudo tee -a /etc/hosts</pre>
-  <p class="why"><b>Why this is needed:</b> Docker Desktop already maps <code>host.docker.internal</code> for traffic coming <i>from</i> kind pods,
-  but the macOS resolver doesn't know about it natively. Without the <code>/etc/hosts</code> entry, the browser-side redirect to
-  <code>http://host.docker.internal:5556/auth</code> fails with <code>DNS_PROBE_FINISHED_NXDOMAIN</code>. This is the standard kind+OIDC workaround
-  documented in the dex troubleshooting guide.</p>
-</aside>
+<!-- host.docker.internal /etc/hosts prompt was moved into scripts/multi/00-prereqs.sh
+     (and scripts/00-prereqs.sh). The chatbot demo flow doesn't need OIDC — that's only
+     for the kagent UI human-admin path. The install script will offer to add the line
+     interactively when you actually need it. -->
 
 <style>
   .attack-section {
@@ -1083,7 +1074,7 @@
     </div>
 
     <div class="layer">
-      <span class="badge">layer 3 — runtime (new)</span>
+      <span class="badge">layer 3 — runtime</span>
       <h4>kagent Enterprise <code>AccessPolicy</code></h4>
       <p>The <code>policy.kagent-enterprise.solo.io/AccessPolicy</code> CRD declares <b>who is
       allowed to invoke this agent</b> — by OIDC user, ServiceAccount, or another Agent. It's
@@ -1215,9 +1206,10 @@
     <code>localhost:5556</code> for the dex redirect target).
   </div>
 
-  <h3 style="margin: 24px 0 8px; font-size: 17px;">What's different from a vanilla install</h3>
+  <h3 style="margin: 24px 0 8px; font-size: 17px;">What this demo swaps out vs a stock Solo Enterprise for kagent install</h3>
+  <p style="font-size: 13.5px; color: var(--muted); margin: -4px 0 12px;">"Stock" = a documented Solo Enterprise install with the full Solo management plane (Gloo Operator + management chart) doing OIDC and license validation. This demo substitutes a few of those pieces with lightweight stand-ins (dex single-user IdP, oauth2-proxy in a sidecar pod, dummy license string) purely for kind / laptop dev convenience. The CRDs, the controller, the AccessPolicy enforcement, the agentgateway integration — all unchanged from stock Enterprise.</p>
   <table class="diff">
-    <thead><tr><th>Concern</th><th>Vanilla Enterprise install</th><th>This demo</th></tr></thead>
+    <thead><tr><th>Concern</th><th>Stock Solo Enterprise install</th><th>This demo</th></tr></thead>
     <tbody>
       <tr>
         <td>OIDC IdP</td>

@@ -48,4 +48,11 @@ for d in scripts manifests mcp-servers grafana-dashboards; do
 done
 log_ok "repo layout OK"
 
+# host.docker.internal — only matters if you plan to log into the kagent
+# UI in a browser (OIDC flow via dex). The chatbot demo uses A2A direct
+# and does NOT need this. Helper offers to add the /etc/hosts line via
+# sudo; non-interactive shells just warn.
+log_step "0.3 — host.docker.internal (kagent UI OIDC, optional)"
+ensure_host_docker_internal
+
 log_ok "Phase 0 prerequisites satisfied"

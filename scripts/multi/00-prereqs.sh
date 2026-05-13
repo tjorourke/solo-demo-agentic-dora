@@ -20,40 +20,20 @@ bash "$SCRIPT_DIR/../00-prereqs.sh"
 require_cmd gcloud
 require_cmd docker
 
-# Source licenses from secrets/secrets-envs.sh if present. The file is
-# gitignored (see secrets/README.md) and exports MESH_LICENSE_KEY,
-# AGENTGATEWAY_LICENSE_KEY, KAGENT_LICENSE_KEY, etc.
-if [[ -f "$REPO_ROOT/secrets/secrets-envs.sh" ]]; then
-  # shellcheck disable=SC1091
-  source "$REPO_ROOT/secrets/secrets-envs.sh"
-fi
+# Solo licenses — interactively prompts for missing keys and writes them to
+# secrets/secrets-envs.sh (mode 600, gitignored). MESH_LICENSE_KEY is the
+# critical one — the Solo Istio MultiCluster feature is license-gated and
+# a trial license is silently rejected. Defined in lib/common.sh.
+log_step "Solo license check"
+ensure_solo_licenses
 
-# The Solo Istio data plane (istiod-gloo) needs an ENTERPRISE license for
-# the MultiCluster feature. The "Solo Enterprise for Istio" product is the
-# rename of the former "Gloo Mesh" — so the license that unlocks it has
-# `product: gloo-mesh`, `lt: ent` in its JWT. A trial license
-# (`product: gloo-trial`) is rejected by istiod-gloo and the cross-cluster
-# auto-SE/WE generation never fires.
-#
-# If both are present, prefer the enterprise MESH_LICENSE_KEY.
+# Promote the enterprise MESH license to the env var Solo Istio's prereqs
+# downstream of here expect.
 if [[ -n "${MESH_LICENSE_KEY:-}" ]]; then
   export SOLO_ISTIO_LICENSE_KEY="$MESH_LICENSE_KEY"
 fi
 [[ -n "${SOLO_ISTIO_LICENSE_KEY:-}" ]] \
-  || die "no Solo license available — set MESH_LICENSE_KEY in secrets/secrets-envs.sh (or SOLO_ISTIO_LICENSE_KEY in .env)"
-
-# Quick sanity-check that the license is the right kind. Decode the JWT
-# payload and look for trial markers — warn loudly if the trial product
-# is selected, because cross-cluster will silently fall back to the
-# lateral-hack path.
-payload="$(echo "$SOLO_ISTIO_LICENSE_KEY" | awk -F. '{print $2}')"
-# pad to multiple of 4 for base64
-padded="$payload$(printf '=%.0s' $(seq 1 $((4 - ${#payload} % 4))))"
-decoded=$(echo "$padded" | base64 -d 2>/dev/null || echo "")
-if echo "$decoded" | grep -q '"product":"gloo-trial"'; then
-  log_warn "SOLO_ISTIO_LICENSE_KEY is a TRIAL license — multi-cluster features will be DISABLED."
-  log_warn "Drop an enterprise license into secrets/secrets-envs.sh (MESH_LICENSE_KEY=eyJ...) to unlock."
-fi
+  || die "no Solo Istio license available after prompt — MultiCluster cannot proceed"
 
 # Helm 3.8+ for OCI chart support
 helm_version="$(helm version --short | sed 's/^v//; s/+.*//')"
