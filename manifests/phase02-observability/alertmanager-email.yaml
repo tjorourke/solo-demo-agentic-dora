@@ -36,7 +36,7 @@ spec:
     matchers:
       - name: alertname
         matchType: "=~"
-        value: "IstioAuthZDeny|BankToAttackerAttempt"
+        value: "IstioAuthZDeny|BankToAttackerAttempt|KagentAccessPolicyDeny"
   receivers:
     - name: soc-mailhog
       emailConfigs:

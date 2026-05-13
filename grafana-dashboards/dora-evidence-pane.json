@@ -88,6 +88,34 @@
       }
     },
     {
+      "type": "stat",
+      "title": "Art. 17 — kagent AccessPolicy denies (live, last 5 min)",
+      "description": "Counts agentgateway_requests_total{status=403, reason=Authorization} across all per-agent waypoints in the last 5 minutes. Each increment is a denied invocation: someone tried to call an Agent that an AccessPolicy doesn't allow them to invoke. Fires the KagentAccessPolicyDeny alert -> MailHog SOC inbox.",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        { "expr": "sum(increase(agentgateway_requests_total{status=\"403\", reason=\"Authorization\"}[5m]))", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "noValue": "0",
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "type": "table",
+      "title": "Art. 17 — kagent AccessPolicy denials by waypoint (in time range)",
+      "description": "Per-agent breakdown of AccessPolicy 403s. Shows which target Agent the caller was trying to reach and how many times. Investigate by listing AccessPolicies in trustusbank-bank-agents and checking which subjects are allowed.",
+      "gridPos": { "h": 5, "w": 18, "x": 6, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (gateway) (increase(agentgateway_requests_total{status=\"403\", reason=\"Authorization\"}[$__range]))", "refId": "A", "format": "table", "instant": true }
+      ]
+    },
+    {
       "type": "table",
       "title": "🚨 OFFENDING POD — pods that attempted denied connections (in time range)",
       "description": "Persistent: queries the underlying counter, not live alert state. Stays populated across the dashboard's full time range so you don't lose evidence between attack bursts.",

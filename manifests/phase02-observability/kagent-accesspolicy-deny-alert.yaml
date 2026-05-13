@@ -1,0 +1,111 @@
+# Surfaces kagent Enterprise AccessPolicy denials as Prometheus metrics + alerts.
+#
+# Where the metric comes from:
+#   Each kagent Agent labelled kagent.solo.io/waypoint=true gets its own
+#   per-agent waypoint Gateway pod (managed by the enterprise-agentgateway
+#   controller). That pod exposes Prometheus metrics on container port 15020
+#   under the name `metrics`. Every AccessPolicy denial is recorded as:
+#     agentgateway_requests_total{
+#       status="403",
+#       reason="Authorization",
+#       gateway="<ns>/agent-<name>-waypoint",
+#       route="<ns>/agent-<name>-waypoint",
+#     }
+#
+# What we add:
+#   1. PodMonitor `agent-waypoints-metrics` — kube-prometheus-stack scrapes
+#      every per-agent waypoint pod across the bank-agents namespace.
+#   2. PrometheusRule `trustusbank-kagent-accesspolicy-denies` —
+#      KagentAccessPolicyDeny fires on any 403/Authorization rate > 0.
+
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: agent-waypoints-metrics
+  namespace: trustusbank-observability
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - trustusbank-bank-agents
+  selector:
+    matchLabels:
+      # Every per-agent waypoint pod carries this from the Gateway controller.
+      gateway.networking.k8s.io/gateway-name-class: agent
+  # The Gateway controller doesn't actually set the label above (we use a
+  # generic match instead). The next selector covers it.
+  podMetricsEndpoints:
+    - port: metrics
+      path: /stats/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+
+---
+# Catch-all PodMonitor: match any pod whose container has a port named
+# `metrics` on 15020 in the bank-agents namespace. The agentgateway
+# waypoint pods qualify; the bare ambient `waypoint` deployment does not
+# (its metrics container port is named differently).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: agentgateway-waypoints
+  namespace: trustusbank-observability
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - trustusbank-bank-agents
+  selector:
+    matchExpressions:
+      - { key: gateway.networking.k8s.io/gateway-name, operator: Exists }
+  podMetricsEndpoints:
+    - port: metrics
+      path: /stats/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: trustusbank-kagent-accesspolicy-denies
+  namespace: trustusbank-observability
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: trustusbank.kagent.accesspolicy
+      interval: 15s
+      rules:
+
+        - alert: KagentAccessPolicyDeny
+          expr: |
+            sum by (gateway, route)
+              (rate(agentgateway_requests_total{
+                status="403",
+                reason="Authorization"
+              }[5m])) > 0
+          for: 0m
+          labels:
+            severity: warning
+            dora_article: "17"
+            nis2_clause: "21(2)(b)"
+            # Required for AlertmanagerConfig OnNamespace matcher strategy
+            # — the operator auto-injects namespace=<config-ns> into routes.
+            namespace: trustusbank-observability
+          annotations:
+            summary: "kagent AccessPolicy denied an agent invocation"
+            description: |
+              An attempt to invoke a kagent Agent was rejected by the
+              waypoint AuthZ filter. The agent's AccessPolicy CR does not
+              list the caller's identity (or no AccessPolicy targets that
+              agent, denying by default).
+                waypoint: {{ $labels.gateway }}
+                route:    {{ $labels.route }}
+              Pull the full denied request from waypoint logs:
+                kubectl -n trustusbank-bank-agents logs -l "gateway.networking.k8s.io/gateway-name={{ $labels.gateway }}" | grep "403"
+              Inspect which AccessPolicies are in effect:
+                kubectl -n trustusbank-bank-agents get accesspolicy
+            runbook: "demo-scripts/runbook.md#kagent-accesspolicy"
