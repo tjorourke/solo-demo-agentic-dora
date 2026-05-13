@@ -615,7 +615,15 @@
             jsonrpc: '2.0',
             id: traceId,
             method: 'message/send',
-            params: { message: { role: 'user', parts: [{ kind: 'text', text }] } },
+            // A2A v0.2+ requires `messageId` (Pydantic enforces it server-side).
+            // Reuse traceId so it correlates with the OTel span.
+            params: {
+              message: {
+                role: 'user',
+                parts: [{ kind: 'text', text }],
+                messageId: traceId,
+              },
+            },
           }),
         });
         const data = await r.json();
