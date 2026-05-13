@@ -99,10 +99,30 @@ wait_for_ready() {
 }
 
 # wait_for_pods_ready <namespace> <label-selector> [timeout=300s]
+#
+# Replaces `kubectl wait --for=condition=Ready -l ...` because that command
+# can pin to a pod UID (e.g. the original controller that was in
+# CrashLoopBackOff during a postgres race) and then watch the tombstone
+# forever after the replacement pod takes over. Custom poll re-evaluates
+# the selector every tick.
 wait_for_pods_ready() {
   local ns="$1" selector="$2" timeout="${3:-300s}"
+  local timeout_s="${timeout%s}"
   log "waiting for pods in $ns matching '$selector' (timeout=$timeout)"
-  kubectl -n "$ns" wait --for=condition=Ready pods -l "$selector" --timeout="$timeout"
+  local end=$(( SECONDS + timeout_s ))
+  while (( SECONDS < end )); do
+    local readys
+    readys=$(kubectl -n "$ns" get pods -l "$selector" \
+      -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status} {end}' 2>/dev/null)
+    # Need at least one pod, AND every pod must report Ready=True.
+    if [[ -n "${readys// /}" ]] && ! grep -qE "False|Unknown" <<<"$readys"; then
+      log_ok "  pods Ready"
+      return 0
+    fi
+    sleep 3
+  done
+  log_err "  timeout waiting for pods Ready"
+  return 1
 }
 
 # port_forward_bg <namespace> <kind/name> <local_port> <remote_port>

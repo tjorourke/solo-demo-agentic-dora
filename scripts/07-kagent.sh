@@ -86,7 +86,11 @@ helm_upgrade_install kagent-enterprise "$KAGENT_ENT_REGISTRY/kagent-enterprise" 
   --version "$KAGENT_ENT_VERSION" \
   -n "$NS_PLATFORM" \
   -f "$REPO_ROOT/manifests/kagent-enterprise/values-slim.yaml"
-wait_for_pods_ready "$NS_PLATFORM" "app.kubernetes.io/name=kagent" 300s
+# Enterprise chart labels pods app.kubernetes.io/name=kagent-enterprise
+# (the OSS chart used "kagent"). Wait for the controller specifically —
+# UI + postgres come up at the same time. Controller racing postgres on
+# first start is normal; let it self-heal via CrashLoopBackOff.
+wait_for_pods_ready "$NS_PLATFORM" "app.kubernetes.io/name=kagent-enterprise,app.kubernetes.io/component=controller" 300s
 
 log_step "6.4b — patch UI nginx upstream → real controller service"
 # The chart's bundled nginx config in the UI pod hard-codes the backend
@@ -106,7 +110,10 @@ helm repo update oauth2-proxy >/dev/null 2>&1
 # (re-use the existing cookie secret if oauth2-proxy is already installed
 # so users don't get logged out on re-deploy).
 COOKIE_SECRET=$(kubectl -n "$NS_PLATFORM" get secret oauth2-proxy -o jsonpath='{.data.cookie-secret}' 2>/dev/null | base64 -d || true)
-[[ -z "$COOKIE_SECRET" ]] && COOKIE_SECRET=$(openssl rand -base64 32 | tr -d '\n')
+# Must be exactly 16/24/32 bytes for AES. `openssl rand -base64 32` yields
+# 44 chars (base64 of 32 raw bytes) which oauth2-proxy rejects. Use hex
+# instead: 16 random bytes = 32 hex chars = 32 bytes string-wise.
+[[ -z "$COOKIE_SECRET" || ${#COOKIE_SECRET} -ne 32 ]] && COOKIE_SECRET=$(openssl rand -hex 16)
 sed -e "s|__DEX_CLIENT_SECRET__|$DEX_CLIENT_SECRET|" \
     -e "s|__COOKIE_SECRET__|$COOKIE_SECRET|" \
     "$REPO_ROOT/manifests/oauth2-proxy/values.template.yaml" > /tmp/oauth2-proxy-values.yaml

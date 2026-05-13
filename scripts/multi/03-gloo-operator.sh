@@ -49,7 +49,12 @@ trap on_error ERR
 
 OPERATOR_VERSION="${GLOO_OPERATOR_VERSION:-0.5.2}"
 OPERATOR_CHART="oci://us-docker.pkg.dev/solo-public/gloo-operator-helm/gloo-operator"
-ISTIO_VERSION="${SOLO_ISTIO_VERSION:-1.29.2-patch0-solo}"
+ISTIO_VERSION_PLAIN="${SOLO_ISTIO_VERSION:-1.29.2-patch0-solo}"
+# Strip the trailing "-solo" suffix. The operator auto-appends "-solo"
+# when distribution=Standard (because it fetches Solo Istio's licensed
+# charts at oci://.../<chart>:<version>-solo). Passing "1.29.2-patch0-solo"
+# as-is produces a 404 on "<chart>:1.29.2-patch0-solo-solo".
+ISTIO_VERSION="${ISTIO_VERSION_PLAIN%-solo}"
 ISTIO_REGISTRY="us-docker.pkg.dev/soloio-img/istio"
 
 # Trust domain per cluster (matches what M02 baked into the intermediates).
@@ -168,22 +173,27 @@ done
 
 # ---------- Wait for reconcile ----------
 log_step "waiting for ServiceMeshController status to settle on each cluster"
+# The operator's terminal "good" status is .status.phase = SUCCEEDED (also
+# accept INSTALLED for older operator versions). FAILED / ABORTED are the
+# error terminal states; PENDING is in-progress.
 for cluster in "${CLUSTERS[@]}"; do
   ctx="$(cluster_context "$cluster")"
-  log "  [$cluster] waiting for .status.phase = Installed"
+  log "  [$cluster] waiting for .status.phase = SUCCEEDED"
   for i in $(seq 1 60); do
     phase=$(kubectl --context="$ctx" get servicemeshcontroller managed-istio \
       -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
-    if [[ "$phase" == "Installed" ]]; then
-      log_ok "  [$cluster] Installed"
-      break
-    fi
-    if [[ "$phase" == "Failed" || "$phase" == "Aborted" ]]; then
-      log_warn "  [$cluster] phase=$phase — inspecting status"
-      kubectl --context="$ctx" get servicemeshcontroller managed-istio \
-        -o jsonpath='{.status.conditions}' 2>&1 | sed 's/^/      /'
-      die "ServiceMeshController failed on $cluster"
-    fi
+    case "$phase" in
+      SUCCEEDED|INSTALLED|Installed)
+        log_ok "  [$cluster] $phase"
+        break
+        ;;
+      FAILED|ABORTED|Failed|Aborted)
+        log_warn "  [$cluster] phase=$phase — inspecting status"
+        kubectl --context="$ctx" get servicemeshcontroller managed-istio \
+          -o jsonpath='{.status.conditions}' 2>&1 | sed 's/^/      /'
+        die "ServiceMeshController failed on $cluster"
+        ;;
+    esac
     sleep 5
   done
 done
