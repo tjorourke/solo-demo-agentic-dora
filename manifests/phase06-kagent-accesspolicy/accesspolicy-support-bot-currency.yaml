@@ -43,6 +43,14 @@ spec:
       - kind: Agent
         name: triage-bot
         namespace: trustusbank-bank-agents
+      # Allow the customer-facing chatbot frontend (on edge cluster) to
+      # invoke support-bot directly. The chatbot pod's SPIFFE identity
+      # is verified by the mesh as it crosses the cluster boundary.
+      # Anything else (a leaked token, a misbehaving service, an attacker
+      # who lands in another pod) gets a 403 at the waypoint.
+      - kind: ServiceAccount
+        name: chatbot
+        namespace: trustusbank-bank-frontend
 ---
 # A2A: triage-bot legitimately calls fraud-bot when escalating suspected
 # unauthorized transactions. Anyone else is denied.

@@ -2,15 +2,20 @@
 # Phase M07 — deploy workloads across the three clusters.
 #
 # Layout:
-#   bank   : agentregistry + 3 MCP servers + agentgateway + kagent +
-#            fraud-bot + triage-bot agents
+#   bank   : Enterprise kagent (dex + oauth2-proxy + controller + UI) +
+#            agentregistry + 3 MCP servers + agentgateway +
+#            support-bot + fraud-bot + triage-bot agents +
+#            AccessPolicy enforcement
 #   vendor : currency-converter MCP (clean+rugpull) + mock-attacker
-#   edge   : kagent + support-bot agent + chatbot frontend
+#   edge   : chatbot frontend ONLY (no kagent — keep this tier as a thin
+#            presentation layer, agents live next to data on bank)
 #
-# Stubs (replicas=0) handle kagent's local-CRD validation gate when an agent
-# references a peer that physically runs in another cluster. The actual A2A
-# traffic is mesh-routed via the namespace's solo.io/service-scope=global
-# label applied at the end of this phase.
+# Cross-cluster path: chatbot's nginx proxies /api/a2a/<ns>/<agent>/ to
+# the agent's Service on bank (port 8080 A2A JSON-RPC). The mesh routes
+# it transparently because trustusbank-bank-agents on bank is labelled
+# solo.io/service-scope=global at the end of this phase. AccessPolicy on
+# bank's waypoint enforces "chatbot SA can invoke support-bot", and
+# denied callers get 403 at the waypoint before the agent's LLM runs.
 
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -87,12 +92,10 @@ wait_for_ready deployment ticket-mcp      "$NS_BANK_MCP" 180s
 log_step "M07.5 — bank cluster: agentgateway"
 bash "$SCRIPT_DIR/../06-agentgateway.sh"
 
-log_step "M07.6 — bank cluster: kagent + fraud-bot + triage-bot"
+log_step "M07.6 — bank cluster: kagent Enterprise + support-bot + fraud-bot + triage-bot"
 bash "$SCRIPT_DIR/../07-kagent.sh"
-# support-bot's pod should NOT run in bank (it runs on edge). Patch to 0 replicas.
-log "patching support-bot to replicas=0 on bank (stub for cross-cluster ref)"
-kubectl -n "$NS_BANK_AGENTS" patch agent support-bot --type=merge \
-  -p '{"spec":{"declarative":{"replicas":0}}}' 2>&1 | tail -1 || true
+# All three agents run on bank now. No replicas=0 patching — support-bot
+# is the *only* support-bot in the system, hosted under Enterprise kagent.
 
 # ---------- Section 3: vendor cluster workloads ----------
 
@@ -110,21 +113,12 @@ wait_for_ready deployment mock-attacker external-attacker 60s 2>/dev/null || tru
 
 # ---------- Section 4: edge cluster workloads ----------
 
-log_step "M07.8 — edge cluster: kagent + support-bot (real) + fraud-bot (stub)"
+log_step "M07.8 — edge cluster: chatbot frontend ONLY"
+# Production-best-practice: edge is a thin presentation tier. The chatbot
+# nginx proxies /api/a2a/<ns>/<agent>/ cross-cluster to bank's agents via
+# the global service-scoped namespace below. NO kagent control plane on
+# edge — one Enterprise kagent on bank manages all agents.
 kubectl config use-context "$(cluster_context "$EDGE_CLUSTER")" >/dev/null
-
-# Edge also needs a platform namespace for kagent install
-kubectl create ns "$NS_PLATFORM" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-
-bash "$SCRIPT_DIR/../07-kagent.sh"
-# fraud-bot pod should NOT run in edge — stub for kagent's local validation
-log "patching fraud-bot to replicas=0 on edge (stub for cross-cluster ref)"
-kubectl -n "$NS_BANK_AGENTS" patch agent fraud-bot --type=merge \
-  -p '{"spec":{"declarative":{"replicas":0}}}' 2>&1 | tail -1 || true
-# triage-bot is not directly referenced from edge — delete the CRD entirely
-kubectl -n "$NS_BANK_AGENTS" delete agent triage-bot --ignore-not-found >/dev/null 2>&1 || true
-
-log_step "M07.9 — edge cluster: chatbot frontend"
 bash "$SCRIPT_DIR/../09-frontend.sh"
 
 # ---------- Section 5: cross-cluster service publication ----------
@@ -133,14 +127,14 @@ bash "$SCRIPT_DIR/../09-frontend.sh"
 # <name>.<namespace>.mesh.internal hostname, with locality-aware routing.
 
 log_step "M07.10 — solo.io/service-scope=global on cross-cluster namespaces"
-# Bank publishes its services so edge can reach fraud-bot/triage-bot/MCP/agentgateway.
+# Bank publishes its services so edge's chatbot can reach support-bot
+# (via /api/a2a/<ns>/<agent>/), fraud-bot, MCP servers, agentgateway, and
+# the Enterprise kagent UI.
 kctx "$BANK_CLUSTER" label ns "$NS_BANK_AGENTS" solo.io/service-scope=global --overwrite >/dev/null
 kctx "$BANK_CLUSTER" label ns "$NS_BANK_MCP"    solo.io/service-scope=global --overwrite >/dev/null
 kctx "$BANK_CLUSTER" label ns "$NS_PLATFORM"    solo.io/service-scope=global --overwrite >/dev/null
 # Vendor publishes currency-converter so bank's agentgateway can route to it.
 kctx "$VENDOR_CLUSTER" label ns "$NS_BANK_VENDORS" solo.io/service-scope=global --overwrite >/dev/null
-# Edge publishes support-bot too (in case bank ever references it back).
-kctx "$EDGE_CLUSTER"   label ns "$NS_BANK_AGENTS" solo.io/service-scope=global --overwrite >/dev/null
 
 log_step "M07 — workload summary"
 for cluster in "${CLUSTERS[@]}"; do

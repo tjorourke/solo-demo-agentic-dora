@@ -15,6 +15,7 @@
 #   svc/fraud-bot          NodePort 30090  (in trustusbank-bank-agents)
 #   svc/triage-bot         NodePort 30091  (in trustusbank-bank-agents)
 #   svc/trustusbank-agentgw NodePort 30092 (in trustusbank-platform)
+#   svc/support-bot        NodePort 30094  (in trustusbank-bank-agents)
 #
 # Bank node IP on the shared kind docker network: 172.22.0.8
 #
@@ -50,6 +51,38 @@ addressType: IPv4
 ports:
   - name: http
     port: 30091
+    protocol: TCP
+endpoints:
+  - addresses: ["172.22.0.8"]
+    conditions: { ready: true }
+---
+# support-bot lives ONLY on bank (Enterprise kagent). The chatbot on
+# edge reaches it through this lateral hack: a local Service stub
+# (no endpoints) + a manual EndpointSlice pointing at bank node IP
+# on NodePort 30094.
+apiVersion: v1
+kind: Service
+metadata:
+  name: support-bot
+  namespace: trustusbank-bank-agents
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 30094
+      protocol: TCP
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: support-bot-xc
+  namespace: trustusbank-bank-agents
+  labels:
+    kubernetes.io/service-name: support-bot
+addressType: IPv4
+ports:
+  - name: http
+    port: 30094
     protocol: TCP
 endpoints:
   - addresses: ["172.22.0.8"]

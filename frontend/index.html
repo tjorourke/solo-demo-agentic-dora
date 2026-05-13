@@ -557,7 +557,9 @@
 
     async function ping() {
       try {
-        const r = await fetch(`${KAGENT_URL}/api/a2a/${AGENT_NS}/${AGENT}/.well-known/agent.json`);
+        // The agent's A2A endpoint serves .well-known/agent-card.json
+        // (the current A2A v0.3.0 name). Older builds used /agent.json.
+        const r = await fetch(`${KAGENT_URL}/api/a2a/${AGENT_NS}/${AGENT}/.well-known/agent-card.json`);
         connPill.textContent = r.ok ? 'connected' : 'unreachable';
         connPill.style.color = r.ok ? '#86efac' : '#fca5a5';
       } catch {
